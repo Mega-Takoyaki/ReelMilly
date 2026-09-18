@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env
+.env
+
+# Runtime data (state, secrets, generated media) — keep directory placeholders only
+data/library/inbox/*
+data/library/ready/*
+data/library/posted/*
+data/library/x_only/*
+data/profiles/x/*
+data/screenshots/*
+data/state/*
+!data/library/inbox/.gitkeep
+!data/library/ready/.gitkeep
+!data/library/posted/.gitkeep
+!data/library/x_only/.gitkeep
+!data/profiles/x/.gitkeep
+!data/screenshots/.gitkeep
+!data/state/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
