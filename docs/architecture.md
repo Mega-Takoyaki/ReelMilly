@@ -30,6 +30,7 @@
 | プラットフォーム別コンテンツルール強制 | `content_rating` + `platform_content_rules`（別プロジェクトCREAMからの部分移植、多プラットフォーム対応の布石） | [ADR-0006](adr/0006-platform-content-rules-from-cream.md) |
 | アセット管理を中核ドメインに据える | 投稿ワークフローはアセットのライフサイクル上の一操作として実装する | [ADR-0007](adr/0007-asset-management-as-core.md) |
 | NSFW自動仕分け＋人間承認ゲート | `nsfw_auto_rating`（自動・参考値）と`content_rating_confirmed`（人間承認）を分離し、承認済みのみ自動投稿の対象にする | [ADR-0008](adr/0008-nsfw-auto-triage-with-human-approval.md) |
+| NSFW分類モデル | Marqo/nsfw-image-detection-384（timm）。動画は2秒間隔フレームサンプリング＋最大値採用。X向けは`sfw`のみ自動投稿対象 | [ADR-0009](adr/0009-nsfw-classifier-marqo.md) |
 
 ## 5. 構成要素の視点
 

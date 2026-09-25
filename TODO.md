@@ -16,12 +16,16 @@
 - [ ] **運用ルール（要順守）**: 投稿前のコンプライアンス確認（AI生成であることの明示・ペルソナが18歳未満に見えないことの確認）は、システム実装を見送り運用者が毎回目視で確認する。この運用ルールは省略しないこと
 - [ ] 将来的にコンプライアンス確認の記録用ゲート（判定はしない、確認済みフラグの記録のみ）をシステム化するか、運用実績を見て再検討する
 
-## アセット管理の中核化・NSFW自動仕分け（ADR-0007/0008）
+## アセット管理の中核化・NSFW自動仕分け（ADR-0007/0008/0009）
 
-- [ ] NSFW自動仕分けの実装方式の選定（ローカルモデル vs 外部API。精度・コスト・プライバシー・実行環境の制約を比較）
+- [x] ~~NSFW自動仕分けの実装方式の選定~~ → 決定: Marqo/nsfw-image-detection-384（[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）
 - [ ] `meta.yaml`に`content_rating_confirmed`・`nsfw_auto_rating`・`nsfw_auto_confidence`を追加（[ADR-0008](docs/adr/0008-nsfw-auto-triage-with-human-approval.md)、Phase 1着手時）
+- [ ] `timm` / `torch` / `pillow` / `opencv-python` を依存関係に追加（Phase 1着手時、`pyproject.toml`整備とあわせて）
+- [ ] 動画のフレームサンプリング間隔（初期値2秒）・判定閾値（初期値0.5）をReelMilly実データで検証・調整
+- [ ] オフライン運用が必要な場合、Marqoモデルの事前キャッシュ手順を用意
+- [ ] `config.yaml`に`platform_auto_post_ratings`を追加（Fanvue=全区分自動／X=sfwのみ自動、[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）
 - [ ] Telegram承認フローに、自動仕分け結果の確認・補正コマンド（例: `/rate <id> explicit`）を追加（Phase 5着手時）
-- [ ] drop/x_teaser実行前に`content_rating_confirmed == true`を検証するフィルタを追加（Phase 4着手時）
+- [ ] drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加（Phase 4着手時）
 
 ## 確定済みだが実装時に再確認するデフォルト値
 
