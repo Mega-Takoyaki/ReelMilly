@@ -1,6 +1,6 @@
 # Reelmilly
 
-Grok Imagineで生成した画像・動画を手動で取り込み、Fanvueへの本編投稿とX（旧Twitter）への紹介投稿を半自動化する常駐ワーカー。ユーザー操作と通知はすべてTelegram Botで行う。
+画像・動画（Grok Imagine生成物）のアセット管理を中核に据え、その上にFanvueへの本編投稿とX（旧Twitter）への紹介投稿を半自動化する機能を付加する常駐ワーカー（[ADR-0007](docs/adr/0007-asset-management-as-core.md)）。ユーザー操作と通知はすべてTelegram Botで行う。
 
 ## ステータス
 

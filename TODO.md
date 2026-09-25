@@ -16,6 +16,13 @@
 - [ ] **運用ルール（要順守）**: 投稿前のコンプライアンス確認（AI生成であることの明示・ペルソナが18歳未満に見えないことの確認）は、システム実装を見送り運用者が毎回目視で確認する。この運用ルールは省略しないこと
 - [ ] 将来的にコンプライアンス確認の記録用ゲート（判定はしない、確認済みフラグの記録のみ）をシステム化するか、運用実績を見て再検討する
 
+## アセット管理の中核化・NSFW自動仕分け（ADR-0007/0008）
+
+- [ ] NSFW自動仕分けの実装方式の選定（ローカルモデル vs 外部API。精度・コスト・プライバシー・実行環境の制約を比較）
+- [ ] `meta.yaml`に`content_rating_confirmed`・`nsfw_auto_rating`・`nsfw_auto_confidence`を追加（[ADR-0008](docs/adr/0008-nsfw-auto-triage-with-human-approval.md)、Phase 1着手時）
+- [ ] Telegram承認フローに、自動仕分け結果の確認・補正コマンド（例: `/rate <id> explicit`）を追加（Phase 5着手時）
+- [ ] drop/x_teaser実行前に`content_rating_confirmed == true`を検証するフィルタを追加（Phase 4着手時）
+
 ## 確定済みだが実装時に再確認するデフォルト値
 
 - [ ] drop前承認の要否（デフォルト: 必須）

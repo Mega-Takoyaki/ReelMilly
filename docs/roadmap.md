@@ -2,6 +2,8 @@
 
 Phase構成は [CLAUDE_HANDOFF.md](../CLAUDE_HANDOFF.md) 11章に基づく。各Phaseの完了条件は「そのPhase単体で手動1回成功し、失敗がTelegramまたはログに残ること」。
 
+ReelMillyはアセット（画像・動画）管理を中核に据え、SNS投稿はその上に付加する機能という位置づけ（[ADR-0007](adr/0007-asset-management-as-core.md)）。この位置づけに基づき、Phase 1にNSFW自動仕分け、Phase 5にその人間承認ステップを追加する（[ADR-0008](adr/0008-nsfw-auto-triage-with-human-approval.md)）。
+
 ## 全体像
 
 ```mermaid
@@ -22,11 +24,11 @@ flowchart TD
 | Phase | 内容 | 状態 |
 |---|---|---|
 | Phase 0 | 設定読込、ディレクトリ作成、events.jsonl、doctor | 未着手 |
-| Phase 1 | inbox ingest、sidecarマージ、ready/posted移動、meta.yaml | 未着手 |
+| Phase 1 | inbox ingest、sidecarマージ、ready/posted移動、meta.yaml、**NSFW自動仕分け（`nsfw_auto_rating`記録）** | 未着手 |
 | Phase 2 | Fanvue multipart upload、ready待ち、create post、URL組み立て | 未着手 |
 | Phase 3 | X Playwright login、テキスト投稿、任意メディア、失敗スクショ | 未着手（デプロイ環境の決定が前提、TODO.md参照） |
-| Phase 4 | drop/teaser/engageジョブ結合、部分失敗ルール、last_run管理 | 未着手 |
-| Phase 5 | Telegram allowlist、通知、承認フロー、コマンド | 未着手 |
+| Phase 4 | drop/teaser/engageジョブ結合、部分失敗ルール、last_run管理、**`content_rating_confirmed`未承認アセットの投稿対象外フィルタ** | 未着手 |
+| Phase 5 | Telegram allowlist、通知、承認フロー、コマンド、**NSFW自動仕分け結果の確認・補正フロー（`content_rating`確定操作）** | 未着手 |
 | Phase 6 | 文面テンプレ複数化、サムネオプション、token refresh、ファイル受信 | 未着手 |
 
 ## 受け入れ基準（全体）
