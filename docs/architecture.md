@@ -23,7 +23,7 @@
 
 | 決定 | 採用内容 | 根拠 |
 |---|---|---|
-| 状態管理 | JSONファイル（`state.json` / `events.jsonl`）、DBは使わない | [ADR-0004](adr/0004-json-based-state-store.md) |
+| 状態管理 | SQLite（メタデータ・タグ・フォルダの正）＋`events.jsonl`（監査ログ）。DBなし方針(ADR-0004)は非推奨化 | [ADR-0011](adr/0011-sqlite-state-store.md) |
 | 通知・操作 | Telegram Botに一本化 | [ADR-0001](adr/0001-notification-channel-telegram.md) |
 | X投稿 | Playwright非公式操作 | [ADR-0002](adr/0002-x-posting-via-playwright.md) |
 | Fanvue投稿 | 公式REST API | [ADR-0003](adr/0003-fanvue-official-api.md) |
@@ -31,20 +31,21 @@
 | アセット管理を中核ドメインに据える | 投稿ワークフローはアセットのライフサイクル上の一操作として実装する | [ADR-0007](adr/0007-asset-management-as-core.md) |
 | NSFW自動仕分け＋人間承認ゲート | `nsfw_auto_rating`（自動・参考値）と`content_rating_confirmed`（人間承認）を分離し、承認済みのみ自動投稿の対象にする | [ADR-0008](adr/0008-nsfw-auto-triage-with-human-approval.md) |
 | NSFW分類モデル | Marqo/nsfw-image-detection-384（timm）。動画は2秒間隔フレームサンプリング＋最大値採用。X向けは`sfw`のみ自動投稿対象 | [ADR-0009](adr/0009-nsfw-classifier-marqo.md) |
+| 画像・動画管理の自作（Eagle連携は不採用） | 数万件規模のアセットをフォルダ・タグ管理込みでReelMilly自身に実装する | [ADR-0010](adr/0010-custom-asset-management-over-eagle.md) |
 
 ## 5. 構成要素の視点
 
 ```
 reelmilly/
-  data/library/{inbox,ready,posted,x_only}/
+  data/library/{inbox,ready,posted,x_only}/   # メディア実ファイル本体
   data/profiles/x/
   data/screenshots/
-  data/state/{state.json,events.jsonl}
+  data/state/{reelmilly.db,events.jsonl}      # メタデータはSQLite、監査ログはJSONL
   templates/
   src/
 ```
 
-詳細はCLAUDE_HANDOFF.md 5章のディレクトリ契約を参照。
+ファイル本体はディレクトリ契約（CLAUDE_HANDOFF.md 5章）のまま配置するが、メタデータ（`status`/`content_rating`/タグ/フォルダ等）は`meta.yaml`ではなくSQLite（`reelmilly.db`）で管理する（[ADR-0011](adr/0011-sqlite-state-store.md)）。
 
 ## 6. ランタイムビュー
 
