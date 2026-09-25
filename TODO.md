@@ -9,6 +9,13 @@
 - [ ] Telegram BotFatherでのBot作成（`ReelmillyBot`または空き名称）とtoken取得
 - [ ] Fanvue API疎通確認（`GET /users/me`を実トークンで1回叩く）
 
+## CREAM由来の検討事項
+
+- [ ] `meta.yaml`に`content_rating`、`config.yaml`に`platform_content_rules`を追加（[ADR-0006](docs/adr/0006-platform-content-rules-from-cream.md)、Phase 1着手時）
+- [ ] drop/x_teaser実行前にプラットフォーム別コンテンツルールを検証するロジックを追加（Phase 4着手時）
+- [ ] **運用ルール（要順守）**: 投稿前のコンプライアンス確認（AI生成であることの明示・ペルソナが18歳未満に見えないことの確認）は、システム実装を見送り運用者が毎回目視で確認する。この運用ルールは省略しないこと
+- [ ] 将来的にコンプライアンス確認の記録用ゲート（判定はしない、確認済みフラグの記録のみ）をシステム化するか、運用実績を見て再検討する
+
 ## 確定済みだが実装時に再確認するデフォルト値
 
 - [ ] drop前承認の要否（デフォルト: 必須）
