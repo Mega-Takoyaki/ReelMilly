@@ -2,10 +2,15 @@
 
 大きめのタスク（Phase単位の実装、仕様確定が必要なもの）は GitHub Issues で管理する。ここには小粒タスク・決め忘れ防止用のメモを置く。
 
+## 最優先（今すぐ着手）
+
+- [ ] X Developer Portalで開発者アプリを申請する（[ADR-0014](docs/adr/0014-x-official-api-application-first.md)）。審査所要期間・要件を実地で確認し、本ファイルに追記する
+- [ ] 申請結果が出るまで、Phase 0/1/1.5（本体側、SNS投稿と無関係な部分）を先行して進める
+
 ## 未確定事項（着手前に確定が必要）
 
-- [ ] デプロイ環境の決定（本体: ローカルWebアプリ vs AWS常時稼働／SNS投稿モジュール: 常時稼働 vs AWSオンデマンド起動）→ `docs/adr/0005-deployment-environment.md`
-- [ ] AWSオンデマンドEC2起動案を採る場合、Playwright永続プロファイルの永続化方式（EBS/S3同期等）を検討する
+- [ ] デプロイ環境の決定（本体: ローカルWebアプリ vs AWS常時稼働）→ `docs/adr/0005-deployment-environment.md`。SNS投稿モジュールはX API承認結果次第で決まる
+- [ ] X開発者アプリが承認されない場合のフォールバック計画（Playwright実装、[ADR-0002](docs/adr/0002-x-posting-via-playwright.md)参照）を発動するかどうかの判断基準・タイムリミットを決める
 - [ ] Fanvue handle と実際の投稿URL例1本の取得（`FANVUE_POST_URL_TEMPLATE`確定用）
 - [ ] Telegram BotFatherでのBot作成（`ReelmillyBot`または空き名称）とtoken取得
 - [ ] Fanvue API疎通確認（`GET /users/me`を実トークンで1回叩く）

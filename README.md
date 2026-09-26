@@ -29,9 +29,13 @@
 
 各決定の理由は対応するADRを参照。
 
+## X投稿の実装方針
+
+X投稿は公式API（申請ファースト）を採用する（[ADR-0014](docs/adr/0014-x-official-api-application-first.md)）。開発者アプリを先に申請し、承認され次第、公式API（`POST /2/tweets`等）で実装する。承認されない場合のみPlaywright非公式操作にフォールバックする。
+
 ## デプロイ環境
 
-未確定。本体（画像管理アプリ）とSNS投稿モジュールは論理的に分離されており（[ADR-0013](docs/adr/0013-sns-posting-as-logical-plugin.md)）、デプロイ先も別々に検討できる。本体はローカルWebアプリが現時点の基本方針。SNS投稿モジュール（Playwright実行環境）は本体と同じ環境での常時起動か、AWS EC2等のオンデマンド起動かを検討中。判断軸は [docs/adr/0005-deployment-environment.md](docs/adr/0005-deployment-environment.md) を参照。X投稿がPlaywrightの永続ログインセッションに依存するため、Phase 3着手前に確定する。
+未確定。本体（画像管理アプリ）とSNS投稿モジュールは論理的に分離されており（[ADR-0013](docs/adr/0013-sns-posting-as-logical-plugin.md)）、デプロイ先も別々に検討できる。本体はローカルWebアプリが現時点の基本方針。SNS投稿モジュールはX公式APIが承認されれば本体と同じ環境で足り、Playwrightにフォールバックする場合のみGUI常時起動環境等の追加検討が必要になる。判断軸は [docs/adr/0005-deployment-environment.md](docs/adr/0005-deployment-environment.md) を参照。
 
 ## セットアップ
 

@@ -8,8 +8,8 @@
 
 ## 2. 制約
 
-- Imagine API・X公式APIは使用しない
-- ヘッドレスでのX初回ログインは不可
+- Imagine APIは使用しない
+- X公式APIの開発者アプリが承認されない場合、Playwright非公式操作へフォールバックする（[ADR-0014](adr/0014-x-official-api-application-first.md)）。フォールバック時はヘッドレスでのX初回ログイン不可という制約が生じる
 - 失敗ジョブの自動無限リトライは行わない
 - 秘密情報は `.env` のみ
 
@@ -25,7 +25,7 @@
 |---|---|---|
 | 状態管理 | SQLite（メタデータ・タグ・フォルダの正）＋`events.jsonl`（監査ログ）。DBなし方針(ADR-0004)は非推奨化 | [ADR-0011](adr/0011-sqlite-state-store.md) |
 | 操作・通知インターフェース | 本体UIを主、Telegramは通知＋簡易操作の補助チャネル。Telegram一本化(ADR-0001)は非推奨化 | [ADR-0012](adr/0012-primary-ui-with-telegram-as-secondary.md) |
-| X投稿 | Playwright非公式操作 | [ADR-0002](adr/0002-x-posting-via-playwright.md) |
+| X投稿 | 公式API（申請ファースト）。承認されない場合のみPlaywrightへフォールバック | [ADR-0014](adr/0014-x-official-api-application-first.md)（旧[ADR-0002](adr/0002-x-posting-via-playwright.md)は非推奨） |
 | Fanvue投稿 | 公式REST API | [ADR-0003](adr/0003-fanvue-official-api.md) |
 | プラットフォーム別コンテンツルール強制 | `content_rating` + `platform_content_rules`（別プロジェクトCREAMからの部分移植、多プラットフォーム対応の布石） | [ADR-0006](adr/0006-platform-content-rules-from-cream.md) |
 | アセット管理を中核ドメインに据える | 投稿ワークフローはアセットのライフサイクル上の一操作として実装する | [ADR-0007](adr/0007-asset-management-as-core.md) |
@@ -45,7 +45,7 @@ reelmilly/
   templates/
   src/
     core/        # 本体: 画像・動画管理(ingest, SQLiteアクセス, NSFW自動仕分け, UI)
-    posting/      # SNS投稿モジュール: Fanvue API, X Playwright, ジョブスケジューリング
+    posting/      # SNS投稿モジュール: Fanvue API, X公式API(フォールバック時はPlaywright), ジョブスケジューリング
     telegram/     # Telegram連携: 通知 + 簡易操作(承認/スキップ)
 ```
 
@@ -60,9 +60,9 @@ reelmilly/
 **未確定**。[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)で本体とSNS投稿モジュールを論理分離したため、デプロイ先も別々に検討できる。
 
 - 本体（画像管理アプリ）: ローカルWebアプリが現時点の基本方針だが未確定
-- SNS投稿モジュール（Playwright実行環境）: 本体と同じ環境での常時起動か、AWS EC2等のオンデマンド起動かを検討中
+- SNS投稿モジュール: X公式API採用（[ADR-0014](adr/0014-x-official-api-application-first.md)）が承認されれば、ブラウザ実行環境が不要になり本体と同じ環境で足りる。Playwrightにフォールバックする場合のみ、GUI環境の常時起動等の制約が生じる
 
-判断軸は [ADR-0005](adr/0005-deployment-environment.md) を参照。Playwrightの永続ログインセッション維持という制約上、常時起動する場合はGUI環境が前提になる可能性が高い。
+判断軸は [ADR-0005](adr/0005-deployment-environment.md) を参照。
 
 ## 8. 横断的関心事
 
@@ -85,7 +85,7 @@ reelmilly/
 
 ## 11. リスクと技術的負債
 
-CLAUDE_HANDOFF.md 13章を参照（X DOM変更、Fanvueメディア処理遅延、公開URLテンプレ誤り、同一文面連投によるX制限等）。
+CLAUDE_HANDOFF.md 13章を参照（Fanvueメディア処理遅延、公開URLテンプレ誤り、同一文面連投によるX制限等）。X DOM変更リスクは[ADR-0014](adr/0014-x-official-api-application-first.md)の公式API採用が承認された場合は解消される（Playwrightフォールバック時のみ残存）。
 
 ## 12. 用語集
 
