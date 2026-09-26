@@ -12,7 +12,8 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
 
-from core import db
+from core import db, generation
+from core import settings as settings_module
 from core.config import Config
 from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
 from core.media import get_media_properties
@@ -130,7 +131,8 @@ def create_app(config: Config) -> Flask:
 
         conn = get_conn()
         nsfw_classifier = try_create_classifier(config.nsfw)
-        results = ingest_inbox(config, conn, nsfw_classifier=nsfw_classifier)
+        generator = generation.try_create_generator(conn)
+        results = ingest_inbox(config, conn, nsfw_classifier=nsfw_classifier, generator=generator)
         conn.close()
 
         return jsonify(
@@ -220,6 +222,45 @@ def create_app(config: Config) -> Flask:
         if _is_xhr():
             return jsonify({"folders": folders})
         return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/assets/<asset_id>/caption", methods=["POST"])
+    def update_caption(asset_id):
+        conn = get_conn()
+        fanvue_text = (request.form.get("fanvue_text") or "").strip() or None
+        db.update_asset(conn, asset_id, fanvue_text=fanvue_text, updated_at=_now())
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/assets/<asset_id>/caption/adopt", methods=["POST"])
+    def adopt_caption_draft(asset_id):
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        draft = asset.get("fanvue_caption_draft")
+        if draft:
+            db.update_asset(
+                conn, asset_id, fanvue_text=draft, fanvue_caption_draft=None, updated_at=_now()
+            )
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/settings", methods=["GET", "POST"])
+    def settings_page():
+        conn = get_conn()
+        if request.method == "POST":
+            settings_module.update_settings(
+                conn,
+                description_system_prompt=request.form.get("description_system_prompt"),
+                caption_system_prompt=request.form.get("caption_system_prompt"),
+                generation_provider=request.form.get("generation_provider"),
+                generation_model=request.form.get("generation_model"),
+                caption_mode=request.form.get("caption_mode"),
+            )
+        current_settings = settings_module.get_all_settings(conn)
+        conn.close()
+        return render_template("settings.html", settings=current_settings)
 
     @app.route("/assets/bulk/tag", methods=["POST"])
     def bulk_add_tag():

@@ -6,6 +6,12 @@ from core.ingest import ingest_inbox
 from core.nsfw import NsfwResult
 
 
+def _mock_generator(description="赤いドレスの女性が微笑んでいる"):
+    generator = Mock()
+    generator.describe_image.return_value = description
+    return generator
+
+
 CONFIG_YAML = """
 timezone: Asia/Tokyo
 paths:
@@ -48,7 +54,7 @@ def test_ingest_moves_file_without_sidecar(tmp_path):
     assert not (config.paths.inbox / "look-a.jpg").exists()
 
     asset = db.get_asset(conn, result.asset_id)
-    assert asset["status"] == "ready"
+    assert asset["status"] == "analyzing"  # NSFW仕分け・内容説明とも未実行のため(ADR-0015)
     assert asset["kind"] == "image"
     assert set(db.get_channels(conn, result.asset_id)) == {"fanvue", "x"}
 
@@ -106,6 +112,49 @@ def test_ingest_without_classifier_leaves_nsfw_fields_null(tmp_path):
     asset = db.get_asset(conn, results[0].asset_id)
     assert asset["nsfw_auto_rating"] is None
     assert asset["nsfw_auto_confidence"] is None
+    assert asset["status"] == "analyzing"
+
+
+def test_ingest_becomes_ready_when_nsfw_and_description_both_succeed(tmp_path):
+    config, conn = _setup(tmp_path)
+    (config.paths.inbox / "look-a.jpg").write_bytes(b"fake-image-bytes")
+
+    classifier = Mock()
+    classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.12)
+    generator = _mock_generator("赤いドレスの女性が微笑んでいる")
+
+    results = ingest_inbox(config, conn, nsfw_classifier=classifier, generator=generator)
+
+    asset = db.get_asset(conn, results[0].asset_id)
+    assert asset["status"] == "ready"
+    assert asset["content_description"] == "赤いドレスの女性が微笑んでいる"
+
+
+def test_ingest_stays_analyzing_when_only_description_succeeds(tmp_path):
+    config, conn = _setup(tmp_path)
+    (config.paths.inbox / "look-a.jpg").write_bytes(b"fake-image-bytes")
+
+    generator = _mock_generator()
+
+    results = ingest_inbox(config, conn, nsfw_classifier=None, generator=generator)
+
+    asset = db.get_asset(conn, results[0].asset_id)
+    assert asset["status"] == "analyzing"
+    assert asset["content_description"] is not None
+
+
+def test_ingest_stays_analyzing_when_only_nsfw_succeeds(tmp_path):
+    config, conn = _setup(tmp_path)
+    (config.paths.inbox / "look-a.jpg").write_bytes(b"fake-image-bytes")
+
+    classifier = Mock()
+    classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.12)
+
+    results = ingest_inbox(config, conn, nsfw_classifier=classifier, generator=None)
+
+    asset = db.get_asset(conn, results[0].asset_id)
+    assert asset["status"] == "analyzing"
+    assert asset["content_description"] is None
 
 
 def test_ingest_ignores_unknown_extensions(tmp_path):

@@ -8,6 +8,9 @@
 <body>
   <header class="topbar">
     <a href="{{ url_for('index') }}" class="brand">Reelmilly</a>
+    <nav class="topnav">
+      <a href="{{ url_for('settings_page') }}">設定</a>
+    </nav>
   </header>
   <main>
     {% block content %}{% endblock %}

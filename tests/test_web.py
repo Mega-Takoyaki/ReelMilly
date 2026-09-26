@@ -221,8 +221,9 @@ def test_upload_ingests_valid_files(app_and_conn):
     assert payload["ingested"] == 2
     assert payload["rejected"] == []
 
-    all_ready_ids = {row["id"] for row in db.list_assets(conn, status="ready", limit=100)}
-    assert set(payload["asset_ids"]) <= all_ready_ids
+    # NSFW/生成AI未設定のためstatusは"analyzing"のまま(ADR-0015)。ここではingest自体の成功を確認する
+    all_ids = {row["id"] for row in db.list_assets(conn, limit=100)}
+    assert set(payload["asset_ids"]) <= all_ids
 
 
 def test_upload_rejects_disallowed_extension(app_and_conn):
@@ -356,6 +357,83 @@ def test_upload_avoids_filename_collision(app_and_conn):
         )
         assert response.get_json()["uploaded"] == 1
 
-    ready_assets = db.list_assets(conn, status="ready", limit=100)
-    dup_named = [a for a in ready_assets if "dup" in a["file_path"]]
+    all_assets = db.list_assets(conn, limit=100)
+    dup_named = [a for a in all_assets if "dup" in a["file_path"]]
     assert len(dup_named) == 2
+
+
+def test_update_caption_sets_fanvue_text(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+
+    response = client.post("/assets/a1/caption", data={"fanvue_text": "新しい投稿文"})
+
+    assert response.status_code == 302
+    asset = db.get_asset(conn, "a1")
+    assert asset["fanvue_text"] == "新しい投稿文"
+
+
+def test_update_caption_with_blank_clears_fanvue_text(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.update_asset(conn, "a1", fanvue_text="旧文")
+
+    client.post("/assets/a1/caption", data={"fanvue_text": "  "})
+
+    asset = db.get_asset(conn, "a1")
+    assert asset["fanvue_text"] is None
+
+
+def test_adopt_caption_draft_copies_to_fanvue_text(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.update_asset(conn, "a1", fanvue_caption_draft="AI生成の下書き文")
+
+    response = client.post("/assets/a1/caption/adopt")
+
+    assert response.status_code == 302
+    asset = db.get_asset(conn, "a1")
+    assert asset["fanvue_text"] == "AI生成の下書き文"
+    assert asset["fanvue_caption_draft"] is None
+
+
+def test_adopt_caption_draft_missing_asset_returns_404(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.post("/assets/does-not-exist/caption/adopt")
+
+    assert response.status_code == 404
+
+
+def test_settings_page_get_shows_defaults(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b"claude" in response.data.lower()
+
+
+def test_settings_page_post_updates_values(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+
+    response = client.post(
+        "/settings",
+        data={
+            "generation_provider": "openai",
+            "generation_model": "gpt-4o-mini",
+            "caption_mode": "draft",
+            "description_system_prompt": "カスタム説明",
+            "caption_system_prompt": "カスタムキャプション",
+        },
+    )
+
+    assert response.status_code == 200
+    from core import settings as settings_module
+
+    assert settings_module.get_generation_provider(conn) == "openai"
+    assert settings_module.get_generation_model(conn) == "gpt-4o-mini"
+    assert settings_module.get_caption_mode(conn) == "draft"

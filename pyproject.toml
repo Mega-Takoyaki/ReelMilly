@@ -20,11 +20,18 @@ nsfw = [
     "torch",
     "timm",
 ]
+# ai: 画像内容説明・Fanvue投稿文生成(ADR-0015)。既定プロバイダーのClaude API用SDK。
+# OpenAI APIを使う場合は別途 `pip install openai` する(README参照)
+ai = [
+    "anthropic",
+]
 # devはCIで使う。torch/timmは重量級のため意図的に含めない
 # (test_nsfw.pyはモデル推論部分をモックしてテストする)
+# anthropicは軽量なためdevに含め、core/generation.pyをモックでテストする
 dev = [
     "pytest",
     "numpy",
+    "anthropic",
 ]
 
 [project.scripts]

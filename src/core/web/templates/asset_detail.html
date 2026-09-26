@@ -48,7 +48,24 @@
         未承認
         {% endif %}
       </dd>
+      <dt>内容説明（AI自動生成、参考値）</dt>
+      <dd>{{ asset.content_description or '未取得' }}</dd>
     </dl>
+
+    <h2>Fanvue投稿文</h2>
+    <form method="post" action="{{ url_for('update_caption', asset_id=asset.id) }}" class="caption-form">
+      <textarea name="fanvue_text" rows="3" placeholder="未設定の場合、投稿時に内容説明から自動生成されます">{{ asset.fanvue_text or '' }}</textarea>
+      <button type="submit">保存する</button>
+    </form>
+    {% if asset.fanvue_caption_draft %}
+    <div class="caption-draft">
+      <p class="hint">生成AIによる下書き（caption_mode=draft）。内容を確認のうえ採用してください。</p>
+      <p>{{ asset.fanvue_caption_draft }}</p>
+      <form method="post" action="{{ url_for('adopt_caption_draft', asset_id=asset.id) }}">
+        <button type="submit">この下書きを投稿文として採用する</button>
+      </form>
+    </div>
+    {% endif %}
 
     <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
       <label>区分を確定して承認する

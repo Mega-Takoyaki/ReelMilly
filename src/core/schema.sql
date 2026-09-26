@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS assets (
     content_rating_confirmed INTEGER NOT NULL DEFAULT 0,
     nsfw_auto_rating TEXT,
     nsfw_auto_confidence REAL,
+    content_description TEXT,
+    fanvue_caption_draft TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -58,4 +60,10 @@ CREATE TABLE IF NOT EXISTS asset_folders (
 CREATE TABLE IF NOT EXISTS job_runs (
     job_name TEXT PRIMARY KEY,
     last_run_date TEXT NOT NULL  -- YYYY-MM-DD (Asia/Tokyo基準)
+);
+
+-- ADR-0015: システムプロンプト等、本体UIの設定画面から調整可能な値を保持する
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );

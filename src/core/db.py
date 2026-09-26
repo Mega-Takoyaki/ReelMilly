@@ -30,12 +30,14 @@ def insert_asset(conn: sqlite3.Connection, asset: dict) -> None:
             id, status, kind, file_path, caption, x_caption, fanvue_text,
             audience, price_cents, fanvue_url, fanvue_uuid, x_ok,
             content_rating, content_rating_confirmed, nsfw_auto_rating,
-            nsfw_auto_confidence, created_at, updated_at
+            nsfw_auto_confidence, content_description, fanvue_caption_draft,
+            created_at, updated_at
         ) VALUES (
             :id, :status, :kind, :file_path, :caption, :x_caption, :fanvue_text,
             :audience, :price_cents, :fanvue_url, :fanvue_uuid, :x_ok,
             :content_rating, :content_rating_confirmed, :nsfw_auto_rating,
-            :nsfw_auto_confidence, :created_at, :updated_at
+            :nsfw_auto_confidence, :content_description, :fanvue_caption_draft,
+            :created_at, :updated_at
         )
         """,
         {
@@ -55,6 +57,8 @@ def insert_asset(conn: sqlite3.Connection, asset: dict) -> None:
             "content_rating_confirmed": int(asset.get("content_rating_confirmed", False)),
             "nsfw_auto_rating": asset.get("nsfw_auto_rating"),
             "nsfw_auto_confidence": asset.get("nsfw_auto_confidence"),
+            "content_description": asset.get("content_description"),
+            "fanvue_caption_draft": asset.get("fanvue_caption_draft"),
             "created_at": asset["created_at"],
             "updated_at": asset["updated_at"],
         },
@@ -75,6 +79,7 @@ def list_assets(
     tag: str | None = None,
     channel: str | None = None,
     confirmed_only: bool = False,
+    kind: str | None = None,
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
@@ -110,6 +115,10 @@ def list_assets(
 
     if confirmed_only:
         conditions.append("assets.content_rating_confirmed = 1")
+
+    if kind is not None:
+        conditions.append("assets.kind = :kind")
+        params["kind"] = kind
 
     if joins:
         query += " " + " ".join(joins)
@@ -260,3 +269,26 @@ def set_last_run_date(conn: sqlite3.Connection, job_name: str, date_str: str) ->
         (job_name, date_str),
     )
     conn.commit()
+
+
+# --- settings（ADR-0015: 本体UIの設定画面から調整可能な値） ------------------
+
+def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
+    conn.commit()
+
+
+def list_settings(conn: sqlite3.Connection) -> dict[str, str]:
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    return {row["key"]: row["value"] for row in rows}

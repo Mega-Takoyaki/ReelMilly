@@ -33,6 +33,7 @@
 | NSFW分類モデル | Marqo/nsfw-image-detection-384（timm）。動画は2秒間隔フレームサンプリング＋最大値採用。X向けは`sfw`のみ自動投稿対象 | [ADR-0009](adr/0009-nsfw-classifier-marqo.md) |
 | 画像・動画管理の自作（Eagle連携は不採用） | 数万件規模のアセットをフォルダ・タグ管理込みでReelMilly自身に実装する | [ADR-0010](adr/0010-custom-asset-management-over-eagle.md) |
 | SNS投稿機能のモジュール分離 | 本体（画像管理）とSNS投稿を論理的に分離したパッケージとして実装。動的プラグイン機構は導入しない | [ADR-0013](adr/0013-sns-posting-as-logical-plugin.md) |
+| 画像内容説明・投稿文の自動生成 | Claude API（既定）/OpenAI API（選択可）で画像内容説明を取得し、Fanvue投稿文をシステムプロンプト経由で生成。NSFW自動仕分けと内容説明の両方が揃って初めて`ready`にする | [ADR-0015](adr/0015-ai-content-description-and-caption-generation.md) |
 
 ## 5. 構成要素の視点
 
@@ -44,7 +45,7 @@ reelmilly/
   data/state/{reelmilly.db,events.jsonl}      # メタデータはSQLite、監査ログはJSONL
   templates/
   src/
-    core/        # 本体: 画像・動画管理(ingest, SQLiteアクセス, NSFW自動仕分け, UI)
+    core/        # 本体: 画像・動画管理(ingest, SQLiteアクセス, NSFW自動仕分け, 画像内容説明/投稿文生成, UI)
     posting/      # SNS投稿モジュール: Fanvue API, X公式API(フォールバック時はPlaywright), ジョブスケジューリング
     telegram/     # Telegram連携: 通知 + 簡易操作(承認/スキップ)
 ```
@@ -55,7 +56,9 @@ reelmilly/
 
 主要フロー（drop、x_teaser、x_engagement）と部分失敗時の挙動はCLAUDE_HANDOFF.md 4章・6章を参照。
 
-ジョブの自動実行は`config.yaml`の`cadence`設定（ジョブ名→実行予定時刻）に基づく。`reelmilly run-due`は現在時刻が予定時刻を過ぎていて当日未実行のジョブを1回だけ実行し、`reelmilly watch`はこれを一定間隔（既定60秒）で繰り返す常駐プロセスとして提供する。OS側のタスクスケジューラ（Windowsタスクスケジューラ/cron）で`run-due`を定期実行する運用でも代替できる。
+ジョブの自動実行は`config.yaml`の`cadence`設定（ジョブ名→実行予定時刻、オプションで枚数・種別・レーティングの絞り込みも指定可能）に基づく。`reelmilly run-due`は現在時刻が予定時刻を過ぎていて当日未実行のジョブを1回だけ実行し、`reelmilly watch`はこれと`reelmilly analyze`（`analyzing`状態のアセットの再分析）を一定間隔（既定60秒）で繰り返す常駐プロセスとして提供する。OS側のタスクスケジューラ（Windowsタスクスケジューラ/cron）で`run-due`を定期実行する運用でも代替できる。
+
+アセットは`ingest`直後、NSFW自動仕分けと画像内容説明の両方が成功して初めて`status="ready"`になる（[ADR-0015](adr/0015-ai-content-description-and-caption-generation.md)）。どちらか一方でも未設定・失敗の場合は`status="analyzing"`のまま残り、`reelmilly analyze`で再試行できる。Fanvue投稿時、投稿文（`fanvue_text`）が未指定であれば画像内容説明とシステムプロンプトから自動生成する（`caption_mode`設定が`draft`の場合は下書き保存のみで投稿しない）。
 
 ## 7. 配置ビュー
 
@@ -96,6 +99,8 @@ CLAUDE_HANDOFF.md 13章を参照（Fanvueメディア処理遅延、公開URLテ
 | drop | Fanvueへの本編投稿＋X紹介投稿のジョブ |
 | x_teaser | Fanvueを通さないXのみのティーザー投稿 |
 | x_engagement | テキストのみのXエンゲージメント投稿 |
-| ready | ingest済み・投稿待ちの素材状態 |
+| ready | ingest済み・投稿待ちの素材状態（NSFW自動仕分け・画像内容説明の両方が成功したもの） |
+| analyzing | ingest済みだがNSFW自動仕分け・画像内容説明の少なくとも一方が未完了の素材状態。`reelmilly analyze`で再試行する |
 | content_rating | アセットのコンテンツ露出度区分（`sfw`/`suggestive`/`explicit`）の確定値。人間承認後に設定される |
 | nsfw_auto_rating | NSFW自動仕分けによる一次判定結果（参考値、確定値ではない） |
+| content_description | 画像内容説明。生成AIが取得した、写っているもの・服装・表情等の説明文（参考値） |

@@ -4,7 +4,7 @@
 
 ## ステータス
 
-本体（画像・動画管理アプリ、Phase 0〜1.5相当）、Fanvue投稿ジョブ（Phase 2・4のFanvue部分）、NSFW自動仕分け（実機動作確認済み）、自動実行スケジューラ（`run-due`/`watch`）を実装済み。FanvueのAPI実疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
+本体（画像・動画管理アプリ、Phase 0〜1.5相当）、Fanvue投稿ジョブ（Phase 2・4のFanvue部分）、NSFW自動仕分け（実機動作確認済み）、自動実行スケジューラ（`run-due`/`watch`）、AIによる画像内容説明・Fanvue投稿文の自動生成（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）を実装済み。FanvueのAPI実疎通・OpenAI APIプロバイダーの実疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## ドキュメント
 
@@ -68,14 +68,25 @@ pip install -e ".[nsfw]"
 
 （GPU版を使いたい場合、または既に`torch`をインストール済みの場合は`pip install -e ".[nsfw]"`のみで構いません）
 
-これを入れなくても本体（一覧・フォルダ・タグ・承認UI）は動作します。ingest時にNSFW自動仕分けがスキップされる旨のメッセージが出るだけです。初回`ingest`実行時、Marqoモデルの重み（`marqo/nsfw-image-detection-384`）がHugging Face Hubから自動ダウンロードされます。
+初回`ingest`実行時、Marqoモデルの重み（`marqo/nsfw-image-detection-384`）がHugging Face Hubから自動ダウンロードされます。
+
+画像内容説明・Fanvue投稿文の自動生成（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）を使う場合は、Claude APIのSDKを追加でインストールします。
+
+```bash
+pip install -e ".[ai]"
+```
+
+OpenAI APIを使いたい場合は別途 `pip install openai` してください（本体UIの設定画面でプロバイダーを切り替えます。実API疎通は未検証です）。
+
+> **重要**: 一覧・フォルダ・タグ・承認UIなど本体機能はNSFW自動仕分け・画像内容説明のどちらも未設定でも動作しますが、**両方が取得できたアセットのみ`status="ready"`（Fanvue投稿対象）になります**（ADR-0015）。片方でも未設定・失敗の場合は`status="analyzing"`のまま残り、Fanvueへは自動投稿されません。以前のバージョンでは「NSFW仕分けなしでもすぐready」でしたが、投稿文の自動生成を導入したことでこの挙動に変更しました。
 
 ### 3. 秘密情報の設定
 
 ```bash
 cp .env.example .env
 # 本体のみの動作にはFanvue/Telegramの値は不要。Fanvue疎通確認をしたい場合のみ
-# FANVUE_API_TOKEN 等を設定する（下記4.参照）
+# FANVUE_API_TOKEN 等を設定する（下記4.参照）。画像内容説明・投稿文生成を使う場合は
+# ANTHROPIC_API_KEY（またはOPENAI_API_KEY）を設定する
 ```
 
 ### 4. 初期化と疎通確認
@@ -103,6 +114,12 @@ channels: [fanvue, x]
 tags: [推し, 夏]
 ```
 
+NSFW自動仕分け・画像内容説明の両方が成功したアセットは`status="ready"`になります。どちらか一方でも未設定・失敗の場合は`status="analyzing"`のまま残ります（一覧・タグ・フォルダ操作は可能ですが、Fanvue投稿の対象にはなりません）。`analyzing`のまま残ったアセットは、設定を直してから以下のコマンドで再試行できます。
+
+```bash
+reelmilly analyze
+```
+
 ### 6. 本体UIを起動する
 
 ```bash
@@ -111,15 +128,21 @@ reelmilly web
 
 起動後、ブラウザで `http://127.0.0.1:8420/` を開くと、一覧・フォルダ・タグ管理・投稿承認（`content_rating`確定）操作ができます。既定では他の端末からはアクセスできません（`config.yaml`の`web.host`が`127.0.0.1`固定のため）。停止は `Ctrl+C` です。
 
+画面右上の「設定」から、画像内容説明・Fanvue投稿文生成に使うプロバイダー（Claude API/OpenAI API）・モデル名・システムプロンプト・投稿文の生成モード（`auto`/`draft`）を変更できます（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）。APIキー自体はこの画面では扱わず、`.env`で設定します。
+
 ### 7. Fanvueへ投稿する（Phase 2〜4）
 
 `.env`に`FANVUE_API_TOKEN`・`FANVUE_HANDLE`・`FANVUE_POST_URL_TEMPLATE`を設定した上で、承認済み（`content_rating_confirmed`）かつFanvueチャンネル指定のアセットがある状態で実行します。
 
 ```bash
 reelmilly run drop
+reelmilly run drop --count 3               # 1回の実行で最大3件まで投稿する
+reelmilly run drop --kind image --rating sfw  # 種別・content_ratingで絞り込む
 ```
 
-`status="ready"`で最も古い対象アセットを1件、Fanvueへ投稿します（`upload → ready待ち → post作成`）。成功すると`status="posted"`になり、失敗すると`status="failed_fanvue"`になります（自動リトライはしません）。同じ日に2回実行すると2回目はスキップされます。X（旧Twitter）への紹介投稿は未実装のため、このコマンドはFanvue投稿のみを行います。
+`status="ready"`の対象アセットを最も古いものから（既定1件）Fanvueへ投稿します（`upload → ready待ち → post作成`）。成功すると`status="posted"`になり、失敗すると`status="failed_fanvue"`になります（自動リトライはしません）。同じ日に2回実行すると2回目はスキップされます（`--count`で指定した件数は1回の実行内でまとめて投稿されます）。X（旧Twitter）への紹介投稿は未実装のため、このコマンドはFanvue投稿のみを行います。
+
+投稿文（`fanvue_text`）が未設定のアセットは、内容説明とシステムプロンプトから自動生成されます。設定画面で生成モードを`draft`にしている場合、生成結果は投稿には使わず下書き（本体UIの詳細画面から確認・採用可能）として保存するだけになります。
 
 Fanvue APIのレスポンス形式は一次情報を検証していない実装のため、実行して失敗する場合は[TODO.md](TODO.md)を参照してください。
 
@@ -131,6 +154,12 @@ Fanvue APIのレスポンス形式は一次情報を検証していない実装�
 # config.yaml
 cadence:
   drop: "21:00"   # 21:00以降・当日未実行ならdropジョブを実行対象にする
+  # オプション(枚数・種別・レーティング)を指定する場合は辞書形式にする
+  # drop:
+  #   time: "21:00"
+  #   count: 3
+  #   kind: image
+  #   rating: sfw
 ```
 
 時刻が来ているかだけを1回チェックして即終了するコマンド:
@@ -142,11 +171,11 @@ reelmilly run-due
 これをOSのタスクスケジューラ（Windowsなら「タスクスケジューラ」、Mac/Linuxなら`cron`）で例えば5〜10分おきに実行する運用と、以下の常駐コマンドで動かし続ける運用のどちらかを選べます。
 
 ```bash
-reelmilly watch              # 60秒間隔でrun-dueを繰り返す（既定）
+reelmilly watch              # 60秒間隔でanalyze/run-dueを繰り返す（既定）
 reelmilly watch --interval 300  # 間隔を変更する場合
 ```
 
-`watch`はターミナルを開いたままにする常駐プロセスです。停止は`Ctrl+C`。同日二重実行防止（`job_runs`テーブル）は`run-due`/`watch`経由でも`run drop`と同様に効きます。`cadence`未設定のジョブ名（`drop`以外）は現状未対応で、指定してもスキップされログに表示されます（X投稿ジョブは未実装のため）。
+`watch`はターミナルを開いたままにする常駐プロセスです。停止は`Ctrl+C`。`run-due`に加えて`analyze`（`analyzing`状態のアセットの再試行）も毎回実行します。同日二重実行防止（`job_runs`テーブル）は`run-due`/`watch`経由でも`run drop`と同様に効きます。`cadence`未設定のジョブ名（`drop`以外）は現状未対応で、指定してもスキップされログに表示されます（X投稿ジョブは未実装のため）。
 
 ### テストの実行
 

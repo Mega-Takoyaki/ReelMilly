@@ -149,3 +149,31 @@ def test_job_runs_last_run_date(conn):
 
     db.set_last_run_date(conn, "drop", "2026-09-27")
     assert db.get_last_run_date(conn, "drop") == "2026-09-27"
+
+
+def test_list_assets_filters_by_kind(conn):
+    db.insert_asset(conn, _make_asset("a1", kind="image"))
+    db.insert_asset(conn, _make_asset("a2", kind="video"))
+
+    result = db.list_assets(conn, kind="image")
+
+    assert [row["id"] for row in result] == ["a1"]
+
+
+def test_get_and_set_setting(conn):
+    assert db.get_setting(conn, "caption_mode") is None
+
+    db.set_setting(conn, "caption_mode", "draft")
+    assert db.get_setting(conn, "caption_mode") == "draft"
+
+    db.set_setting(conn, "caption_mode", "auto")
+    assert db.get_setting(conn, "caption_mode") == "auto"
+
+
+def test_list_settings_returns_all(conn):
+    db.set_setting(conn, "caption_mode", "draft")
+    db.set_setting(conn, "generation_provider", "openai")
+
+    result = db.list_settings(conn)
+
+    assert result == {"caption_mode": "draft", "generation_provider": "openai"}

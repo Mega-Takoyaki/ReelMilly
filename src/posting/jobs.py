@@ -37,12 +37,51 @@ class DropResult:
     error: str | None = None
 
 
+def _resolve_caption(config: Config, conn: sqlite3.Connection, asset: dict, generator) -> tuple[str, DropResult | None]:
+    """投稿文を決定する。手動指定があればそれを使い、無ければgeneratorで生成する(ADR-0015)。
+
+    draftモードで生成した場合は投稿せず保存のみ行うため、その旨のDropResultを
+    2要素目で返す(呼び出し元はNoneでなければ即returnすること)。
+    """
+    caption_text = asset.get("fanvue_text") or asset.get("caption") or ""
+    if caption_text or generator is None or not asset.get("content_description"):
+        return caption_text, None
+
+    from core import settings as settings_module
+
+    asset_id = asset["id"]
+    try:
+        generated = generator.generate_caption(
+            asset["content_description"], settings_module.get_caption_system_prompt(conn)
+        )
+    except Exception as exc:  # noqa: BLE001 - 生成失敗は投稿を止めず手動キャプション待ちにする
+        log_event(config.paths.events_path, "caption_generation_failed", asset_id=asset_id, error=str(exc))
+        return "", None
+
+    if not generated:
+        return "", None
+
+    if settings_module.get_caption_mode(conn) == "draft":
+        db.update_asset(conn, asset_id, fanvue_caption_draft=generated, updated_at=_now())
+        log_event(config.paths.events_path, "caption_draft_saved", asset_id=asset_id)
+        return "", DropResult(
+            executed=False,
+            asset_id=asset_id,
+            skipped_reason="投稿文を下書きとして保存しました(本体UIで確認・採用してください)",
+        )
+
+    return generated, None
+
+
 def run_fanvue_drop(
     config: Config,
     conn: sqlite3.Connection,
     fanvue_client: FanvueClient,
     fanvue_handle: str,
     post_url_template: str,
+    kind: str | None = None,
+    rating: str | None = None,
+    generator=None,
 ) -> DropResult:
     """readyかつfanvueチャンネル指定・承認済みの最古アセットを1件Fanvueへ投稿する。
 
@@ -51,12 +90,17 @@ def run_fanvue_drop(
     投稿を試みた場合、成功/失敗いずれもDBに反映しevents.jsonlに記録する。
     失敗時は`status="failed_fanvue"`とし、自動リトライは行わない
     （CLAUDE_HANDOFF.md 4章）。
+    `kind`/`rating`で対象アセットの種別・レーティングを絞り込める(ADR-0015)。
+    `generator`を渡すと、投稿文が未指定の場合に内容説明から自動生成する
+    （ADR-0015、`caption_mode`設定で自動投稿/下書き保存を切り替え）。
     """
     candidates = db.list_assets(
         conn,
         status="ready",
         channel=FANVUE_CHANNEL,
         confirmed_only=True,
+        kind=kind,
+        content_rating=rating,
         order="asc",
         limit=1,
     )
@@ -76,6 +120,10 @@ def run_fanvue_drop(
         log_event(config.paths.events_path, "drop_skipped", asset_id=asset_id, reason=decision.reason)
         return DropResult(executed=False, asset_id=asset_id, skipped_reason=decision.reason)
 
+    caption_text, draft_result = _resolve_caption(config, conn, asset, generator)
+    if draft_result is not None:
+        return draft_result
+
     try:
         file_path = Path(asset["file_path"])
         media_uuid = fanvue_client.upload_media(file_path, media_type=asset["kind"])
@@ -84,10 +132,9 @@ def run_fanvue_drop(
         if not ready:
             raise TimeoutError(f"media {media_uuid} did not become ready in time")
 
-        text = asset.get("fanvue_text") or asset.get("caption") or ""
         fanvue_client.create_post(
             audience=asset.get("audience") or "subscribers",
-            text=text,
+            text=caption_text,
             media_uuids=[media_uuid],
             price_cents=asset.get("price_cents"),
         )
@@ -99,6 +146,7 @@ def run_fanvue_drop(
             status="posted",
             fanvue_url=fanvue_url,
             fanvue_uuid=media_uuid,
+            fanvue_text=caption_text,
             updated_at=_now(),
         )
         db.add_tag_to_asset(conn, asset_id, FANVUE_POSTED_TAG)
@@ -115,3 +163,37 @@ def run_fanvue_drop(
         db.update_asset(conn, asset_id, status="failed_fanvue", updated_at=_now())
         log_event(config.paths.events_path, "fanvue_failed", asset_id=asset_id, error=str(exc))
         return DropResult(executed=False, asset_id=asset_id, error=str(exc))
+
+
+def run_fanvue_drop_batch(
+    config: Config,
+    conn: sqlite3.Connection,
+    fanvue_client: FanvueClient,
+    fanvue_handle: str,
+    post_url_template: str,
+    count: int = 1,
+    kind: str | None = None,
+    rating: str | None = None,
+    generator=None,
+) -> list[DropResult]:
+    """`run_fanvue_drop`を最大`count`回繰り返す(ADR-0015)。
+
+    候補が尽きた・ポリシーでスキップされた・投稿に失敗した場合はその時点で
+    打ち切る(次の候補へのスキップは行わない)。
+    """
+    results: list[DropResult] = []
+    for _ in range(max(count, 1)):
+        result = run_fanvue_drop(
+            config,
+            conn,
+            fanvue_client,
+            fanvue_handle,
+            post_url_template,
+            kind=kind,
+            rating=rating,
+            generator=generator,
+        )
+        results.append(result)
+        if not result.executed:
+            break
+    return results

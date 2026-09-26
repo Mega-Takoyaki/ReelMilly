@@ -6,7 +6,7 @@ import pytest
 from core import db
 from core.config import load_config
 from core.events import read_events
-from posting.jobs import run_fanvue_drop
+from posting.jobs import run_fanvue_drop, run_fanvue_drop_batch
 
 
 CONFIG_YAML = """
@@ -217,6 +217,107 @@ def test_run_fanvue_drop_failure_marks_failed_fanvue(setup):
 
     events = read_events(config.paths.events_path)
     assert any(e["event"] == "fanvue_failed" and e["asset_id"] == "a1" for e in events)
+
+
+def test_run_fanvue_drop_generates_caption_when_missing_in_auto_mode(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, caption=None, content_description="赤いドレスの女性が微笑んでいる")
+    client = _mock_fanvue_client()
+    generator = MagicMock()
+    generator.generate_caption.return_value = "今日の一枚です"
+
+    result = run_fanvue_drop(
+        config, conn, client, fanvue_handle="creator", post_url_template="https://f.com/{handle}",
+        generator=generator,
+    )
+
+    assert result.executed is True
+    assert generator.generate_caption.call_args[0][0] == "赤いドレスの女性が微笑んでいる"
+    client.create_post.assert_called_once()
+    assert client.create_post.call_args.kwargs["text"] == "今日の一枚です"
+
+    asset = db.get_asset(conn, "a1")
+    assert asset["fanvue_text"] == "今日の一枚です"
+
+
+def test_run_fanvue_drop_draft_mode_saves_draft_without_posting(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, caption=None, content_description="赤いドレスの女性が微笑んでいる")
+    db.set_setting(conn, "caption_mode", "draft")
+    client = _mock_fanvue_client()
+    generator = MagicMock()
+    generator.generate_caption.return_value = "今日の一枚です"
+
+    result = run_fanvue_drop(
+        config, conn, client, fanvue_handle="creator", post_url_template="https://f.com/{handle}",
+        generator=generator,
+    )
+
+    assert result.executed is False
+    assert "下書き" in result.skipped_reason
+    client.upload_media.assert_not_called()
+
+    asset = db.get_asset(conn, "a1")
+    assert asset["status"] == "ready"
+    assert asset["fanvue_text"] is None
+    assert asset["fanvue_caption_draft"] == "今日の一枚です"
+
+
+def test_run_fanvue_drop_does_not_generate_caption_without_content_description(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, caption=None)
+    client = _mock_fanvue_client()
+    generator = MagicMock()
+
+    result = run_fanvue_drop(
+        config, conn, client, fanvue_handle="creator", post_url_template="https://f.com/{handle}",
+        generator=generator,
+    )
+
+    assert result.executed is True
+    generator.generate_caption.assert_not_called()
+    assert client.create_post.call_args.kwargs["text"] == ""
+
+
+def test_run_fanvue_drop_batch_posts_up_to_count(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, "a1", created_at="2026-01-01T00:00:00+00:00")
+    _make_ready_asset(config, conn, "a2", created_at="2026-01-02T00:00:00+00:00")
+    client = _mock_fanvue_client()
+
+    results = run_fanvue_drop_batch(
+        config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}", count=2
+    )
+
+    assert [r.asset_id for r in results] == ["a1", "a2"]
+    assert all(r.executed for r in results)
+
+
+def test_run_fanvue_drop_batch_stops_when_no_more_candidates(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, "a1")
+    client = _mock_fanvue_client()
+
+    results = run_fanvue_drop_batch(
+        config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}", count=5
+    )
+
+    assert len(results) == 2  # 1件目は成功、2件目は「対象なし」で打ち切り
+    assert results[0].executed is True
+    assert results[1].executed is False
+
+
+def test_run_fanvue_drop_filters_by_kind(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, "a1", kind="video")
+    client = _mock_fanvue_client()
+
+    result = run_fanvue_drop(
+        config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}", kind="image"
+    )
+
+    assert result.executed is False
+    assert result.asset_id is None
 
 
 def test_run_fanvue_drop_timeout_marks_failed_fanvue(setup):

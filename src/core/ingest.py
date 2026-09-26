@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from core import db
+from core.analysis import analyze_asset
 from core.config import Config
 from core.events import log_event
 from core.nsfw import NsfwClassifier
@@ -63,17 +64,17 @@ def ingest_inbox(
     config: Config,
     conn: sqlite3.Connection,
     nsfw_classifier: NsfwClassifier | None = None,
+    generator=None,
 ) -> list[IngestResult]:
     """inbox配下のメディアファイルをreadyへ移動し、SQLiteへ登録する。
 
     同名のsidecar(.yaml/.yml/.json)があればメタデータとしてマージし、
     取り込み後は削除する。sidecarがない場合はデフォルト値を使う。
 
-    nsfw_classifierを渡した場合、取り込んだ各アセットに対してNSFW自動仕分け
-    を実行し、`nsfw_auto_rating`/`nsfw_auto_confidence`をあわせて記録する
-    （ADR-0008/0009。あくまで参考値で、確定にはcontent_rating_confirmedが必要）。
-    分類に失敗した場合（破損ファイル等）はingest自体は継続し、当該アセットの
-    `nsfw_auto_rating`はNoneのまま`events.jsonl`に`nsfw_classify_failed`を記録する。
+    NSFW自動仕分け(nsfw_classifier)と内容説明取得(generator)の両方が成功した
+    場合のみ`status="ready"`とする(ADR-0015)。いずれか一方でも未設定・失敗の
+    場合は`status="analyzing"`のまま残し、`reelmilly analyze`で再試行できる。
+    失敗の詳細は`events.jsonl`に`analysis_incomplete`として記録する。
     """
     results: list[IngestResult] = []
     inbox = config.paths.inbox
@@ -100,26 +101,12 @@ def ingest_inbox(
         if sidecar_path:
             sidecar_path.unlink()
 
-        nsfw_auto_rating = None
-        nsfw_auto_confidence = None
-        if nsfw_classifier is not None:
-            try:
-                nsfw_result = nsfw_classifier.classify(dest_path)
-                nsfw_auto_rating = nsfw_result.rating
-                nsfw_auto_confidence = nsfw_result.confidence
-            except Exception as exc:  # noqa: BLE001 - 破損ファイル等でingest全体を止めない
-                log_event(
-                    config.paths.events_path,
-                    "nsfw_classify_failed",
-                    asset_id=asset_id,
-                    filename=media_path.name,
-                    error=str(exc),
-                )
+        analysis = analyze_asset(conn, nsfw_classifier, generator, dest_path)
 
         now = datetime.now(timezone.utc).isoformat()
         asset = {
             "id": asset_id,
-            "status": "ready",
+            "status": "ready" if analysis.success else "analyzing",
             "kind": kind,
             "file_path": str(dest_path),
             "caption": sidecar_data.get("caption"),
@@ -127,8 +114,9 @@ def ingest_inbox(
             "fanvue_text": sidecar_data.get("fanvue_text"),
             "audience": sidecar_data.get("audience"),
             "price_cents": sidecar_data.get("price_cents"),
-            "nsfw_auto_rating": nsfw_auto_rating,
-            "nsfw_auto_confidence": nsfw_auto_confidence,
+            "nsfw_auto_rating": analysis.nsfw_auto_rating,
+            "nsfw_auto_confidence": analysis.nsfw_auto_confidence,
+            "content_description": analysis.content_description,
             "created_at": now,
             "updated_at": now,
         }
@@ -146,8 +134,17 @@ def ingest_inbox(
             asset_id=asset_id,
             kind=kind,
             filename=media_path.name,
-            nsfw_auto_rating=nsfw_auto_rating,
+            status=asset["status"],
+            nsfw_auto_rating=analysis.nsfw_auto_rating,
         )
+        if not analysis.success:
+            log_event(
+                config.paths.events_path,
+                "analysis_incomplete",
+                asset_id=asset_id,
+                filename=media_path.name,
+                error=analysis.error,
+            )
 
         results.append(IngestResult(asset_id=asset_id, kind=kind, dest_path=dest_path))
 

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Reelmilly - 設定{% endblock %}
+{% block content %}
+<a href="{{ url_for('index') }}">&laquo; 一覧に戻る</a>
+
+<section class="settings">
+  <h1>設定</h1>
+  <p class="hint">
+    画像内容説明・Fanvue投稿文の自動生成に関する設定です（ADR-0015参照）。
+    APIキーは<code>.env</code>で設定してください（このページでは扱いません）。
+  </p>
+
+  <form method="post" action="{{ url_for('settings_page') }}" class="settings-form">
+    <label>生成AIプロバイダー
+      <select name="generation_provider">
+        <option value="claude" {% if settings.generation_provider == 'claude' %}selected{% endif %}>Claude API</option>
+        <option value="openai" {% if settings.generation_provider == 'openai' %}selected{% endif %}>OpenAI API（実API疎通は未検証）</option>
+      </select>
+    </label>
+
+    <label>モデル名
+      <input type="text" name="generation_model" value="{{ settings.generation_model }}">
+    </label>
+
+    <label>Fanvue投稿文の生成モード
+      <select name="caption_mode">
+        <option value="auto" {% if settings.caption_mode == 'auto' %}selected{% endif %}>auto（生成後すぐ投稿に使う）</option>
+        <option value="draft" {% if settings.caption_mode == 'draft' %}selected{% endif %}>draft（下書き保存のみ、人が確認して採用）</option>
+      </select>
+    </label>
+
+    <label>画像内容説明のシステムプロンプト
+      <textarea name="description_system_prompt" rows="4">{{ settings.description_system_prompt }}</textarea>
+    </label>
+
+    <label>Fanvue投稿文生成のシステムプロンプト
+      <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
+    </label>
+
+    <button type="submit">保存する</button>
+  </form>
+</section>
+{% endblock %}

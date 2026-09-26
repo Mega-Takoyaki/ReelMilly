@@ -34,6 +34,20 @@
 - [x] ~~自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する~~ → `/assets/<id>/confirm`として実装済み。Telegram簡易版は未着手
 - [x] ~~drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加~~ → 判定ロジックは`src/core/policy.py`として実装済み。ジョブへの組み込みは`posting`モジュール実装時（Phase 4）
 
+## 画像内容説明・Fanvue投稿文の自動生成（ADR-0015）
+
+- [x] ~~生成AIプロバイダーの抽象化（Claude API既定、OpenAI API選択可）を実装~~ → `src/core/generation.py`(`ClaudeGenerator`/`OpenAiGenerator`/`try_create_generator`)として実装済み。ClaudeGeneratorはモックでテスト済み(6件)
+- [ ] OpenAiGeneratorは実API疎通を検証していない。Fanvueクライアントと同様、実行して失敗する場合は本項目を参照して調整すること
+- [ ] AWS Bedrock対応（ADR-0015で将来対応として保留）。AWSへのデプロイを行う場合に着手する
+- [x] ~~`assets`テーブルに`content_description`・`fanvue_caption_draft`を追加~~ → `src/core/schema.sql`に実装済み
+- [x] ~~システムプロンプト等を保存する`settings`テーブルと本体UIの設定画面を実装~~ → `src/core/settings.py`・`/settings`ルート・`settings.html`として実装済み
+- [x] ~~READY昇格条件をNSFW自動仕分け・内容説明の両方の成功に変更~~ → `src/core/analysis.py`(`analyze_asset`)・`src/core/ingest.py`として実装済み。**重要な方針転換**: 以前は本体機能単体（NSFW/生成AI未設定）でもreadyになったが、現在は両方成功しないとreadyにならない（README参照）
+- [x] ~~`reelmilly analyze`コマンドで`analyzing`状態のアセットを再試行~~ → 実装済み。`reelmilly watch`のループにも組み込み済み
+- [ ] 動画の内容説明は代表フレーム1枚のみを見る簡易実装（ADR-0015）。精度は実データでの検証が必要
+- [x] ~~投稿文の自動生成(`auto`/`draft`モード)を`run_fanvue_drop`に統合~~ → `posting/jobs.py`(`_resolve_caption`)として実装済み
+- [x] ~~投稿オプション（枚数・種別・レーティング）をCLI(`--count`/`--kind`/`--rating`)とconfig.yamlのcadence(辞書形式)の両方に対応~~ → 実装済み。`run_fanvue_drop_batch`は候補が尽きる・スキップ・失敗のいずれかの時点で打ち切る（次候補へのスキップは行わない、既知の制約）
+- [ ] 生成AIのAPI課金（Claude API/OpenAI APIとも従量課金）の実運用コストを、実際の投稿頻度で見積もる
+
 ## Fanvue投稿機能（Phase 2〜4、ADR-0003）
 
 - [x] ~~Fanvueクライアント実装（multipart upload、post作成）~~ → `src/posting/fanvue.py`(`FanvueClient`)として実装済み。外部HTTPはモックでテスト済み(10件)
@@ -67,6 +81,7 @@
 - [x] ~~一覧画面にドラッグ&ドロップでの複数画像・動画アップロード機能を追加する~~ → `POST /assets/upload`として実装済み（既存のingestロジックを再利用）
 - [x] ~~詳細画面でプロパティを表示しながら、タグ・フォルダ編集をよりシームレスに行えるレイアウトに改善する~~ → `src/core/media.py`でプロパティ取得、タグ/フォルダ編集はAjax化して実装済み
 - [x] ~~一覧画面に複数選択機能を追加し、一括タグ付与・一括承認等の操作を可能にする~~ → `POST /assets/bulk/{tag,folder,confirm}`として実装済み
+- [x] ~~設定画面（システムプロンプト・生成AIプロバイダー・キャプション生成モード）を追加~~ → `/settings`として実装済み（ADR-0015）
 - [ ] フロントエンド技術（現状: Flask + Jinja2 + 素のJS/CSS）を見直すか判断する。機能追加でJSがある程度の量になってきたため、htmx/Alpine.js等の軽量ライブラリ導入や、コンポーネント分割の要否を今後検討する
 
 ## 確定済みだが実装時に再確認するデフォルト値
@@ -92,3 +107,5 @@
 - [ ] 稼働予定のローカルPCで、README.mdのセットアップ手順どおりにセットアップできるか確認する（このセッションの開発環境とは別PCのため未検証）
 - [ ] 実際のGrok Imagine出力（画像・動画）でingest・NSFW自動仕分け・本体UIでの承認操作を一通り試す
 - [ ] NSFW自動仕分けを有効化する場合、`pip install -e ".[nsfw]"`でのtorch/timmインストールが実機で問題なく完了するか確認する
+- [ ] 実際のANTHROPIC_API_KEY（またはOPENAI_API_KEY）を設定し、`reelmilly ingest`経由で画像内容説明が実際に取得できるか確認する（このセッションではモックでのみ検証、実API呼び出しは未実施）
+- [ ] 実際のcontent_descriptionを使い、`run_fanvue_drop`での投稿文自動生成（auto/draft両モード）を実機で確認する

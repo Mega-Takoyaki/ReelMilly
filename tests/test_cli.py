@@ -1,9 +1,20 @@
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from core import db
-from core.cli import _is_job_due, _today_str, cmd_doctor, cmd_init, cmd_run_drop, cmd_run_due, cmd_watch
+from core.cli import (
+    _is_job_due,
+    _parse_cadence_entry,
+    _today_str,
+    cmd_analyze,
+    cmd_doctor,
+    cmd_init,
+    cmd_run_drop,
+    cmd_run_due,
+    cmd_watch,
+)
 from core.config import load_config
+from core.nsfw import NsfwResult
 
 
 CONFIG_YAML = """
@@ -210,7 +221,7 @@ def test_run_due_executes_job_when_due(tmp_path, capsys, monkeypatch):
         exit_code = cmd_run_due(config)
 
     assert exit_code == 0
-    mocked.assert_called_once_with(config)
+    mocked.assert_called_once_with(config, count=1, kind=None, rating=None)
 
 
 def test_run_due_skips_unsupported_job_name(tmp_path, capsys, monkeypatch):
@@ -252,3 +263,91 @@ def test_watch_loops_run_due_until_interrupted(tmp_path, monkeypatch):
     assert exit_code == 0
     assert call_count == 1
     mocked_sleep.assert_called_once_with(5)
+
+
+def test_watch_calls_analyze_each_tick(tmp_path):
+    config = _load(tmp_path)
+    cmd_init(config)
+
+    with patch("core.cli.cmd_analyze") as mocked_analyze, patch("core.cli.cmd_run_due"), patch(
+        "core.cli.time.sleep", side_effect=KeyboardInterrupt
+    ):
+        cmd_watch(config)
+
+    mocked_analyze.assert_called_once_with(config)
+
+
+def test_parse_cadence_entry_accepts_plain_string():
+    time_str, options = _parse_cadence_entry("21:00")
+    assert time_str == "21:00"
+    assert options == {}
+
+
+def test_parse_cadence_entry_accepts_dict_with_options():
+    time_str, options = _parse_cadence_entry({"time": "21:00", "count": 3, "kind": "image", "rating": "sfw"})
+    assert time_str == "21:00"
+    assert options == {"count": 3, "kind": "image", "rating": "sfw"}
+
+
+def test_run_due_passes_cadence_dict_options_to_run_drop(tmp_path, monkeypatch):
+    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
+    (tmp_path / "config.yaml").write_text(
+        CONFIG_YAML + '\ncadence:\n  drop:\n    time: "00:00"\n    count: 3\n    kind: image\n    rating: sfw\n',
+        encoding="utf-8",
+    )
+    config = load_config(base_dir=tmp_path)
+    cmd_init(config)
+
+    with patch("core.cli.cmd_run_drop") as mocked:
+        cmd_run_due(config)
+
+    mocked.assert_called_once_with(config, count=3, kind="image", rating="sfw")
+
+
+def test_analyze_promotes_asset_to_ready_on_success(tmp_path, capsys):
+    config = _load(tmp_path)
+    cmd_init(config)
+    conn = db.get_connection(config.paths.db_path)
+    media_path = config.paths.ready / "a1" / "look.jpg"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"fake-bytes")
+    db.insert_asset(
+        conn,
+        {
+            "id": "a1",
+            "status": "analyzing",
+            "kind": "image",
+            "file_path": str(media_path),
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
+    conn.close()
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.1)
+    fake_generator = MagicMock()
+    fake_generator.describe_image.return_value = "説明文"
+
+    with patch("core.cli.try_create_classifier", return_value=fake_classifier), patch(
+        "core.generation.try_create_generator", return_value=fake_generator
+    ):
+        exit_code = cmd_analyze(config)
+
+    assert exit_code == 0
+    conn = db.get_connection(config.paths.db_path)
+    asset = db.get_asset(conn, "a1")
+    conn.close()
+    assert asset["status"] == "ready"
+    assert asset["content_description"] == "説明文"
+    assert "readyに昇格" in capsys.readouterr().out
+
+
+def test_analyze_reports_no_pending_assets(tmp_path, capsys):
+    config = _load(tmp_path)
+    cmd_init(config)
+
+    exit_code = cmd_analyze(config)
+
+    assert exit_code == 0
+    assert "分析待ちのアセットはありません" in capsys.readouterr().out
