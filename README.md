@@ -1,6 +1,6 @@
 # Reelmilly
 
-画像・動画（Grok Imagine生成物）のアセット管理を中核に据え、その上にFanvueへの本編投稿とX（旧Twitter）への紹介投稿を半自動化する機能を付加する常駐ワーカー（[ADR-0007](docs/adr/0007-asset-management-as-core.md)）。ユーザー操作と通知はすべてTelegram Botで行う。
+画像・動画（Grok Imagine生成物）を管理する本体アプリケーションを優先実装し、その上にFanvueへの本編投稿とX（旧Twitter）への紹介投稿を半自動化する機能を論理プラグインとして付加する（[ADR-0007](docs/adr/0007-asset-management-as-core.md)、[ADR-0013](docs/adr/0013-sns-posting-as-logical-plugin.md)）。操作は本体UIを主とし、Telegram Botは通知と簡易操作（承認・スキップ）の補助チャネルとして使う（[ADR-0012](docs/adr/0012-primary-ui-with-telegram-as-secondary.md)）。
 
 ## ステータス
 
@@ -31,7 +31,7 @@
 
 ## デプロイ環境
 
-未確定。AWS（EC2等）とローカルPC（Windows）を比較検討中。判断軸は [docs/adr/0005-deployment-environment.md](docs/adr/0005-deployment-environment.md) を参照。X投稿がPlaywrightの永続ログインセッションに依存するため、Phase 3着手前に確定する。
+未確定。本体（画像管理アプリ）とSNS投稿モジュールは論理的に分離されており（[ADR-0013](docs/adr/0013-sns-posting-as-logical-plugin.md)）、デプロイ先も別々に検討できる。本体はローカルWebアプリが現時点の基本方針。SNS投稿モジュール（Playwright実行環境）は本体と同じ環境での常時起動か、AWS EC2等のオンデマンド起動かを検討中。判断軸は [docs/adr/0005-deployment-environment.md](docs/adr/0005-deployment-environment.md) を参照。X投稿がPlaywrightの永続ログインセッションに依存するため、Phase 3着手前に確定する。
 
 ## セットアップ
 

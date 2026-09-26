@@ -4,7 +4,8 @@
 
 ## 未確定事項（着手前に確定が必要）
 
-- [ ] デプロイ環境（AWS EC2 vs ローカルPC）の決定 → `docs/adr/0005-deployment-environment.md`
+- [ ] デプロイ環境の決定（本体: ローカルWebアプリ vs AWS常時稼働／SNS投稿モジュール: 常時稼働 vs AWSオンデマンド起動）→ `docs/adr/0005-deployment-environment.md`
+- [ ] AWSオンデマンドEC2起動案を採る場合、Playwright永続プロファイルの永続化方式（EBS/S3同期等）を検討する
 - [ ] Fanvue handle と実際の投稿URL例1本の取得（`FANVUE_POST_URL_TEMPLATE`確定用）
 - [ ] Telegram BotFatherでのBot作成（`ReelmillyBot`または空き名称）とtoken取得
 - [ ] Fanvue API疎通確認（`GET /users/me`を実トークンで1回叩く）
@@ -24,8 +25,14 @@
 - [ ] 動画のフレームサンプリング間隔（初期値2秒）・判定閾値（初期値0.5）をReelMilly実データで検証・調整
 - [ ] オフライン運用が必要な場合、Marqoモデルの事前キャッシュ手順を用意
 - [ ] `config.yaml`に`platform_auto_post_ratings`を追加（Fanvue=全区分自動／X=sfwのみ自動、[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）
-- [ ] Telegram承認フローに、自動仕分け結果の確認・補正コマンド（例: `/rate <id> explicit`）を追加（Phase 5着手時）
+- [ ] 自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する。Telegramには`/rate <id> explicit`等の簡易版のみ用意する（[ADR-0012](docs/adr/0012-primary-ui-with-telegram-as-secondary.md)）
 - [ ] drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加（Phase 4着手時）
+
+## 本体・SNS投稿モジュールの分離（ADR-0012/0013）
+
+- [ ] `src/core`（画像管理本体）・`src/posting`（SNS投稿）・`src/telegram`（Telegram連携）のパッケージ構成を確定する（Phase 0〜1着手時）
+- [ ] `core`が提供するデータアクセス層（SQLite経由のアセット取得・状態更新API）のインターフェースを設計する。`posting`/`telegram`はこれ以外の手段で`core`の内部実装に依存しない
+- [ ] 本体UIとTelegramの双方から同じアセットを操作した場合の競合・整合性の扱いを検討する
 
 ## 画像・動画管理の自作・SQLite移行（ADR-0010/0011）
 

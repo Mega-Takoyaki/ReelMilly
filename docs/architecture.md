@@ -4,7 +4,7 @@
 
 ## 1. 序論と目標
 
-画像・動画（Grok Imagine生成物）のアセット管理を中核ドメインとし、その上にFanvueへの投稿とXへの紹介投稿を半自動化する機能を付加する（[ADR-0007](adr/0007-asset-management-as-core.md)）。投稿ワークフローはアセットのライフサイクルにおける一操作として位置づける。詳細は [CLAUDE_HANDOFF.md](../CLAUDE_HANDOFF.md) 1章を参照（引き継ぎ文書は投稿ワークフローを主目的として書かれているが、位置づけの整理はADR-0007を正とする）。
+画像・動画（Grok Imagine生成物）を管理する本体アプリケーションを優先実装し、その上にFanvueへの投稿とXへの紹介投稿を半自動化する機能を論理プラグインとして付加する（[ADR-0007](adr/0007-asset-management-as-core.md)、[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)）。本体は単体（SNS投稿機能なし）でも画像管理アプリとして成立するように設計する。詳細は [CLAUDE_HANDOFF.md](../CLAUDE_HANDOFF.md) 1章を参照（引き継ぎ文書は投稿ワークフローを主目的として書かれているが、位置づけの整理はADR-0007/0013を正とする）。
 
 ## 2. 制約
 
@@ -24,7 +24,7 @@
 | 決定 | 採用内容 | 根拠 |
 |---|---|---|
 | 状態管理 | SQLite（メタデータ・タグ・フォルダの正）＋`events.jsonl`（監査ログ）。DBなし方針(ADR-0004)は非推奨化 | [ADR-0011](adr/0011-sqlite-state-store.md) |
-| 通知・操作 | Telegram Botに一本化 | [ADR-0001](adr/0001-notification-channel-telegram.md) |
+| 操作・通知インターフェース | 本体UIを主、Telegramは通知＋簡易操作の補助チャネル。Telegram一本化(ADR-0001)は非推奨化 | [ADR-0012](adr/0012-primary-ui-with-telegram-as-secondary.md) |
 | X投稿 | Playwright非公式操作 | [ADR-0002](adr/0002-x-posting-via-playwright.md) |
 | Fanvue投稿 | 公式REST API | [ADR-0003](adr/0003-fanvue-official-api.md) |
 | プラットフォーム別コンテンツルール強制 | `content_rating` + `platform_content_rules`（別プロジェクトCREAMからの部分移植、多プラットフォーム対応の布石） | [ADR-0006](adr/0006-platform-content-rules-from-cream.md) |
@@ -32,6 +32,7 @@
 | NSFW自動仕分け＋人間承認ゲート | `nsfw_auto_rating`（自動・参考値）と`content_rating_confirmed`（人間承認）を分離し、承認済みのみ自動投稿の対象にする | [ADR-0008](adr/0008-nsfw-auto-triage-with-human-approval.md) |
 | NSFW分類モデル | Marqo/nsfw-image-detection-384（timm）。動画は2秒間隔フレームサンプリング＋最大値採用。X向けは`sfw`のみ自動投稿対象 | [ADR-0009](adr/0009-nsfw-classifier-marqo.md) |
 | 画像・動画管理の自作（Eagle連携は不採用） | 数万件規模のアセットをフォルダ・タグ管理込みでReelMilly自身に実装する | [ADR-0010](adr/0010-custom-asset-management-over-eagle.md) |
+| SNS投稿機能のモジュール分離 | 本体（画像管理）とSNS投稿を論理的に分離したパッケージとして実装。動的プラグイン機構は導入しない | [ADR-0013](adr/0013-sns-posting-as-logical-plugin.md) |
 
 ## 5. 構成要素の視点
 
@@ -43,9 +44,12 @@ reelmilly/
   data/state/{reelmilly.db,events.jsonl}      # メタデータはSQLite、監査ログはJSONL
   templates/
   src/
+    core/        # 本体: 画像・動画管理(ingest, SQLiteアクセス, NSFW自動仕分け, UI)
+    posting/      # SNS投稿モジュール: Fanvue API, X Playwright, ジョブスケジューリング
+    telegram/     # Telegram連携: 通知 + 簡易操作(承認/スキップ)
 ```
 
-ファイル本体はディレクトリ契約（CLAUDE_HANDOFF.md 5章）のまま配置するが、メタデータ（`status`/`content_rating`/タグ/フォルダ等）は`meta.yaml`ではなくSQLite（`reelmilly.db`）で管理する（[ADR-0011](adr/0011-sqlite-state-store.md)）。
+ファイル本体はディレクトリ契約（CLAUDE_HANDOFF.md 5章）のまま配置するが、メタデータ（`status`/`content_rating`/タグ/フォルダ等）は`meta.yaml`ではなくSQLite（`reelmilly.db`）で管理する（[ADR-0011](adr/0011-sqlite-state-store.md)）。`core`/`posting`/`telegram`のモジュール分離は[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)に基づく。`posting`と`telegram`は`core`が提供するデータアクセス層を通じてのみ連携し、`core`は他モジュールへの依存を持たない。
 
 ## 6. ランタイムビュー
 
@@ -53,7 +57,12 @@ reelmilly/
 
 ## 7. 配置ビュー
 
-**未確定**。デプロイ先（AWS EC2 / ローカルPC）は [ADR-0005](adr/0005-deployment-environment.md) で判断中。Playwrightの永続ログインセッション維持という制約上、GUI常時起動環境が前提になる可能性が高い。
+**未確定**。[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)で本体とSNS投稿モジュールを論理分離したため、デプロイ先も別々に検討できる。
+
+- 本体（画像管理アプリ）: ローカルWebアプリが現時点の基本方針だが未確定
+- SNS投稿モジュール（Playwright実行環境）: 本体と同じ環境での常時起動か、AWS EC2等のオンデマンド起動かを検討中
+
+判断軸は [ADR-0005](adr/0005-deployment-environment.md) を参照。Playwrightの永続ログインセッション維持という制約上、常時起動する場合はGUI環境が前提になる可能性が高い。
 
 ## 8. 横断的関心事
 
