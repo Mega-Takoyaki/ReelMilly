@@ -41,6 +41,7 @@
 - [ ] レスポンス形式（`uploadId`/`mediaUuid`/`status`等のフィールド名）は一次情報を検証しておらず、CLAUDE_HANDOFF.md 7章からの推測実装。実際のFanvue APIで疎通確認する際に調整が必要になる可能性が高い
 - [x] ~~「1アセットをFanvueへ投稿する」一連の処理をまとめるジョブ関数を実装する~~ → `src/posting/jobs.py`(`run_fanvue_drop`)として実装済み。対象選定→ポリシー判定→upload→ready待ち→post作成→DB更新（成功時`status=posted`、失敗時`status=failed_fanvue`）を一通り実装、8件のテストで検証
 - [x] ~~`reelmilly run drop`コマンドと同日二重実行防止を実装~~ → `job_runs`テーブル（Asia/Tokyo基準の日付）で管理
+- [x] ~~ingest→承認→run drop→タグ付与→二重実行防止→run-due連携の一連の流れを通しで動作確認する~~ → このセッションの開発環境で、実際のingest（実NSFWモデル使用）・実SQLite・実CLIコマンドを使い通しで確認済み（Fanvue API呼び出し部分のみモック。トークン未取得のため実API疎通はまだ未確認、上記参照）。単体（Fanvue投稿のみ）の一連のワークフローとしては動作するレベルに到達
 - [ ] `build_post_url`の`FANVUE_POST_URL_TEMPLATE`は実際の投稿URL1本で検証する（上記の未確定事項参照）
 - [ ] `wait_for_media_ready`のタイムアウト（現状固定90秒）を`config.yaml`で設定可能にするか検討する
 - [ ] X投稿機能の実装後、`drop`ジョブにX紹介投稿のステップを追加する（現状はFanvue投稿のみで完結。`x_ok`フラグは既存スキーマにあるが未使用）
