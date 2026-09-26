@@ -48,6 +48,13 @@
 - [x] ~~投稿オプション（枚数・種別・レーティング）をCLI(`--count`/`--kind`/`--rating`)とconfig.yamlのcadence(辞書形式)の両方に対応~~ → 実装済み。`run_fanvue_drop_batch`は候補が尽きる・スキップ・失敗のいずれかの時点で打ち切る（次候補へのスキップは行わない、既知の制約）
 - [ ] 生成AIのAPI課金（Claude API/OpenAI APIとも従量課金）の実運用コストを、実際の投稿頻度で見積もる
 
+## 接続設定（Fanvue/Telegram/生成AI、ADR-0016）
+
+- [x] ~~Fanvue APIトークン・ハンドル等を本体UIの設定画面から編集できるようにする~~ → `src/core/env_settings.py`（`.env`の読み書き）と`/settings`ページの「接続設定」セクションとして実装済み。秘密情報は`.env`のみに保持する方針は維持（DBには保存しない）
+- [ ] 保存操作は`.env`への書き込みのみで、実際に接続できるかは検証しない。設定画面から`reelmilly doctor`相当の疎通確認を呼び出せるようにするか検討する
+- [ ] X（旧Twitter）の接続設定は未実装（X投稿機能自体が申請待ちのため）。実装時に本ページへ追加する
+- [ ] Telegram連携（Phase 5）は未実装のため、Botトークン等は保存のみ可能で実際には使われない
+
 ## Fanvue投稿機能（Phase 2〜4、ADR-0003）
 
 - [x] ~~Fanvueクライアント実装（multipart upload、post作成）~~ → `src/posting/fanvue.py`(`FanvueClient`)として実装済み。外部HTTPはモックでテスト済み(10件)

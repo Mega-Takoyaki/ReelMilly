@@ -64,6 +64,7 @@ class Config:
     platform_auto_post_ratings: dict[str, list[str]]
     web: WebConfig
     cadence: dict[str, str]
+    env_path: Path
 
 
 def load_config(base_dir: Path | None = None, config_filename: str = "config.yaml") -> Config:
@@ -73,7 +74,8 @@ def load_config(base_dir: Path | None = None, config_filename: str = "config.yam
     if not config_path.exists():
         raise FileNotFoundError(f"config file not found: {config_path}")
 
-    load_dotenv(base_dir / ".env")
+    env_path = base_dir / ".env"
+    load_dotenv(env_path)
 
     with config_path.open(encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
@@ -102,6 +104,7 @@ def load_config(base_dir: Path | None = None, config_filename: str = "config.yam
             port=int(web_raw.get("port", 8420)),
         ),
         cadence=raw.get("cadence", {}),
+        env_path=env_path,
     )
 
 

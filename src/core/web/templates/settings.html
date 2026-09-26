@@ -5,12 +5,28 @@
 
 <section class="settings">
   <h1>設定</h1>
-  <p class="hint">
-    画像内容説明・Fanvue投稿文の自動生成に関する設定です（ADR-0015参照）。
-    APIキーは<code>.env</code>で設定してください（このページでは扱いません）。
-  </p>
 
-  <form method="post" action="{{ url_for('settings_page') }}" class="settings-form">
+  <form method="post" action="{{ url_for('settings_page') }}">
+
+  <h2>接続設定（Fanvue・Telegram・生成AI）</h2>
+  <p class="hint">
+    APIキー等の秘密情報は<code>.env</code>に保存されます（リポジトリにはコミットされません）。
+    空欄のまま保存すると、既存の値は変更されません。実際に接続できるかは<code>reelmilly doctor</code>で確認してください。
+  </p>
+  <div class="settings-form">
+    {% for key, field in connections.items() %}
+    <label>{{ field.label }}
+      {% if field.secret %}
+      <input type="password" name="{{ key }}" placeholder="{{ '設定済み（変更する場合のみ入力）' if field.is_set else '未設定' }}" autocomplete="off">
+      {% else %}
+      <input type="text" name="{{ key }}" value="{{ field.value }}">
+      {% endif %}
+    </label>
+    {% endfor %}
+  </div>
+
+  <h2>画像内容説明・Fanvue投稿文の自動生成（ADR-0015）</h2>
+  <div class="settings-form">
     <label>生成AIプロバイダー
       <select name="generation_provider">
         <option value="claude" {% if settings.generation_provider == 'claude' %}selected{% endif %}>Claude API</option>
@@ -36,8 +52,9 @@
     <label>Fanvue投稿文生成のシステムプロンプト
       <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
     </label>
+  </div>
 
-    <button type="submit">保存する</button>
+  <button type="submit">保存する</button>
   </form>
 </section>
 {% endblock %}

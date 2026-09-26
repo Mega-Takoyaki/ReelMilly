@@ -12,7 +12,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
 
-from core import db, generation
+from core import db, env_settings, generation
 from core import settings as settings_module
 from core.config import Config
 from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
@@ -258,9 +258,12 @@ def create_app(config: Config) -> Flask:
                 generation_model=request.form.get("generation_model"),
                 caption_mode=request.form.get("caption_mode"),
             )
+            env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
+            env_settings.update_connection_values(config.env_path, env_updates)
         current_settings = settings_module.get_all_settings(conn)
+        connections = env_settings.read_connection_status(config.env_path)
         conn.close()
-        return render_template("settings.html", settings=current_settings)
+        return render_template("settings.html", settings=current_settings, connections=connections)
 
     @app.route("/assets/bulk/tag", methods=["POST"])
     def bulk_add_tag():

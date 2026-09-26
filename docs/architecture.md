@@ -34,6 +34,7 @@
 | 画像・動画管理の自作（Eagle連携は不採用） | 数万件規模のアセットをフォルダ・タグ管理込みでReelMilly自身に実装する | [ADR-0010](adr/0010-custom-asset-management-over-eagle.md) |
 | SNS投稿機能のモジュール分離 | 本体（画像管理）とSNS投稿を論理的に分離したパッケージとして実装。動的プラグイン機構は導入しない | [ADR-0013](adr/0013-sns-posting-as-logical-plugin.md) |
 | 画像内容説明・投稿文の自動生成 | Claude API（既定）/OpenAI API（選択可）で画像内容説明を取得し、Fanvue投稿文をシステムプロンプト経由で生成。NSFW自動仕分けと内容説明の両方が揃って初めて`ready`にする | [ADR-0015](adr/0015-ai-content-description-and-caption-generation.md) |
+| SNS/生成AIの接続設定 | 秘密情報は引き続き`.env`のみに保持しつつ、本体UIの設定画面から読み書きできるようにする（DBには保存しない） | [ADR-0016](adr/0016-connection-settings-editable-via-web-ui.md) |
 
 ## 5. 構成要素の視点
 

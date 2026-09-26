@@ -84,10 +84,9 @@ OpenAI APIを使いたい場合は別途 `pip install openai` してください
 
 ```bash
 cp .env.example .env
-# 本体のみの動作にはFanvue/Telegramの値は不要。Fanvue疎通確認をしたい場合のみ
-# FANVUE_API_TOKEN 等を設定する（下記4.参照）。画像内容説明・投稿文生成を使う場合は
-# ANTHROPIC_API_KEY（またはOPENAI_API_KEY）を設定する
 ```
+
+`FANVUE_API_TOKEN`・`ANTHROPIC_API_KEY`等の値は、直接`.env`を編集する代わりに本体UIの設定画面（`/settings`、後述6.）からも設定できます（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）。本体のみの動作にはFanvue/Telegram/生成AIの値は不要です。
 
 ### 4. 初期化と疎通確認
 
@@ -128,11 +127,16 @@ reelmilly web
 
 起動後、ブラウザで `http://127.0.0.1:8420/` を開くと、一覧・フォルダ・タグ管理・投稿承認（`content_rating`確定）操作ができます。既定では他の端末からはアクセスできません（`config.yaml`の`web.host`が`127.0.0.1`固定のため）。停止は `Ctrl+C` です。
 
-画面右上の「設定」から、画像内容説明・Fanvue投稿文生成に使うプロバイダー（Claude API/OpenAI API）・モデル名・システムプロンプト・投稿文の生成モード（`auto`/`draft`）を変更できます（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）。APIキー自体はこの画面では扱わず、`.env`で設定します。
+画面右上の「設定」（`/settings`）では以下を設定できます。
+
+- **接続設定**（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）: Fanvue APIトークン・ハンドル・投稿URLテンプレート、Telegram（連携自体は未実装）、Anthropic/OpenAIのAPIキー。実体は`.env`ファイルで、画面はその読み書きを行うだけです。APIトークン等の秘密項目は画面に値を表示せず「設定済み/未設定」のみ表示し、空欄のまま保存すれば既存の値は変更されません
+- **画像内容説明・Fanvue投稿文の自動生成**（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）: 生成AIプロバイダー（Claude API/OpenAI API）・モデル名・システムプロンプト・投稿文の生成モード（`auto`/`draft`）
+
+保存できても実際にAPIへ接続できるとは限りません。疎通確認は`reelmilly doctor`で行ってください。
 
 ### 7. Fanvueへ投稿する（Phase 2〜4）
 
-`.env`に`FANVUE_API_TOKEN`・`FANVUE_HANDLE`・`FANVUE_POST_URL_TEMPLATE`を設定した上で、承認済み（`content_rating_confirmed`）かつFanvueチャンネル指定のアセットがある状態で実行します。
+`FANVUE_API_TOKEN`・`FANVUE_HANDLE`・`FANVUE_POST_URL_TEMPLATE`を設定した上で（`.env`を直接編集するか、本体UIの設定画面から設定）、承認済み（`content_rating_confirmed`）かつFanvueチャンネル指定のアセットがある状態で実行します。
 
 ```bash
 reelmilly run drop

@@ -43,6 +43,7 @@ def test_load_config_parses_paths_and_sections(tmp_path):
     assert config.platform_auto_post_ratings["x"] == ["sfw"]
     assert config.web.port == 8420
     assert config.cadence == {}
+    assert config.env_path == base / ".env"
 
 
 def test_load_config_parses_cadence(tmp_path):

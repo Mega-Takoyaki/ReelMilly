@@ -437,3 +437,74 @@ def test_settings_page_post_updates_values(app_and_conn):
     assert settings_module.get_generation_provider(conn) == "openai"
     assert settings_module.get_generation_model(conn) == "gpt-4o-mini"
     assert settings_module.get_caption_mode(conn) == "draft"
+
+
+def test_settings_page_get_shows_connection_status(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert "未設定".encode() in response.data
+    assert "Fanvue".encode() in response.data
+
+
+def test_settings_page_post_saves_connection_values_to_env(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    env_path = app.config["REELMILLY_CONFIG"].env_path
+
+    response = client.post(
+        "/settings",
+        data={
+            "FANVUE_API_TOKEN": "fanvue-secret-token",
+            "FANVUE_HANDLE": "my-creator",
+            "generation_provider": "claude",
+            "generation_model": "claude-opus-5",
+            "caption_mode": "auto",
+            "description_system_prompt": "説明プロンプト",
+            "caption_system_prompt": "キャプションプロンプト",
+        },
+    )
+
+    assert response.status_code == 200
+    from core import env_settings
+
+    status = env_settings.read_connection_status(env_path)
+    assert status["FANVUE_API_TOKEN"]["is_set"] is True
+    assert status["FANVUE_HANDLE"]["value"] == "my-creator"
+
+
+def test_settings_page_post_blank_token_keeps_existing_value(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    env_path = app.config["REELMILLY_CONFIG"].env_path
+
+    client.post(
+        "/settings",
+        data={
+            "FANVUE_API_TOKEN": "first-token",
+            "generation_provider": "claude",
+            "generation_model": "claude-opus-5",
+            "caption_mode": "auto",
+            "description_system_prompt": "p",
+            "caption_system_prompt": "p",
+        },
+    )
+    client.post(
+        "/settings",
+        data={
+            "FANVUE_API_TOKEN": "",
+            "generation_provider": "claude",
+            "generation_model": "claude-opus-5",
+            "caption_mode": "auto",
+            "description_system_prompt": "p",
+            "caption_system_prompt": "p",
+        },
+    )
+
+    from core import env_settings
+
+    status = env_settings.read_connection_status(env_path)
+    assert status["FANVUE_API_TOKEN"]["is_set"] is True
