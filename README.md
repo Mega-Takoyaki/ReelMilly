@@ -4,7 +4,7 @@
 
 ## ステータス
 
-本体（画像・動画管理アプリ、Phase 0〜1.5相当）実装済み。SNS投稿モジュール（Phase 2〜）は未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
+本体（画像・動画管理アプリ、Phase 0〜1.5相当）実装済み。Fanvueクライアント（Phase 2）はコード実装済みだが実API疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## ドキュメント
 
@@ -71,15 +71,18 @@ pip install -e ".[nsfw]"
 
 ```bash
 cp .env.example .env
-# 現時点では本体のみの動作にはFanvue/Telegramの値は不要。今後SNS投稿モジュール実装時に使用する
+# 本体のみの動作にはFanvue/Telegramの値は不要。Fanvue疎通確認をしたい場合のみ
+# FANVUE_API_TOKEN 等を設定する（下記4.参照）
 ```
 
 ### 4. 初期化と疎通確認
 
 ```bash
 reelmilly init     # ディレクトリとSQLiteデータベースを作成
-reelmilly doctor   # ディレクトリ・DB疎通を確認（全項目 OK であればセットアップ完了）
+reelmilly doctor   # ディレクトリ・DB・(設定していれば)Fanvue APIの疎通を確認
 ```
+
+`.env`に`FANVUE_API_TOKEN`を設定していれば、`doctor`が`GET /users/me`でFanvue APIの疎通も確認します（未設定ならスキップされ、失敗にはなりません）。Fanvue APIレスポンスの形式は一次情報での検証を行っていない実装のため、実行して失敗する場合は[TODO.md](TODO.md)を参照してください。
 
 ### 5. 画像・動画を取り込む
 

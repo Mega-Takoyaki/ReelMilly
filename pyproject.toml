@@ -7,6 +7,7 @@ dependencies = [
     "Flask>=3.0",
     "PyYAML>=6.0",
     "python-dotenv>=1.0",
+    "requests>=2.31",
     # 画像・動画のプロパティ表示(解像度・長さ等)や将来のサムネイル生成で使う
     # コア機能のため、NSFW仕分け専用ではなくベース依存関係とする
     "pillow",

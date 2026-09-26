@@ -13,12 +13,12 @@
 - [ ] X開発者アプリが承認されない場合のフォールバック計画（Playwright実装、[ADR-0002](docs/adr/0002-x-posting-via-playwright.md)参照）を発動するかどうかの判断基準・タイムリミットを決める
 - [ ] Fanvue handle と実際の投稿URL例1本の取得（`FANVUE_POST_URL_TEMPLATE`確定用）
 - [ ] Telegram BotFatherでのBot作成（`ReelmillyBot`または空き名称）とtoken取得
-- [ ] Fanvue API疎通確認（`GET /users/me`を実トークンで1回叩く）
+- [ ] Fanvue API疎通確認（`reelmilly doctor`にFanvue疎通チェックを実装済み。`.env`に実トークンを設定して1回実行する）
 
 ## CREAM由来の検討事項
 
-- [ ] `assets`テーブル（SQLite）に`content_rating`、`config.yaml`に`platform_content_rules`を追加（[ADR-0006](docs/adr/0006-platform-content-rules-from-cream.md)、Phase 1着手時）
-- [ ] drop/x_teaser実行前にプラットフォーム別コンテンツルールを検証するロジックを追加（Phase 4着手時）
+- [x] ~~`assets`テーブル（SQLite）に`content_rating`、`config.yaml`に`platform_content_rules`を追加~~ → 実装済み
+- [x] ~~プラットフォーム別コンテンツルールを検証するロジックを追加~~ → `src/core/policy.py`(`can_auto_post`)として実装済み。実際のdrop/x_teaserジョブへの組み込みは`posting`モジュール実装時（Phase 4）
 - [ ] **運用ルール（要順守）**: 投稿前のコンプライアンス確認（AI生成であることの明示・ペルソナが18歳未満に見えないことの確認）は、システム実装を見送り運用者が毎回目視で確認する。この運用ルールは省略しないこと
 - [ ] 将来的にコンプライアンス確認の記録用ゲート（判定はしない、確認済みフラグの記録のみ）をシステム化するか、運用実績を見て再検討する
 
@@ -31,7 +31,15 @@
 - [ ] オフライン運用が必要な場合、Marqoモデルの事前キャッシュ手順を用意
 - [x] ~~`config.yaml`に`platform_auto_post_ratings`を追加~~ → 実装済み
 - [x] ~~自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する~~ → `/assets/<id>/confirm`として実装済み。Telegram簡易版は未着手
-- [ ] drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加（Phase 4着手時、`posting`モジュール未着手のため）
+- [x] ~~drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加~~ → 判定ロジックは`src/core/policy.py`として実装済み。ジョブへの組み込みは`posting`モジュール実装時（Phase 4）
+
+## Fanvue投稿機能（Phase 2、ADR-0003）
+
+- [x] ~~Fanvueクライアント実装（multipart upload、post作成）~~ → `src/posting/fanvue.py`(`FanvueClient`)として実装済み。外部HTTPはモックでテスト済み(10件)
+- [x] ~~`reelmilly doctor`にFanvue疎通確認を追加~~ → `.env`の`FANVUE_API_TOKEN`が設定されていれば`GET /users/me`を実行
+- [ ] レスポンス形式（`uploadId`/`mediaUuid`/`status`等のフィールド名）は一次情報を検証しておらず、CLAUDE_HANDOFF.md 7章からの推測実装。実際のFanvue APIで疎通確認する際に調整が必要になる可能性が高い
+- [ ] 「1アセットをFanvueへ投稿する」一連の処理（upload→ready待ち→create_post→`asset.status`/`fanvue_url`/`fanvue_uuid`更新）をまとめるジョブ関数を実装する（drop相当、Phase 4のジョブ結合と合わせて設計）
+- [ ] `build_post_url`の`FANVUE_POST_URL_TEMPLATE`は実際の投稿URL1本で検証する（上記の未確定事項参照）
 
 ## 本体・SNS投稿モジュールの分離（ADR-0012/0013）
 
@@ -47,14 +55,12 @@
 - [x] ~~Phase 1.5: アセット管理UIの技術スタックを選定する~~ → Flask + Jinja2で実装済み（`src/core/web/`）
 - [ ] SQLiteのインデックス設計（`status`/`content_rating`/`created_at`）をPhase 4のジョブ選定ロジックとあわせて検証する
 
-## 本体UIの高度化（将来対応、着手はユーザー指示待ち）
+## 本体UIの高度化
 
-現行UI（一覧・詳細・タグ/フォルダ編集・承認操作）は最小構成の実装。以下は使い勝手向上のための拡張要望として記録し、着手タイミングはユーザーの声掛けを待つ。
-
-- [ ] 一覧画面にドラッグ&ドロップでの複数画像・動画アップロード機能を追加する。既存の「inboxへの手動配置＋CLI ingest」フローとは併存させ、アップロード後はバックエンドで同じingestロジック（`src/core/ingest.py`）を通す設計にする（二重実装を避ける）
-- [ ] 詳細画面でプロパティ（解像度、ファイルサイズ、作成日時、動画の長さ等）を表示しながら、タグ・フォルダ編集をよりシームレスに行えるレイアウトに改善する
-- [ ] 一覧画面に複数選択（チェックボックス）機能を追加し、一括タグ付与・一括承認等の操作を可能にする（バックエンドに`POST /assets/bulk-tag`等のバルク操作エンドポイントが必要）
-- [ ] 上記を機に、フロントエンド技術（現状: Flask + Jinja2 + 素のHTML/CSS）を見直すか判断する。ドラッグ&ドロップ・複数選択・プロパティ表示にはある程度のJS実装が必要になるため、素のJSで足りるか、htmx/Alpine.js等の軽量ライブラリを導入するかを検討する
+- [x] ~~一覧画面にドラッグ&ドロップでの複数画像・動画アップロード機能を追加する~~ → `POST /assets/upload`として実装済み（既存のingestロジックを再利用）
+- [x] ~~詳細画面でプロパティを表示しながら、タグ・フォルダ編集をよりシームレスに行えるレイアウトに改善する~~ → `src/core/media.py`でプロパティ取得、タグ/フォルダ編集はAjax化して実装済み
+- [x] ~~一覧画面に複数選択機能を追加し、一括タグ付与・一括承認等の操作を可能にする~~ → `POST /assets/bulk/{tag,folder,confirm}`として実装済み
+- [ ] フロントエンド技術（現状: Flask + Jinja2 + 素のJS/CSS）を見直すか判断する。機能追加でJSがある程度の量になってきたため、htmx/Alpine.js等の軽量ライブラリ導入や、コンポーネント分割の要否を今後検討する
 
 ## 確定済みだが実装時に再確認するデフォルト値
 

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from core.cli import cmd_doctor, cmd_init
 from core.config import load_config
 
@@ -27,7 +29,8 @@ def _load(tmp_path):
     return load_config(base_dir=tmp_path)
 
 
-def test_doctor_reports_missing_before_init(tmp_path, capsys):
+def test_doctor_reports_missing_before_init(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
     config = _load(tmp_path)
 
     exit_code = cmd_doctor(config)
@@ -37,7 +40,8 @@ def test_doctor_reports_missing_before_init(tmp_path, capsys):
     assert "MISSING" in out
 
 
-def test_init_then_doctor_is_ok(tmp_path, capsys):
+def test_init_then_doctor_is_ok(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
     config = _load(tmp_path)
 
     init_exit_code = cmd_init(config)
@@ -48,5 +52,32 @@ def test_init_then_doctor_is_ok(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "MISSING" not in out
     assert "database" in out
+    assert "トークン未設定のためスキップ" in out
 
     assert config.paths.events_path.exists()
+
+
+def test_doctor_checks_fanvue_when_token_present(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("FANVUE_API_TOKEN", "test-token")
+    config = _load(tmp_path)
+    cmd_init(config)
+    capsys.readouterr()
+
+    with patch("posting.fanvue.FanvueClient.get_me", return_value={"id": "u1"}):
+        exit_code = cmd_doctor(config)
+
+    assert exit_code == 0
+    assert "Fanvue API: OK" in capsys.readouterr().out
+
+
+def test_doctor_reports_fanvue_failure(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("FANVUE_API_TOKEN", "bad-token")
+    config = _load(tmp_path)
+    cmd_init(config)
+    capsys.readouterr()
+
+    with patch("posting.fanvue.FanvueClient.get_me", side_effect=RuntimeError("401 unauthorized")):
+        exit_code = cmd_doctor(config)
+
+    assert exit_code == 1
+    assert "Fanvue API: NG" in capsys.readouterr().out

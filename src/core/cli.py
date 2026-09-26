@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -34,6 +35,23 @@ def cmd_doctor(config: Config) -> int:
 
     events_status = "exists" if config.paths.events_path.exists() else "not yet created"
     print(f"[doctor] events log {config.paths.events_path}: {events_status}")
+
+    fanvue_token = os.environ.get("FANVUE_API_TOKEN")
+    if not fanvue_token:
+        print("[doctor] Fanvue API: トークン未設定のためスキップ（.envのFANVUE_API_TOKENを設定してください）")
+    else:
+        # coreはposting/telegramに依存しない方針(ADR-0013)だが、doctorは
+        # 本体+連携先の統合疎通確認という役割のため、ここでのみ遅延importする
+        from posting.fanvue import DEFAULT_API_BASE_URL, DEFAULT_API_VERSION, FanvueClient
+
+        base_url = os.environ.get("FANVUE_API_BASE_URL", DEFAULT_API_BASE_URL)
+        api_version = os.environ.get("FANVUE_API_VERSION", DEFAULT_API_VERSION)
+        try:
+            FanvueClient(fanvue_token, base_url=base_url, api_version=api_version).get_me()
+            print("[doctor] Fanvue API: OK")
+        except Exception as exc:  # noqa: BLE001 - doctorは診断結果を表示するのが目的
+            ok = False
+            print(f"[doctor] Fanvue API: NG ({exc})")
 
     return 0 if ok else 1
 
