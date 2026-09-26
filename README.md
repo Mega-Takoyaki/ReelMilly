@@ -4,7 +4,7 @@
 
 ## ステータス
 
-本体（画像・動画管理アプリ、Phase 0〜1.5相当）実装済み。Fanvueクライアント（Phase 2）はコード実装済みだが実API疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
+本体（画像・動画管理アプリ、Phase 0〜1.5相当）とFanvue投稿ジョブ（Phase 2・4のFanvue部分）を実装済み。実API疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## ドキュメント
 
@@ -107,6 +107,18 @@ reelmilly web
 ```
 
 起動後、ブラウザで `http://127.0.0.1:8420/` を開くと、一覧・フォルダ・タグ管理・投稿承認（`content_rating`確定）操作ができます。既定では他の端末からはアクセスできません（`config.yaml`の`web.host`が`127.0.0.1`固定のため）。停止は `Ctrl+C` です。
+
+### 7. Fanvueへ投稿する（Phase 2〜4）
+
+`.env`に`FANVUE_API_TOKEN`・`FANVUE_HANDLE`・`FANVUE_POST_URL_TEMPLATE`を設定した上で、承認済み（`content_rating_confirmed`）かつFanvueチャンネル指定のアセットがある状態で実行します。
+
+```bash
+reelmilly run drop
+```
+
+`status="ready"`で最も古い対象アセットを1件、Fanvueへ投稿します（`upload → ready待ち → post作成`）。成功すると`status="posted"`になり、失敗すると`status="failed_fanvue"`になります（自動リトライはしません）。同じ日に2回実行すると2回目はスキップされます。X（旧Twitter）への紹介投稿は未実装のため、このコマンドはFanvue投稿のみを行います。
+
+Fanvue APIのレスポンス形式は一次情報を検証していない実装のため、実行して失敗する場合は[TODO.md](TODO.md)を参照してください。
 
 ### テストの実行
 

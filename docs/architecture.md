@@ -49,7 +49,7 @@ reelmilly/
     telegram/     # Telegram連携: 通知 + 簡易操作(承認/スキップ)
 ```
 
-ファイル本体はディレクトリ契約（CLAUDE_HANDOFF.md 5章）のまま配置するが、メタデータ（`status`/`content_rating`/タグ/フォルダ等）は`meta.yaml`ではなくSQLite（`reelmilly.db`）で管理する（[ADR-0011](adr/0011-sqlite-state-store.md)）。`core`/`posting`/`telegram`のモジュール分離は[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)に基づく。`posting`と`telegram`は`core`が提供するデータアクセス層を通じてのみ連携し、`core`は他モジュールへの依存を持たない。
+ファイル本体はディレクトリ契約（CLAUDE_HANDOFF.md 5章）のまま配置するが、メタデータ（`status`/`content_rating`/タグ/フォルダ等）は`meta.yaml`ではなくSQLite（`reelmilly.db`）で管理する（[ADR-0011](adr/0011-sqlite-state-store.md)）。`core`/`posting`/`telegram`のモジュール分離は[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)に基づく。`posting`と`telegram`は`core`が提供するデータアクセス層（`core.db`）を通じてのみ連携し、`core`のドメインロジック（ingest/NSFW仕分け/Web UI等）は他モジュールへ依存しない。ただしCLIエントリポイント（`src/core/cli.py`）は例外で、`doctor`（Fanvue疎通確認）・`run drop`コマンドの実装上`posting`を遅延importする（本体と連携先を横断する統合エントリポイントという役割のため）。
 
 ## 6. ランタイムビュー
 

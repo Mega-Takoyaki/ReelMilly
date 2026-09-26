@@ -73,6 +73,9 @@ def list_assets(
     content_rating: str | None = None,
     folder_id: int | None = None,
     tag: str | None = None,
+    channel: str | None = None,
+    confirmed_only: bool = False,
+    order: str = "desc",
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict]:
@@ -92,6 +95,11 @@ def list_assets(
         conditions.append("tags.name = :tag")
         params["tag"] = tag
 
+    if channel is not None:
+        joins.append("JOIN channels ON channels.asset_id = assets.id")
+        conditions.append("channels.channel = :channel")
+        params["channel"] = channel
+
     if status is not None:
         conditions.append("assets.status = :status")
         params["status"] = status
@@ -100,11 +108,15 @@ def list_assets(
         conditions.append("assets.content_rating = :content_rating")
         params["content_rating"] = content_rating
 
+    if confirmed_only:
+        conditions.append("assets.content_rating_confirmed = 1")
+
     if joins:
         query += " " + " ".join(joins)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY assets.created_at DESC LIMIT :limit OFFSET :offset"
+    order_sql = "ASC" if order.lower() == "asc" else "DESC"
+    query += f" ORDER BY assets.created_at {order_sql} LIMIT :limit OFFSET :offset"
     params["limit"] = limit
     params["offset"] = offset
 
@@ -228,3 +240,23 @@ def list_folders_for_asset(conn: sqlite3.Connection, asset_id: str) -> list[dict
         (asset_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+# --- job_runs（同一カレンダー日の二重実行防止、CLAUDE_HANDOFF.md 6章） ------------
+
+def get_last_run_date(conn: sqlite3.Connection, job_name: str) -> str | None:
+    row = conn.execute(
+        "SELECT last_run_date FROM job_runs WHERE job_name = ?", (job_name,)
+    ).fetchone()
+    return row["last_run_date"] if row else None
+
+
+def set_last_run_date(conn: sqlite3.Connection, job_name: str, date_str: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO job_runs (job_name, last_run_date) VALUES (?, ?)
+        ON CONFLICT(job_name) DO UPDATE SET last_run_date = excluded.last_run_date
+        """,
+        (job_name, date_str),
+    )
+    conn.commit()

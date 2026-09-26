@@ -33,13 +33,17 @@
 - [x] ~~自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する~~ → `/assets/<id>/confirm`として実装済み。Telegram簡易版は未着手
 - [x] ~~drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加~~ → 判定ロジックは`src/core/policy.py`として実装済み。ジョブへの組み込みは`posting`モジュール実装時（Phase 4）
 
-## Fanvue投稿機能（Phase 2、ADR-0003）
+## Fanvue投稿機能（Phase 2〜4、ADR-0003）
 
 - [x] ~~Fanvueクライアント実装（multipart upload、post作成）~~ → `src/posting/fanvue.py`(`FanvueClient`)として実装済み。外部HTTPはモックでテスト済み(10件)
 - [x] ~~`reelmilly doctor`にFanvue疎通確認を追加~~ → `.env`の`FANVUE_API_TOKEN`が設定されていれば`GET /users/me`を実行
 - [ ] レスポンス形式（`uploadId`/`mediaUuid`/`status`等のフィールド名）は一次情報を検証しておらず、CLAUDE_HANDOFF.md 7章からの推測実装。実際のFanvue APIで疎通確認する際に調整が必要になる可能性が高い
-- [ ] 「1アセットをFanvueへ投稿する」一連の処理（upload→ready待ち→create_post→`asset.status`/`fanvue_url`/`fanvue_uuid`更新）をまとめるジョブ関数を実装する（drop相当、Phase 4のジョブ結合と合わせて設計）
+- [x] ~~「1アセットをFanvueへ投稿する」一連の処理をまとめるジョブ関数を実装する~~ → `src/posting/jobs.py`(`run_fanvue_drop`)として実装済み。対象選定→ポリシー判定→upload→ready待ち→post作成→DB更新（成功時`status=posted`、失敗時`status=failed_fanvue`）を一通り実装、8件のテストで検証
+- [x] ~~`reelmilly run drop`コマンドと同日二重実行防止を実装~~ → `job_runs`テーブル（Asia/Tokyo基準の日付）で管理
 - [ ] `build_post_url`の`FANVUE_POST_URL_TEMPLATE`は実際の投稿URL1本で検証する（上記の未確定事項参照）
+- [ ] `wait_for_media_ready`のタイムアウト（現状固定90秒）を`config.yaml`で設定可能にするか検討する
+- [ ] X投稿機能の実装後、`drop`ジョブにX紹介投稿のステップを追加する（現状はFanvue投稿のみで完結。`x_ok`フラグは既存スキーマにあるが未使用）
+- [ ] `x_teaser`・`x_engagement`ジョブは`posting`モジュールにX投稿機能を追加してから実装する
 
 ## 本体・SNS投稿モジュールの分離（ADR-0012/0013）
 

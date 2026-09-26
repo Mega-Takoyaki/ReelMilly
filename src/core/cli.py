@@ -4,8 +4,11 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+from core import db as db_module
 from core.config import Config, ensure_directories, load_config
 from core.db import get_connection, init_db
 from core.events import log_event
@@ -85,6 +88,53 @@ def cmd_ingest(config: Config) -> int:
     return 0
 
 
+def _today_str(timezone_name: str) -> str:
+    return datetime.now(ZoneInfo(timezone_name)).strftime("%Y-%m-%d")
+
+
+def cmd_run_drop(config: Config) -> int:
+    """Fanvueへの本編投稿を1件実行する(CLAUDE_HANDOFF.md 6章のdropジョブ、X投稿部分は未実装)。"""
+    conn = get_connection(config.paths.db_path)
+    init_db(conn)
+
+    today = _today_str(config.timezone)
+    if db_module.get_last_run_date(conn, "drop") == today:
+        print(f"[run drop] 本日（{today}）は既に実行済みのためスキップします")
+        conn.close()
+        return 0
+
+    fanvue_token = os.environ.get("FANVUE_API_TOKEN")
+    if not fanvue_token:
+        print("[run drop] FANVUE_API_TOKEN が未設定のため実行できません（.envを確認してください）")
+        conn.close()
+        return 1
+
+    # coreはposting/telegramに依存しない方針(ADR-0013)だが、CLIエントリポイント
+    # としてここでのみ遅延importする(doctorと同様の扱い)
+    from posting.fanvue import DEFAULT_API_BASE_URL, DEFAULT_API_VERSION, FanvueClient
+    from posting.jobs import run_fanvue_drop
+
+    base_url = os.environ.get("FANVUE_API_BASE_URL", DEFAULT_API_BASE_URL)
+    api_version = os.environ.get("FANVUE_API_VERSION", DEFAULT_API_VERSION)
+    handle = os.environ.get("FANVUE_HANDLE", "")
+    url_template = os.environ.get("FANVUE_POST_URL_TEMPLATE", "https://www.fanvue.com/{handle}")
+
+    client = FanvueClient(fanvue_token, base_url=base_url, api_version=api_version)
+    result = run_fanvue_drop(config, conn, client, fanvue_handle=handle, post_url_template=url_template)
+
+    db_module.set_last_run_date(conn, "drop", today)
+    conn.close()
+
+    if result.executed:
+        print(f"[run drop] 投稿成功: {result.asset_id} -> {result.fanvue_url}")
+        return 0
+    if result.error:
+        print(f"[run drop] 投稿失敗: {result.asset_id} ({result.error})")
+        return 1
+    print(f"[run drop] スキップ: {result.skipped_reason}")
+    return 0
+
+
 def cmd_web(config: Config) -> int:
     from core.web.app import create_app
 
@@ -101,6 +151,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init", help="ディレクトリとDBを初期化する")
     subparsers.add_parser("ingest", help="inboxのメディアを取り込む")
     subparsers.add_parser("web", help="本体UI(ローカルWebアプリ)を起動する")
+    run_parser = subparsers.add_parser("run", help="投稿ジョブを実行する")
+    run_parser.add_argument("job", choices=["drop"], help="実行するジョブ名")
     return parser
 
 
@@ -118,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ingest(config)
     if args.command == "web":
         return cmd_web(config)
+    if args.command == "run" and args.job == "drop":
+        return cmd_run_drop(config)
 
     parser.print_help()
     return 1

@@ -110,3 +110,42 @@ def test_list_assets_by_tag(conn):
 
     result = db.list_assets(conn, tag="推し")
     assert {row["id"] for row in result} == {"a1"}
+
+
+def test_list_assets_by_channel(conn):
+    db.insert_asset(conn, _make_asset("a1"))
+    db.insert_asset(conn, _make_asset("a2"))
+    db.add_channel(conn, "a1", "fanvue")
+    db.add_channel(conn, "a2", "x")
+
+    result = db.list_assets(conn, channel="fanvue")
+    assert {row["id"] for row in result} == {"a1"}
+
+
+def test_list_assets_confirmed_only(conn):
+    db.insert_asset(conn, _make_asset("a1", content_rating_confirmed=1))
+    db.insert_asset(conn, _make_asset("a2", content_rating_confirmed=0))
+
+    result = db.list_assets(conn, confirmed_only=True)
+    assert {row["id"] for row in result} == {"a1"}
+
+
+def test_list_assets_order_asc_returns_oldest_first(conn):
+    db.insert_asset(conn, _make_asset("a1", created_at="2026-01-01T00:00:00+00:00"))
+    db.insert_asset(conn, _make_asset("a2", created_at="2026-01-02T00:00:00+00:00"))
+
+    result = db.list_assets(conn, order="asc")
+    assert [row["id"] for row in result] == ["a1", "a2"]
+
+    result_desc = db.list_assets(conn, order="desc")
+    assert [row["id"] for row in result_desc] == ["a2", "a1"]
+
+
+def test_job_runs_last_run_date(conn):
+    assert db.get_last_run_date(conn, "drop") is None
+
+    db.set_last_run_date(conn, "drop", "2026-09-26")
+    assert db.get_last_run_date(conn, "drop") == "2026-09-26"
+
+    db.set_last_run_date(conn, "drop", "2026-09-27")
+    assert db.get_last_run_date(conn, "drop") == "2026-09-27"

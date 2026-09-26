@@ -53,3 +53,9 @@ CREATE TABLE IF NOT EXISTS asset_folders (
     folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     PRIMARY KEY (asset_id, folder_id)
 );
+
+-- CLAUDE_HANDOFF.md 6章: 同じカレンダー日に同じjobを二度走らせないためのlast_run記録
+CREATE TABLE IF NOT EXISTS job_runs (
+    job_name TEXT PRIMARY KEY,
+    last_run_date TEXT NOT NULL  -- YYYY-MM-DD (Asia/Tokyo基準)
+);

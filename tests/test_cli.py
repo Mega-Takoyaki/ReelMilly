@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
-from core.cli import cmd_doctor, cmd_init
+from core import db
+from core.cli import _today_str, cmd_doctor, cmd_init, cmd_run_drop
 from core.config import load_config
 
 
@@ -81,3 +82,69 @@ def test_doctor_reports_fanvue_failure(tmp_path, capsys, monkeypatch):
 
     assert exit_code == 1
     assert "Fanvue API: NG" in capsys.readouterr().out
+
+
+def test_run_drop_requires_token(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
+    config = _load(tmp_path)
+    cmd_init(config)
+    capsys.readouterr()
+
+    exit_code = cmd_run_drop(config)
+
+    assert exit_code == 1
+    assert "FANVUE_API_TOKEN" in capsys.readouterr().out
+
+
+def test_run_drop_skips_if_already_run_today(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
+    config = _load(tmp_path)
+    cmd_init(config)
+    capsys.readouterr()
+
+    conn = db.get_connection(config.paths.db_path)
+    db.set_last_run_date(conn, "drop", _today_str(config.timezone))
+    conn.close()
+
+    exit_code = cmd_run_drop(config)
+
+    assert exit_code == 0
+    assert "既に実行済み" in capsys.readouterr().out
+
+
+def test_run_drop_executes_job_and_records_last_run(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
+    monkeypatch.setenv("FANVUE_HANDLE", "creator")
+    config = _load(tmp_path)
+    cmd_init(config)
+    capsys.readouterr()
+
+    from posting.jobs import DropResult
+
+    fake_result = DropResult(executed=True, asset_id="a1", fanvue_url="https://f.com/creator")
+    with patch("posting.jobs.run_fanvue_drop", return_value=fake_result) as mocked:
+        exit_code = cmd_run_drop(config)
+
+    assert exit_code == 0
+    assert "投稿成功" in capsys.readouterr().out
+    mocked.assert_called_once()
+
+    conn = db.get_connection(config.paths.db_path)
+    assert db.get_last_run_date(conn, "drop") == _today_str(config.timezone)
+    conn.close()
+
+
+def test_run_drop_failure_returns_nonzero(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
+    config = _load(tmp_path)
+    cmd_init(config)
+    capsys.readouterr()
+
+    from posting.jobs import DropResult
+
+    fake_result = DropResult(executed=False, asset_id="a1", error="upload failed")
+    with patch("posting.jobs.run_fanvue_drop", return_value=fake_result):
+        exit_code = cmd_run_drop(config)
+
+    assert exit_code == 1
+    assert "投稿失敗" in capsys.readouterr().out
