@@ -51,13 +51,14 @@
     const tagName = document.getElementById("bulk-tag-input").value.trim();
     if (!tagName || selected.size === 0) return;
     try {
-      await postJson("/assets/bulk/tag", {
+      const data = await postJson("/assets/bulk/tag", {
         asset_ids: Array.from(selected),
         tag_name: tagName,
       });
-      window.location.reload();
+      window.showToast(`${data.updated}件にタグ「${tagName}」を付与しました`, "success");
+      setTimeout(() => window.location.reload(), 600);
     } catch (err) {
-      alert(`タグ付与に失敗しました: ${err.message}`);
+      window.showToast(`タグ付与に失敗しました: ${err.message}`, "error");
     }
   });
 
@@ -65,30 +66,33 @@
     const folderId = document.getElementById("bulk-folder-select").value;
     if (!folderId || selected.size === 0) return;
     try {
-      await postJson("/assets/bulk/folder", {
+      const data = await postJson("/assets/bulk/folder", {
         asset_ids: Array.from(selected),
         folder_id: Number(folderId),
       });
-      window.location.reload();
+      window.showToast(`${data.updated}件をフォルダに追加しました`, "success");
+      setTimeout(() => window.location.reload(), 600);
     } catch (err) {
-      alert(`フォルダ追加に失敗しました: ${err.message}`);
+      window.showToast(`フォルダ追加に失敗しました: ${err.message}`, "error");
     }
   });
 
   document.getElementById("bulk-rating-apply").addEventListener("click", async () => {
     const rating = document.getElementById("bulk-rating-select").value;
     if (!rating || selected.size === 0) return;
-    if (!confirm(`選択した${selected.size}件を "${rating}" として承認します。よろしいですか？`)) {
-      return;
-    }
+    const confirmed = await window.confirmDialog(
+      `選択した${selected.size}件を "${rating}" として承認します。よろしいですか？`
+    );
+    if (!confirmed) return;
     try {
-      await postJson("/assets/bulk/confirm", {
+      const data = await postJson("/assets/bulk/confirm", {
         asset_ids: Array.from(selected),
         content_rating: rating,
       });
-      window.location.reload();
+      window.showToast(`${data.updated}件を"${rating}"として承認しました`, "success");
+      setTimeout(() => window.location.reload(), 600);
     } catch (err) {
-      alert(`一括承認に失敗しました: ${err.message}`);
+      window.showToast(`一括承認に失敗しました: ${err.message}`, "error");
     }
   });
 })();

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - {{ asset.id }}{% endblock %}
 {% block content %}
-<a href="{{ url_for('index') }}">&laquo; 一覧に戻る</a>
+<a href="{{ url_for('index') }}" class="back-link">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="19" y1="12" x2="5" y2="12"></line>
+    <polyline points="12 19 5 12 12 5"></polyline>
+  </svg>
+  一覧に戻る
+</a>
 
 <section class="asset-detail">
   <div class="preview">
@@ -13,105 +19,119 @@
   </div>
 
   <div class="info">
-    <h1>{{ asset.id }}</h1>
-    <dl>
-      <dt>ステータス</dt><dd>{{ asset.status }}</dd>
-      <dt>種別</dt><dd>{{ asset.kind }}</dd>
-      <dt>解像度</dt>
-      <dd>
-        {% if properties.width and properties.height %}
-        {{ properties.width }} × {{ properties.height }}
-        {% else %}
-        不明
-        {% endif %}
-      </dd>
-      {% if asset.kind == 'video' %}
-      <dt>長さ</dt>
-      <dd>{{ properties.duration_seconds ~ '秒' if properties.duration_seconds else '不明' }}</dd>
-      {% endif %}
-      <dt>ファイルサイズ</dt><dd>{{ properties.file_size_human or '不明' }}</dd>
-      <dt>取り込み日時</dt><dd>{{ asset.created_at }}</dd>
-      <dt>投稿先チャンネル</dt><dd>{{ channels | join(', ') if channels else '未設定' }}</dd>
-      <dt>NSFW自動判定（参考値）</dt>
-      <dd>
-        {% if asset.nsfw_auto_rating %}
-        {{ asset.nsfw_auto_rating }}（確信度: {{ '%.2f'|format(asset.nsfw_auto_confidence) }}）
-        {% else %}
-        未実行
-        {% endif %}
-      </dd>
-      <dt>確定区分（content_rating）</dt>
-      <dd>
-        {% if asset.content_rating_confirmed %}
-        <strong>{{ asset.content_rating }}（承認済み）</strong>
-        {% else %}
-        未承認
-        {% endif %}
-      </dd>
-      <dt>内容説明（AI自動生成、参考値）</dt>
-      <dd>{{ asset.content_description or '未取得' }}</dd>
-    </dl>
+    <h1>
+      {{ asset.id }}
+      <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
+    </h1>
 
-    <h2>Fanvue投稿文</h2>
-    <form method="post" action="{{ url_for('update_caption', asset_id=asset.id) }}" class="caption-form">
-      <textarea name="fanvue_text" rows="3" placeholder="未設定の場合、投稿時に内容説明から自動生成されます">{{ asset.fanvue_text or '' }}</textarea>
-      <button type="submit">保存する</button>
-    </form>
-    {% if asset.fanvue_caption_draft %}
-    <div class="caption-draft">
-      <p class="hint">生成AIによる下書き（caption_mode=draft）。内容を確認のうえ採用してください。</p>
-      <p>{{ asset.fanvue_caption_draft }}</p>
-      <form method="post" action="{{ url_for('adopt_caption_draft', asset_id=asset.id) }}">
-        <button type="submit">この下書きを投稿文として採用する</button>
+    <div class="card">
+      <dl>
+        <dt>種別</dt><dd>{{ asset.kind }}</dd>
+        <dt>解像度</dt>
+        <dd>
+          {% if properties.width and properties.height %}
+          {{ properties.width }} × {{ properties.height }}
+          {% else %}
+          不明
+          {% endif %}
+        </dd>
+        {% if asset.kind == 'video' %}
+        <dt>長さ</dt>
+        <dd>{{ properties.duration_seconds ~ '秒' if properties.duration_seconds else '不明' }}</dd>
+        {% endif %}
+        <dt>ファイルサイズ</dt><dd>{{ properties.file_size_human or '不明' }}</dd>
+        <dt>取り込み日時</dt><dd>{{ asset.created_at }}</dd>
+        <dt>投稿先チャンネル</dt><dd>{{ channels | join(', ') if channels else '未設定' }}</dd>
+        <dt>NSFW自動判定（参考値）</dt>
+        <dd>
+          {% if asset.nsfw_auto_rating %}
+          {{ asset.nsfw_auto_rating }}（確信度: {{ '%.2f'|format(asset.nsfw_auto_confidence) }}）
+          {% else %}
+          未実行
+          {% endif %}
+        </dd>
+        <dt>確定区分（content_rating）</dt>
+        <dd>
+          {% if asset.content_rating_confirmed %}
+          <strong>{{ asset.content_rating }}（承認済み）</strong>
+          {% else %}
+          未承認
+          {% endif %}
+        </dd>
+        <dt>内容説明（AI自動生成、参考値）</dt>
+        <dd>{{ asset.content_description or '未取得' }}</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0;">Fanvue投稿文</h2>
+      <form method="post" action="{{ url_for('update_caption', asset_id=asset.id) }}" class="caption-form">
+        <textarea name="fanvue_text" rows="3" placeholder="未設定の場合、投稿時に内容説明から自動生成されます">{{ asset.fanvue_text or '' }}</textarea>
+        <button type="submit">保存する</button>
+      </form>
+      {% if asset.fanvue_caption_draft %}
+      <div class="caption-draft">
+        <p class="hint">生成AIによる下書き（caption_mode=draft）。内容を確認のうえ採用してください。</p>
+        <p>{{ asset.fanvue_caption_draft }}</p>
+        <form method="post" action="{{ url_for('adopt_caption_draft', asset_id=asset.id) }}">
+          <button type="submit">この下書きを投稿文として採用する</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0;">区分の承認</h2>
+      <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
+        <label>区分を確定して承認する
+          <select name="content_rating">
+            {% for r in content_ratings %}
+            <option value="{{ r }}" {% if asset.content_rating == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">承認する</button>
+      </form>
+      <p class="hint">これはAIによる一次判定の補助表示です。最終判断は必ず人が行ってください。</p>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0;">タグ</h2>
+      <ul class="tag-list" id="tag-list" data-asset-id="{{ asset.id }}">
+        {% for tag in tags %}
+        <li data-tag="{{ tag }}">
+          <span class="tag-name">{{ tag }}</span>
+          <button type="button" class="tag-remove" data-tag="{{ tag }}">×</button>
+        </li>
+        {% endfor %}
+      </ul>
+      <form id="tag-add-form" data-asset-id="{{ asset.id }}">
+        <input type="text" name="tag_name" placeholder="新しいタグ" required>
+        <button type="submit">タグ追加</button>
       </form>
     </div>
-    {% endif %}
 
-    <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
-      <label>区分を確定して承認する
-        <select name="content_rating">
-          {% for r in content_ratings %}
-          <option value="{{ r }}" {% if asset.content_rating == r %}selected{% endif %}>{{ r }}</option>
+    <div class="card">
+      <h2 style="margin-top: 0;">フォルダ</h2>
+      <ul class="folder-list" id="folder-list" data-asset-id="{{ asset.id }}">
+        {% for folder in asset_folders %}
+        <li data-folder-id="{{ folder.id }}">
+          <span class="folder-name">{{ folder.name }}</span>
+          <button type="button" class="folder-remove" data-folder-id="{{ folder.id }}">×</button>
+        </li>
+        {% endfor %}
+      </ul>
+      {% if all_folders %}
+      <form id="folder-add-form" data-asset-id="{{ asset.id }}">
+        <select name="folder_id">
+          {% for folder in all_folders %}
+          <option value="{{ folder.id }}">{{ folder.name }}</option>
           {% endfor %}
         </select>
-      </label>
-      <button type="submit">承認する</button>
-    </form>
-    <p class="hint">これはAIによる一次判定の補助表示です。最終判断は必ず人が行ってください。</p>
-
-    <h2>タグ</h2>
-    <ul class="tag-list" id="tag-list" data-asset-id="{{ asset.id }}">
-      {% for tag in tags %}
-      <li data-tag="{{ tag }}">
-        <span class="tag-name">{{ tag }}</span>
-        <button type="button" class="tag-remove" data-tag="{{ tag }}">×</button>
-      </li>
-      {% endfor %}
-    </ul>
-    <form id="tag-add-form" data-asset-id="{{ asset.id }}">
-      <input type="text" name="tag_name" placeholder="新しいタグ" required>
-      <button type="submit">タグ追加</button>
-    </form>
-
-    <h2>フォルダ</h2>
-    <ul class="folder-list" id="folder-list" data-asset-id="{{ asset.id }}">
-      {% for folder in asset_folders %}
-      <li data-folder-id="{{ folder.id }}">
-        <span class="folder-name">{{ folder.name }}</span>
-        <button type="button" class="folder-remove" data-folder-id="{{ folder.id }}">×</button>
-      </li>
-      {% endfor %}
-    </ul>
-    {% if all_folders %}
-    <form id="folder-add-form" data-asset-id="{{ asset.id }}">
-      <select name="folder_id">
-        {% for folder in all_folders %}
-        <option value="{{ folder.id }}">{{ folder.name }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit">フォルダに追加</button>
-    </form>
-    {% endif %}
+        <button type="submit">フォルダに追加</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 </section>
 {% endblock %}

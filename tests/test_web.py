@@ -431,7 +431,8 @@ def test_settings_page_post_updates_values(app_and_conn):
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/settings?saved=1")
     from core import settings as settings_module
 
     assert settings_module.get_generation_provider(conn) == "openai"
@@ -448,6 +449,26 @@ def test_settings_page_get_shows_connection_status(app_and_conn):
     assert response.status_code == 200
     assert "未設定".encode() in response.data
     assert "Fanvue".encode() in response.data
+
+
+def test_settings_page_post_redirects_and_shows_saved_banner(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.post(
+        "/settings",
+        data={
+            "generation_provider": "claude",
+            "generation_model": "claude-opus-5",
+            "caption_mode": "auto",
+            "description_system_prompt": "p",
+            "caption_system_prompt": "p",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "保存しました" in response.get_data(as_text=True)
 
 
 def test_settings_page_post_saves_connection_values_to_env(app_and_conn):
@@ -468,7 +489,7 @@ def test_settings_page_post_saves_connection_values_to_env(app_and_conn):
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 302
     from core import env_settings
 
     status = env_settings.read_connection_status(env_path)

@@ -37,9 +37,11 @@
         message += `（非対応形式のためスキップ: ${data.rejected.join(", ")}）`;
       }
       setStatus(message);
+      if (window.showToast) window.showToast(message, "success");
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       setStatus("アップロード中にエラーが発生しました");
+      if (window.showToast) window.showToast("アップロード中にエラーが発生しました", "error");
       console.error(err);
     } finally {
       dropzone.classList.remove("uploading");

@@ -3,6 +3,11 @@
 {% block content %}
 <section id="dropzone" class="dropzone">
   <input type="file" id="dropzone-file-input" multiple accept="image/*,video/*" hidden>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+    <polyline points="17 8 12 3 7 8"></polyline>
+    <line x1="12" y1="3" x2="12" y2="15"></line>
+  </svg>
   <p>ここに画像・動画をドラッグ&ドロップ、またはクリックして選択</p>
   <p id="dropzone-status" class="dropzone-status"></p>
 </section>
@@ -12,7 +17,7 @@
     <label>ステータス
       <select name="status" onchange="this.form.submit()">
         <option value="">すべて</option>
-        {% for s in ["ready", "approved", "posted", "failed_fanvue"] %}
+        {% for s in ["analyzing", "ready", "posted", "failed_fanvue"] %}
         <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>
@@ -49,6 +54,8 @@
   </form>
 </section>
 
+<p class="hint" style="margin: -0.75rem 0 1rem;">{{ assets | length }}件を表示中</p>
+
 <section class="asset-grid">
   {% for asset in assets %}
   <div class="asset-card" data-asset-id="{{ asset.id }}">
@@ -74,7 +81,10 @@
     </a>
   </div>
   {% else %}
-  <p>該当するアセットがありません。</p>
+  <div class="empty-state">
+    <p>該当するアセットがありません。</p>
+    <p class="hint">フィルタを変更するか、上のエリアから画像・動画を取り込んでください。</p>
+  </div>
   {% endfor %}
 </section>
 

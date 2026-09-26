@@ -70,8 +70,9 @@
             {}
           );
           renderTagList(data.tags);
+          window.showToast("タグを削除しました", "success");
         } catch (err) {
-          alert("タグの削除に失敗しました");
+          window.showToast("タグの削除に失敗しました", "error");
         }
       });
     });
@@ -85,8 +86,9 @@
         try {
           const data = await postXhr(`/assets/${assetId}/folders/${folderId}/remove`, {});
           renderFolderList(data.folders);
+          window.showToast("フォルダから削除しました", "success");
         } catch (err) {
-          alert("フォルダからの削除に失敗しました");
+          window.showToast("フォルダからの削除に失敗しました", "error");
         }
       });
     });
@@ -103,8 +105,9 @@
         const data = await postXhr(`/assets/${assetId}/tags`, { tag_name: tagName });
         renderTagList(data.tags);
         input.value = "";
+        window.showToast(`タグ「${tagName}」を追加しました`, "success");
       } catch (err) {
-        alert("タグの追加に失敗しました");
+        window.showToast("タグの追加に失敗しました", "error");
       }
     });
   }
@@ -119,8 +122,9 @@
       try {
         const data = await postXhr(`/assets/${assetId}/folders`, { folder_id: folderId });
         renderFolderList(data.folders);
+        window.showToast("フォルダに追加しました", "success");
       } catch (err) {
-        alert("フォルダへの追加に失敗しました");
+        window.showToast("フォルダへの追加に失敗しました", "error");
       }
     });
   }

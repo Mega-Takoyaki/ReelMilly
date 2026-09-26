@@ -260,10 +260,17 @@ def create_app(config: Config) -> Flask:
             )
             env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
             env_settings.update_connection_values(config.env_path, env_updates)
+            conn.close()
+            return redirect(url_for("settings_page", saved="1"))
         current_settings = settings_module.get_all_settings(conn)
         connections = env_settings.read_connection_status(config.env_path)
         conn.close()
-        return render_template("settings.html", settings=current_settings, connections=connections)
+        return render_template(
+            "settings.html",
+            settings=current_settings,
+            connections=connections,
+            saved=request.args.get("saved") == "1",
+        )
 
     @app.route("/assets/bulk/tag", methods=["POST"])
     def bulk_add_tag():
