@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Reelmilly - 一覧{% endblock %}
+{% block content %}
+<section class="filters">
+  <form method="get">
+    <label>ステータス
+      <select name="status" onchange="this.form.submit()">
+        <option value="">すべて</option>
+        {% for s in ["ready", "approved", "posted", "failed_fanvue"] %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>区分
+      <select name="content_rating" onchange="this.form.submit()">
+        <option value="">すべて</option>
+        {% for r in content_ratings %}
+        <option value="{{ r }}" {% if rating_filter == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>タグ
+      <select name="tag" onchange="this.form.submit()">
+        <option value="">すべて</option>
+        {% for t in tags %}
+        <option value="{{ t }}" {% if tag_filter == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>フォルダ
+      <select name="folder_id" onchange="this.form.submit()">
+        <option value="">すべて</option>
+        {% for f in folders %}
+        <option value="{{ f.id }}" {% if folder_id == f.id %}selected{% endif %}>{{ f.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  <form method="post" action="{{ url_for('create_folder') }}" class="new-folder">
+    <input type="text" name="name" placeholder="新規フォルダ名" required>
+    <button type="submit">フォルダ作成</button>
+  </form>
+</section>
+
+<section class="asset-grid">
+  {% for asset in assets %}
+  <a class="asset-card" href="{{ url_for('asset_detail', asset_id=asset.id) }}">
+    {% if asset.kind == 'video' %}
+    <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
+    {% else %}
+    <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
+    {% endif %}
+    <div class="asset-meta">
+      <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
+      {% if asset.content_rating %}
+      <span class="badge rating-{{ asset.content_rating }}">{{ asset.content_rating }}</span>
+      {% elif asset.nsfw_auto_rating %}
+      <span class="badge rating-auto">自動判定: {{ asset.nsfw_auto_rating }}（未承認）</span>
+      {% else %}
+      <span class="badge rating-none">未判定</span>
+      {% endif %}
+    </div>
+  </a>
+  {% else %}
+  <p>該当するアセットがありません。</p>
+  {% endfor %}
+</section>
+{% endblock %}

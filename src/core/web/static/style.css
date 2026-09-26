@@ -1,0 +1,142 @@
+:root {
+  color-scheme: light dark;
+  --border: #3a3a3a;
+  --bg: #121212;
+  --fg: #eaeaea;
+  --accent: #7aa2f7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.topbar {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+main {
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.filters form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.asset-card {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  background: #1a1a1a;
+}
+
+.asset-card img,
+.asset-card video {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+.asset-meta {
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #333;
+}
+
+.badge.rating-explicit { background: #7a1f1f; }
+.badge.rating-suggestive { background: #7a5a1f; }
+.badge.rating-sfw { background: #1f5a2f; }
+.badge.rating-auto { background: #444; }
+.badge.rating-none { background: #444; }
+
+.asset-detail {
+  display: grid;
+  grid-template-columns: minmax(280px, 480px) 1fr;
+  gap: 2rem;
+  margin-top: 1rem;
+}
+
+.preview img, .preview video {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 0.4rem 1rem;
+}
+
+dt { color: #999; }
+
+form.inline {
+  display: inline;
+}
+
+.tag-list, .folder-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag-list li, .folder-list li {
+  background: #2a2a2a;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.hint {
+  color: #999;
+  font-size: 0.85rem;
+}
+
+button {
+  cursor: pointer;
+}

@@ -25,26 +25,26 @@
 ## アセット管理の中核化・NSFW自動仕分け（ADR-0007/0008/0009）
 
 - [x] ~~NSFW自動仕分けの実装方式の選定~~ → 決定: Marqo/nsfw-image-detection-384（[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）
-- [ ] `assets`テーブル（SQLite）に`content_rating_confirmed`・`nsfw_auto_rating`・`nsfw_auto_confidence`を追加（[ADR-0008](docs/adr/0008-nsfw-auto-triage-with-human-approval.md)、Phase 1着手時）
-- [ ] `timm` / `torch` / `pillow` / `opencv-python` を依存関係に追加（Phase 1着手時、`pyproject.toml`整備とあわせて）
-- [ ] 動画のフレームサンプリング間隔（初期値2秒）・判定閾値（初期値0.5）をReelMilly実データで検証・調整
+- [x] ~~`assets`テーブル（SQLite）に`content_rating_confirmed`・`nsfw_auto_rating`・`nsfw_auto_confidence`を追加~~ → `src/core/schema.sql`に実装済み
+- [x] ~~`timm` / `torch` / `pillow` / `opencv-python` を依存関係に追加~~ → `pyproject.toml`の`nsfw`/`dev` extraに実装済み
+- [ ] 動画のフレームサンプリング間隔（初期値2秒）・判定閾値（初期値0.5）を実機でReelMilly実データを使い検証・調整する（`src/core/nsfw.py`のロジック自体はテスト済み、精度検証は未実施）
 - [ ] オフライン運用が必要な場合、Marqoモデルの事前キャッシュ手順を用意
-- [ ] `config.yaml`に`platform_auto_post_ratings`を追加（Fanvue=全区分自動／X=sfwのみ自動、[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）
-- [ ] 自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する。Telegramには`/rate <id> explicit`等の簡易版のみ用意する（[ADR-0012](docs/adr/0012-primary-ui-with-telegram-as-secondary.md)）
-- [ ] drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加（Phase 4着手時）
+- [x] ~~`config.yaml`に`platform_auto_post_ratings`を追加~~ → 実装済み
+- [x] ~~自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する~~ → `/assets/<id>/confirm`として実装済み。Telegram簡易版は未着手
+- [ ] drop/x_teaser実行前に`content_rating_confirmed == true`および`platform_auto_post_ratings`を検証するフィルタを追加（Phase 4着手時、`posting`モジュール未着手のため）
 
 ## 本体・SNS投稿モジュールの分離（ADR-0012/0013）
 
-- [ ] `src/core`（画像管理本体）・`src/posting`（SNS投稿）・`src/telegram`（Telegram連携）のパッケージ構成を確定する（Phase 0〜1着手時）
-- [ ] `core`が提供するデータアクセス層（SQLite経由のアセット取得・状態更新API）のインターフェースを設計する。`posting`/`telegram`はこれ以外の手段で`core`の内部実装に依存しない
-- [ ] 本体UIとTelegramの双方から同じアセットを操作した場合の競合・整合性の扱いを検討する
+- [x] ~~`src/core`（画像管理本体）のパッケージ構成を確定する~~ → 実装済み。`src/posting`・`src/telegram`はPhase 2以降で着手
+- [x] ~~`core`が提供するデータアクセス層のインターフェースを設計する~~ → `src/core/db.py`として実装済み
+- [ ] 本体UIとTelegramの双方から同じアセットを操作した場合の競合・整合性の扱いを検討する（`telegram`モジュール着手時）
 
 ## 画像・動画管理の自作・SQLite移行（ADR-0010/0011）
 
-- [ ] SQLiteスキーマ（`assets`/`channels`/`tags`/`asset_tags`/`folders`/`asset_folders`）の実装（[ADR-0011](docs/adr/0011-sqlite-state-store.md)、Phase 1着手時）
-- [ ] `meta.yaml`ベースのingest処理をSQLite書き込みに置き換える
-- [ ] マイグレーションツール（`alembic`等）の要否を検討する
-- [ ] Phase 1.5: アセット管理UI（一覧・サムネイル表示・フォルダ管理・タグ管理）の技術スタックを選定する（全文検索は対象外）
+- [x] ~~SQLiteスキーマの実装~~ → `src/core/schema.sql`・`src/core/db.py`として実装済み
+- [x] ~~`meta.yaml`ベースのingest処理をSQLite書き込みに置き換える~~ → `src/core/ingest.py`は最初からSQLite書き込みで実装
+- [ ] マイグレーションツール（`alembic`等）の要否を検討する（現状は`CREATE TABLE IF NOT EXISTS`のみ。スキーマ変更が増えたら再検討）
+- [x] ~~Phase 1.5: アセット管理UIの技術スタックを選定する~~ → Flask + Jinja2で実装済み（`src/core/web/`）
 - [ ] SQLiteのインデックス設計（`status`/`content_rating`/`created_at`）をPhase 4のジョブ選定ロジックとあわせて検証する
 
 ## 確定済みだが実装時に再確認するデフォルト値
@@ -58,9 +58,15 @@
 
 - [ ] 静的解析ツール（ruff、mypy）の導入 ← 当初は導入見送り。忘れず後日対応する
 - [ ] 静的解析導入後、`.github/workflows/ci.yml` にlintジョブを追加する
-- [ ] `pyproject.toml` / `requirements.txt` の整備（Phase 0着手時）
+- [x] ~~`pyproject.toml` / `requirements.txt` の整備~~ → `pyproject.toml`を採用し実装済み
 
 ## ドキュメント
 
 - [ ] `docs/adr/0005-deployment-environment.md` をデプロイ環境確定後に更新する
-- [ ] Phase 0完了後、README.mdにセットアップ手順を追記する
+- [x] ~~Phase 0完了後、README.mdにセットアップ手順を追記する~~ → 実装済み（ローカルセットアップ手順一式）
+
+## 実機での動作確認（要ユーザー対応）
+
+- [ ] 稼働予定のローカルPCで、README.mdのセットアップ手順どおりにセットアップできるか確認する（このセッションの開発環境とは別PCのため未検証）
+- [ ] 実際のGrok Imagine出力（画像・動画）でingest・NSFW自動仕分け・本体UIでの承認操作を一通り試す
+- [ ] NSFW自動仕分けを有効化する場合、`pip install -e ".[nsfw]"`でのtorch/timmインストールが実機で問題なく完了するか確認する

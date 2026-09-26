@@ -1,0 +1,43 @@
+[project]
+name = "reelmilly"
+version = "0.1.0"
+description = "画像・動画管理を中核に据えたアセット管理アプリ"
+requires-python = ">=3.11"
+dependencies = [
+    "Flask>=3.0",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+nsfw = [
+    "torch",
+    "timm",
+    "pillow",
+    "opencv-python-headless",
+]
+# devはCIで使う。torch/timmは重量級のため意図的に含めない
+# (test_nsfw.pyはモデル推論部分をモックしてテストする)
+dev = [
+    "pytest",
+    "pillow",
+    "opencv-python-headless",
+    "numpy",
+]
+
+[project.scripts]
+reelmilly = "core.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core = ["schema.sql", "web/templates/*.html", "web/static/*.css"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

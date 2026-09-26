@@ -4,7 +4,7 @@
 
 ## ステータス
 
-要件整理・アーキテクチャ設計フェーズ（実装未着手）。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
+本体（画像・動画管理アプリ、Phase 0〜1.5相当）実装済み。SNS投稿モジュール（Phase 2〜）は未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## ドキュメント
 
@@ -37,6 +37,78 @@ X投稿は公式API（申請ファースト）を採用する（[ADR-0014](docs/
 
 未確定。本体（画像管理アプリ）とSNS投稿モジュールは論理的に分離されており（[ADR-0013](docs/adr/0013-sns-posting-as-logical-plugin.md)）、デプロイ先も別々に検討できる。本体はローカルWebアプリが現時点の基本方針。SNS投稿モジュールはX公式APIが承認されれば本体と同じ環境で足り、Playwrightにフォールバックする場合のみGUI常時起動環境等の追加検討が必要になる。判断軸は [docs/adr/0005-deployment-environment.md](docs/adr/0005-deployment-environment.md) を参照。
 
-## セットアップ
+## セットアップ（ローカルPC）
 
-Phase 0実装後に追記予定。
+本体（画像・動画管理アプリ）はローカルPC上で動くWebアプリとして動作します。Windows/Mac/Linuxいずれでも同じ手順です（コマンドはPowerShell/bashどちらでも読み替え可能）。
+
+### 1. 前提
+
+- Python 3.11以上
+- `git`
+
+### 2. 取得とセットアップ
+
+```bash
+git clone https://github.com/Mega-Takoyaki/ReelMilly.git
+cd ReelMilly
+python -m venv .venv
+
+# 有効化: Windows(PowerShell)は .venv\Scripts\Activate.ps1、Mac/Linuxは以下
+source .venv/bin/activate
+
+pip install -e ".[dev]"
+```
+
+NSFW自動仕分け機能（[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）を使う場合は、追加でtorch/timmをインストールします（数百MB〜のダウンロードが発生します）。
+
+```bash
+pip install -e ".[nsfw]"
+```
+
+これを入れなくても本体（一覧・フォルダ・タグ・承認UI）は動作します。ingest時にNSFW自動仕分けがスキップされる旨のメッセージが出るだけです。
+
+### 3. 秘密情報の設定
+
+```bash
+cp .env.example .env
+# 現時点では本体のみの動作にはFanvue/Telegramの値は不要。今後SNS投稿モジュール実装時に使用する
+```
+
+### 4. 初期化と疎通確認
+
+```bash
+reelmilly init     # ディレクトリとSQLiteデータベースを作成
+reelmilly doctor   # ディレクトリ・DB疎通を確認（全項目 OK であればセットアップ完了）
+```
+
+### 5. 画像・動画を取り込む
+
+Grok Imagine等で生成した画像・動画を `data/library/inbox/` に置き、取り込みます。
+
+```bash
+reelmilly ingest
+```
+
+同名の`.yaml`（または`.json`）サイドカーファイルを置くと、`caption`/`x_caption`/`channels`/`tags`等を指定して取り込めます。例（`sample.jpg`に対する`sample.yaml`）:
+
+```yaml
+caption: "紹介文"
+channels: [fanvue, x]
+tags: [推し, 夏]
+```
+
+### 6. 本体UIを起動する
+
+```bash
+reelmilly web
+```
+
+起動後、ブラウザで `http://127.0.0.1:8420/` を開くと、一覧・フォルダ・タグ管理・投稿承認（`content_rating`確定）操作ができます。既定では他の端末からはアクセスできません（`config.yaml`の`web.host`が`127.0.0.1`固定のため）。停止は `Ctrl+C` です。
+
+### テストの実行
+
+```bash
+pytest
+```
+
+外部I/O（NSFW推論モデル本体、Playwright、Fanvue/X API）は単体テストの対象外とし、モックで検証しています。実際のNSFW判定精度・投稿動作は、実機でのingest/web操作を通じて確認してください。

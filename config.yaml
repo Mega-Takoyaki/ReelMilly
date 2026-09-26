@@ -1,0 +1,24 @@
+timezone: Asia/Tokyo
+
+paths:
+  library_root: data/library
+  state_dir: data/state
+  screenshots_dir: data/screenshots
+
+nsfw:
+  model: marqo/nsfw-image-detection-384
+  threshold: 0.5
+  video_frame_interval_seconds: 2
+
+platform_content_rules:
+  fanvue: [sfw, suggestive, explicit]
+  x: [sfw, suggestive, explicit]
+  instagram: [sfw]
+
+platform_auto_post_ratings:
+  fanvue: [sfw, suggestive, explicit]
+  x: [sfw]
+
+web:
+  host: 127.0.0.1
+  port: 8420
