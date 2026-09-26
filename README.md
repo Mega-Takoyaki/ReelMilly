@@ -4,7 +4,7 @@
 
 ## ステータス
 
-本体（画像・動画管理アプリ、Phase 0〜1.5相当）とFanvue投稿ジョブ（Phase 2・4のFanvue部分）を実装済み。実API疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
+本体（画像・動画管理アプリ、Phase 0〜1.5相当）、Fanvue投稿ジョブ（Phase 2・4のFanvue部分）、NSFW自動仕分け（実機動作確認済み）、自動実行スケジューラ（`run-due`/`watch`）を実装済み。FanvueのAPI実疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## ドキュメント
 
@@ -122,6 +122,31 @@ reelmilly run drop
 `status="ready"`で最も古い対象アセットを1件、Fanvueへ投稿します（`upload → ready待ち → post作成`）。成功すると`status="posted"`になり、失敗すると`status="failed_fanvue"`になります（自動リトライはしません）。同じ日に2回実行すると2回目はスキップされます。X（旧Twitter）への紹介投稿は未実装のため、このコマンドはFanvue投稿のみを行います。
 
 Fanvue APIのレスポンス形式は一次情報を検証していない実装のため、実行して失敗する場合は[TODO.md](TODO.md)を参照してください。
+
+### 8. 自動実行スケジューラ
+
+`reelmilly run drop`を毎回手動実行する代わりに、`config.yaml`の`cadence`設定で決めた時刻以降に自動実行させることができます。
+
+```yaml
+# config.yaml
+cadence:
+  drop: "21:00"   # 21:00以降・当日未実行ならdropジョブを実行対象にする
+```
+
+時刻が来ているかだけを1回チェックして即終了するコマンド:
+
+```bash
+reelmilly run-due
+```
+
+これをOSのタスクスケジューラ（Windowsなら「タスクスケジューラ」、Mac/Linuxなら`cron`）で例えば5〜10分おきに実行する運用と、以下の常駐コマンドで動かし続ける運用のどちらかを選べます。
+
+```bash
+reelmilly watch              # 60秒間隔でrun-dueを繰り返す（既定）
+reelmilly watch --interval 300  # 間隔を変更する場合
+```
+
+`watch`はターミナルを開いたままにする常駐プロセスです。停止は`Ctrl+C`。同日二重実行防止（`job_runs`テーブル）は`run-due`/`watch`経由でも`run drop`と同様に効きます。`cadence`未設定のジョブ名（`drop`以外）は現状未対応で、指定してもスキップされログに表示されます（X投稿ジョブは未実装のため）。
 
 ### テストの実行
 

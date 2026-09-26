@@ -45,6 +45,7 @@
 - [ ] `wait_for_media_ready`のタイムアウト（現状固定90秒）を`config.yaml`で設定可能にするか検討する
 - [ ] X投稿機能の実装後、`drop`ジョブにX紹介投稿のステップを追加する（現状はFanvue投稿のみで完結。`x_ok`フラグは既存スキーマにあるが未使用）
 - [ ] `x_teaser`・`x_engagement`ジョブは`posting`モジュールにX投稿機能を追加してから実装する
+- [x] ~~自動実行スケジューラ（`run-due`/`watch`）を実装~~ → `config.yaml`の`cadence`設定（`drop: "HH:MM"`）を見て時刻が来ていれば実行する`reelmilly run-due`と、それを一定間隔（既定60秒）で繰り返す常駐コマンド`reelmilly watch`を実装済み。X投稿ジョブ実装時に`cadence`の対応ジョブ名を追加する必要あり（現状`drop`のみ対応）
 
 ## 本体・SNS投稿モジュールの分離（ADR-0012/0013）
 

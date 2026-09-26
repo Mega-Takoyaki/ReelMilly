@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -135,6 +136,50 @@ def cmd_run_drop(config: Config) -> int:
     return 0
 
 
+def _is_job_due(now: datetime, cadence_time: str) -> bool:
+    """`now`が`cadence_time`(HH:MM)以降であればTrueを返す。"""
+    hour_str, minute_str = cadence_time.split(":")
+    return (now.hour, now.minute) >= (int(hour_str), int(minute_str))
+
+
+def cmd_run_due(config: Config) -> int:
+    """config.yamlの`cadence`設定を見て、時刻が来ていて未実行のジョブを実行する。
+
+    現状`drop`ジョブのみ対応。X投稿ジョブ実装時にここへ追加する。
+    """
+    if not config.cadence:
+        print("[run-due] config.yamlにcadence設定がありません（何もしません）")
+        return 0
+
+    now = datetime.now(ZoneInfo(config.timezone))
+    ran_any = False
+    for job_name, cadence_time in config.cadence.items():
+        if job_name != "drop":
+            print(f"[run-due] 未対応のジョブ名のためスキップします: {job_name}")
+            continue
+        if not _is_job_due(now, cadence_time):
+            print(f"[run-due] {job_name}: まだ実行時刻前です（設定 {cadence_time}、現在 {now.strftime('%H:%M')}）")
+            continue
+        ran_any = True
+        cmd_run_drop(config)
+
+    if not ran_any:
+        print("[run-due] 実行したジョブはありません")
+    return 0
+
+
+def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
+    """`run-due`を一定間隔で繰り返す常駐プロセス。Ctrl+Cで終了する。"""
+    print(f"[watch] {interval_seconds}秒間隔でrun-dueを実行します（Ctrl+Cで終了）")
+    try:
+        while True:
+            cmd_run_due(config)
+            time.sleep(interval_seconds)
+    except KeyboardInterrupt:
+        print("\n[watch] 終了します")
+    return 0
+
+
 def cmd_web(config: Config) -> int:
     from core.web.app import create_app
 
@@ -153,6 +198,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("web", help="本体UI(ローカルWebアプリ)を起動する")
     run_parser = subparsers.add_parser("run", help="投稿ジョブを実行する")
     run_parser.add_argument("job", choices=["drop"], help="実行するジョブ名")
+    subparsers.add_parser("run-due", help="config.yamlのcadence設定を見て、時刻が来ているジョブを実行する")
+    watch_parser = subparsers.add_parser(
+        "watch", help="run-dueを一定間隔で繰り返す常駐プロセスとして起動する(Ctrl+Cで終了)"
+    )
+    watch_parser.add_argument(
+        "--interval", type=int, default=60, help="run-dueを実行する間隔(秒、既定60)"
+    )
     return parser
 
 
@@ -172,6 +224,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_web(config)
     if args.command == "run" and args.job == "drop":
         return cmd_run_drop(config)
+    if args.command == "run-due":
+        return cmd_run_due(config)
+    if args.command == "watch":
+        return cmd_watch(config, interval_seconds=args.interval)
 
     parser.print_help()
     return 1

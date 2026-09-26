@@ -55,6 +55,8 @@ reelmilly/
 
 主要フロー（drop、x_teaser、x_engagement）と部分失敗時の挙動はCLAUDE_HANDOFF.md 4章・6章を参照。
 
+ジョブの自動実行は`config.yaml`の`cadence`設定（ジョブ名→実行予定時刻）に基づく。`reelmilly run-due`は現在時刻が予定時刻を過ぎていて当日未実行のジョブを1回だけ実行し、`reelmilly watch`はこれを一定間隔（既定60秒）で繰り返す常駐プロセスとして提供する。OS側のタスクスケジューラ（Windowsタスクスケジューラ/cron）で`run-due`を定期実行する運用でも代替できる。
+
 ## 7. 配置ビュー
 
 **未確定**。[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)で本体とSNS投稿モジュールを論理分離したため、デプロイ先も別々に検討できる。

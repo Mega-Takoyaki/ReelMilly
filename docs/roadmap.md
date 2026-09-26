@@ -35,7 +35,7 @@ flowchart TD
 | Phase 1.5 | 本体UI（一覧・サムネイル表示・フォルダ管理・タグ管理・**投稿承認/`content_rating`確定操作**。全文検索は対象外）（[ADR-0010](adr/0010-custom-asset-management-over-eagle.md)、[ADR-0012](adr/0012-primary-ui-with-telegram-as-secondary.md)） | 実装済み（`src/core/web/`、Flask） |
 | Phase 2 | Fanvue multipart upload、ready待ち、create post、URL組み立て（`posting`モジュール、[ADR-0013](adr/0013-sns-posting-as-logical-plugin.md)） | クライアント実装済み（`src/posting/fanvue.py`）。実API疎通確認は未実施（TODO.md参照） |
 | Phase 3 | X投稿（`posting`モジュール）。公式API（`POST /2/tweets`、`POST /2/media/upload`）を優先実装。開発者アプリ未承認の場合のみPlaywright login・失敗スクショ等を実装（[ADR-0014](adr/0014-x-official-api-application-first.md)） | 未着手（開発者アプリ申請・承認待ち、TODO.md参照） |
-| Phase 4 | drop/teaser/engageジョブ結合、部分失敗ルール、last_run管理、**`content_rating_confirmed`未承認アセットの投稿対象外フィルタ** | dropジョブのFanvue投稿部分（`posting/jobs.py`の`run_fanvue_drop`、`reelmilly run drop`）を実装済み。X紹介投稿・x_teaser・x_engagementはPhase 3待ち |
+| Phase 4 | drop/teaser/engageジョブ結合、部分失敗ルール、last_run管理、**`content_rating_confirmed`未承認アセットの投稿対象外フィルタ**、**自動実行スケジューラ** | dropジョブのFanvue投稿部分（`posting/jobs.py`の`run_fanvue_drop`、`reelmilly run drop`、成功時の投稿済みタグ付与）と、`config.yaml`の`cadence`設定に基づく自動実行（`reelmilly run-due`/`reelmilly watch`）を実装済み。X紹介投稿・x_teaser・x_engagementはPhase 3待ち |
 | Phase 5 | Telegram allowlist、通知、**簡易操作（承認/スキップのみ、詳細操作は本体UIへ）**（`telegram`モジュール、[ADR-0012](adr/0012-primary-ui-with-telegram-as-secondary.md)） | 未着手 |
 | Phase 6 | 文面テンプレ複数化、サムネオプション、token refresh、ファイル受信 | 未着手 |
 

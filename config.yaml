@@ -22,3 +22,8 @@ platform_auto_post_ratings:
 web:
   host: 127.0.0.1
   port: 8420
+
+# `reelmilly run-due`/`reelmilly watch`が参照する、各ジョブの実行予定時刻(HH:MM、上記timezone基準)。
+# 指定時刻を過ぎていて当日未実行なら実行する。未設定のジョブ名はrun-due/watchの対象外。
+cadence:
+  drop: "21:00"

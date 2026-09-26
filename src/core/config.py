@@ -63,6 +63,7 @@ class Config:
     platform_content_rules: dict[str, list[str]]
     platform_auto_post_ratings: dict[str, list[str]]
     web: WebConfig
+    cadence: dict[str, str]
 
 
 def load_config(base_dir: Path | None = None, config_filename: str = "config.yaml") -> Config:
@@ -100,6 +101,7 @@ def load_config(base_dir: Path | None = None, config_filename: str = "config.yam
             host=web_raw.get("host", "127.0.0.1"),
             port=int(web_raw.get("port", 8420)),
         ),
+        cadence=raw.get("cadence", {}),
     )
 
 

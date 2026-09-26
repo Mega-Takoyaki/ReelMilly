@@ -42,6 +42,16 @@ def test_load_config_parses_paths_and_sections(tmp_path):
     assert config.nsfw.threshold == 0.5
     assert config.platform_auto_post_ratings["x"] == ["sfw"]
     assert config.web.port == 8420
+    assert config.cadence == {}
+
+
+def test_load_config_parses_cadence(tmp_path):
+    base = _write_config(tmp_path)
+    (base / "config.yaml").write_text(CONFIG_YAML + '\ncadence:\n  drop: "21:00"\n', encoding="utf-8")
+
+    config = load_config(base_dir=base)
+
+    assert config.cadence == {"drop": "21:00"}
 
 
 def test_load_config_missing_file_raises(tmp_path):
