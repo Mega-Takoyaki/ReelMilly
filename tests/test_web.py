@@ -73,6 +73,10 @@ def test_index_lists_asset(app_and_conn):
     body = response.get_data(as_text=True)
     assert "a1" in body
     assert "nsfw" in body  # 自動判定バッジ
+    assert 'class="asset-media"' in body  # サムネイルクリックでライトボックス表示する領域
+    assert 'class="asset-detail-link"' in body  # 詳細画面への遷移は専用アイコンから
+    assert 'id="lightbox"' in body
+    assert 'id="thumb-size-slider"' in body
 
 
 def test_asset_detail_shows_unconfirmed_state(app_and_conn):

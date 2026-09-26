@@ -54,7 +54,13 @@
   </form>
 </section>
 
-<p class="hint" style="margin: -0.75rem 0 1rem;">{{ assets | length }}件を表示中</p>
+<div class="grid-toolbar">
+  <p class="hint">{{ assets | length }}件を表示中</p>
+  <label class="grid-size-control">
+    サムネイルサイズ
+    <input type="range" id="thumb-size-slider" min="120" max="320" step="10" value="190">
+  </label>
+</div>
 
 <section class="asset-grid">
   {% for asset in assets %}
@@ -62,23 +68,30 @@
     <label class="asset-select">
       <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
     </label>
-    <a class="asset-card-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}">
+    <div class="asset-media" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}" data-alt="{{ asset.id }}">
       {% if asset.kind == 'video' %}
       <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
       {% else %}
       <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
       {% endif %}
-      <div class="asset-meta">
-        <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
-        {% if asset.content_rating %}
-        <span class="badge rating-{{ asset.content_rating }}">{{ asset.content_rating }}</span>
-        {% elif asset.nsfw_auto_rating %}
-        <span class="badge rating-auto">自動判定: {{ asset.nsfw_auto_rating }}（未承認）</span>
-        {% else %}
-        <span class="badge rating-none">未判定</span>
-        {% endif %}
-      </div>
-    </a>
+      <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h6v6"></path>
+          <path d="M10 14L21 3"></path>
+          <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
+        </svg>
+      </a>
+    </div>
+    <div class="asset-meta">
+      <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
+      {% if asset.content_rating %}
+      <span class="badge rating-{{ asset.content_rating }}">{{ asset.content_rating }}</span>
+      {% elif asset.nsfw_auto_rating %}
+      <span class="badge rating-auto">自動判定: {{ asset.nsfw_auto_rating }}（未承認）</span>
+      {% else %}
+      <span class="badge rating-none">未判定</span>
+      {% endif %}
+    </div>
   </div>
   {% else %}
   <div class="empty-state">
@@ -87,6 +100,11 @@
   </div>
   {% endfor %}
 </section>
+
+<dialog id="lightbox" class="lightbox">
+  <button type="button" class="lightbox-close" aria-label="閉じる">&times;</button>
+  <div class="lightbox-media"></div>
+</dialog>
 
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
   <span id="bulk-count" class="bulk-count"></span>
@@ -121,4 +139,6 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='upload.js') }}"></script>
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
+<script src="{{ url_for('static', filename='lightbox.js') }}"></script>
+<script src="{{ url_for('static', filename='grid-controls.js') }}"></script>
 {% endblock %}

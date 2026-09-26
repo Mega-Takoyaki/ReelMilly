@@ -236,9 +236,33 @@ main {
 
 /* Asset grid --------------------------------------------------------- */
 
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: -0.5rem 0 1rem;
+}
+
+.grid-size-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.grid-size-control input[type="range"] {
+  width: 130px;
+  accent-color: var(--accent);
+}
+
 .asset-grid {
+  --thumb-size: 190px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--thumb-size), 1fr));
   gap: 1.1rem;
 }
 
@@ -257,10 +281,9 @@ main {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
 
-.asset-card-link {
-  display: block;
-  text-decoration: none;
-  color: inherit;
+.asset-media {
+  position: relative;
+  cursor: zoom-in;
 }
 
 .asset-card img,
@@ -270,6 +293,29 @@ main {
   object-fit: cover;
   display: block;
   background: #000;
+}
+
+.asset-detail-link {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.4rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.asset-detail-link:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  transform: scale(1.08);
 }
 
 .asset-select {
@@ -563,6 +609,61 @@ dialog.confirm-dialog::backdrop {
 .confirm-dialog .btn-ghost:hover { color: var(--fg); background: var(--surface-hover); }
 .confirm-dialog .btn-danger { background: var(--danger); color: #fff; }
 .confirm-dialog .btn-danger:hover { background: var(--danger-hover); }
+
+/* Lightbox --------------------------------------------------------------*/
+
+dialog.lightbox {
+  position: relative;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  padding: 0;
+  max-width: min(92vw, 900px);
+  max-height: 90vh;
+}
+
+dialog.lightbox::backdrop {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.lightbox-media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.lightbox-media img,
+.lightbox-media video {
+  max-width: min(92vw, 900px);
+  max-height: 90vh;
+  display: block;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.lightbox-close:hover {
+  background: var(--danger);
+}
 
 /* Responsive ----------------------------------------------------------*/
 
