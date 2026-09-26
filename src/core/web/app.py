@@ -5,18 +5,42 @@
 """
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
-from flask import Flask, abort, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
+from werkzeug.utils import secure_filename
 
 from core import db
 from core.config import Config
+from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
+from core.media import get_media_properties
+from core.nsfw import try_create_classifier
 
 CONTENT_RATINGS = ("sfw", "suggestive", "explicit")
+ALLOWED_UPLOAD_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_xhr() -> bool:
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _unique_inbox_path(inbox: Path, filename: str) -> Path:
+    dest = inbox / filename
+    if not dest.exists():
+        return dest
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    for _ in range(100):
+        candidate = inbox / f"{stem}-{secrets.token_hex(3)}{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError("could not find a unique filename in inbox")
 
 
 def create_app(config: Config) -> Flask:
@@ -71,6 +95,7 @@ def create_app(config: Config) -> Flask:
         asset_folders = db.list_folders_for_asset(conn, asset_id)
         all_folders = db.list_folders(conn)
         conn.close()
+        properties = get_media_properties(Path(asset["file_path"]), asset["kind"])
         return render_template(
             "asset_detail.html",
             asset=asset,
@@ -79,6 +104,42 @@ def create_app(config: Config) -> Flask:
             asset_folders=asset_folders,
             all_folders=all_folders,
             content_ratings=CONTENT_RATINGS,
+            properties=properties,
+        )
+
+    @app.route("/assets/upload", methods=["POST"])
+    def upload_assets():
+        files = request.files.getlist("files")
+        if not files:
+            return jsonify({"error": "no files provided"}), 400
+
+        config.paths.inbox.mkdir(parents=True, exist_ok=True)
+        saved_names = []
+        rejected = []
+        for file in files:
+            if not file.filename:
+                continue
+            filename = secure_filename(file.filename)
+            ext = Path(filename).suffix.lower()
+            if not filename or ext not in ALLOWED_UPLOAD_EXTENSIONS:
+                rejected.append(file.filename)
+                continue
+            dest = _unique_inbox_path(config.paths.inbox, filename)
+            file.save(dest)
+            saved_names.append(dest.name)
+
+        conn = get_conn()
+        nsfw_classifier = try_create_classifier(config.nsfw)
+        results = ingest_inbox(config, conn, nsfw_classifier=nsfw_classifier)
+        conn.close()
+
+        return jsonify(
+            {
+                "uploaded": len(saved_names),
+                "rejected": rejected,
+                "ingested": len(results),
+                "asset_ids": [r.asset_id for r in results],
+            }
         )
 
     @app.route("/assets/<asset_id>/media")
@@ -113,14 +174,20 @@ def create_app(config: Config) -> Flask:
         tag_name = (request.form.get("tag_name") or "").strip()
         if tag_name:
             db.add_tag_to_asset(conn, asset_id, tag_name)
+        tags = db.list_tags_for_asset(conn, asset_id)
         conn.close()
+        if _is_xhr():
+            return jsonify({"tags": tags})
         return redirect(url_for("asset_detail", asset_id=asset_id))
 
     @app.route("/assets/<asset_id>/tags/<tag_name>/remove", methods=["POST"])
     def remove_tag(asset_id, tag_name):
         conn = get_conn()
         db.remove_tag_from_asset(conn, asset_id, tag_name)
+        tags = db.list_tags_for_asset(conn, asset_id)
         conn.close()
+        if _is_xhr():
+            return jsonify({"tags": tags})
         return redirect(url_for("asset_detail", asset_id=asset_id))
 
     @app.route("/folders", methods=["POST"])
@@ -138,14 +205,69 @@ def create_app(config: Config) -> Flask:
         folder_id = request.form.get("folder_id", type=int)
         if folder_id:
             db.add_asset_to_folder(conn, asset_id, folder_id)
+        folders = db.list_folders_for_asset(conn, asset_id)
         conn.close()
+        if _is_xhr():
+            return jsonify({"folders": folders})
         return redirect(url_for("asset_detail", asset_id=asset_id))
 
     @app.route("/assets/<asset_id>/folders/<int:folder_id>/remove", methods=["POST"])
     def remove_from_folder(asset_id, folder_id):
         conn = get_conn()
         db.remove_asset_from_folder(conn, asset_id, folder_id)
+        folders = db.list_folders_for_asset(conn, asset_id)
         conn.close()
+        if _is_xhr():
+            return jsonify({"folders": folders})
         return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/assets/bulk/tag", methods=["POST"])
+    def bulk_add_tag():
+        payload = request.get_json(silent=True) or {}
+        asset_ids = payload.get("asset_ids") or []
+        tag_name = (payload.get("tag_name") or "").strip()
+        if not asset_ids or not tag_name:
+            return jsonify({"error": "asset_ids and tag_name are required"}), 400
+
+        conn = get_conn()
+        for asset_id in asset_ids:
+            db.add_tag_to_asset(conn, asset_id, tag_name)
+        conn.close()
+        return jsonify({"updated": len(asset_ids), "tag_name": tag_name})
+
+    @app.route("/assets/bulk/folder", methods=["POST"])
+    def bulk_add_to_folder():
+        payload = request.get_json(silent=True) or {}
+        asset_ids = payload.get("asset_ids") or []
+        folder_id = payload.get("folder_id")
+        if not asset_ids or not folder_id:
+            return jsonify({"error": "asset_ids and folder_id are required"}), 400
+
+        conn = get_conn()
+        for asset_id in asset_ids:
+            db.add_asset_to_folder(conn, asset_id, folder_id)
+        conn.close()
+        return jsonify({"updated": len(asset_ids), "folder_id": folder_id})
+
+    @app.route("/assets/bulk/confirm", methods=["POST"])
+    def bulk_confirm_rating():
+        payload = request.get_json(silent=True) or {}
+        asset_ids = payload.get("asset_ids") or []
+        content_rating = payload.get("content_rating")
+        if not asset_ids or content_rating not in CONTENT_RATINGS:
+            return jsonify({"error": "asset_ids and a valid content_rating are required"}), 400
+
+        conn = get_conn()
+        now = _now()
+        for asset_id in asset_ids:
+            db.update_asset(
+                conn,
+                asset_id,
+                content_rating=content_rating,
+                content_rating_confirmed=1,
+                updated_at=now,
+            )
+        conn.close()
+        return jsonify({"updated": len(asset_ids), "content_rating": content_rating})
 
     return app

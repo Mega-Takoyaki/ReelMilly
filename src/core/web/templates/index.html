@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
+<section id="dropzone" class="dropzone">
+  <input type="file" id="dropzone-file-input" multiple accept="image/*,video/*" hidden>
+  <p>ここに画像・動画をドラッグ&ドロップ、またはクリックして選択</p>
+  <p id="dropzone-status" class="dropzone-status"></p>
+</section>
+
 <section class="filters">
   <form method="get">
     <label>ステータス
@@ -45,25 +51,64 @@
 
 <section class="asset-grid">
   {% for asset in assets %}
-  <a class="asset-card" href="{{ url_for('asset_detail', asset_id=asset.id) }}">
-    {% if asset.kind == 'video' %}
-    <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
-    {% else %}
-    <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
-    {% endif %}
-    <div class="asset-meta">
-      <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
-      {% if asset.content_rating %}
-      <span class="badge rating-{{ asset.content_rating }}">{{ asset.content_rating }}</span>
-      {% elif asset.nsfw_auto_rating %}
-      <span class="badge rating-auto">自動判定: {{ asset.nsfw_auto_rating }}（未承認）</span>
+  <div class="asset-card" data-asset-id="{{ asset.id }}">
+    <label class="asset-select">
+      <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
+    </label>
+    <a class="asset-card-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}">
+      {% if asset.kind == 'video' %}
+      <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
       {% else %}
-      <span class="badge rating-none">未判定</span>
+      <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
       {% endif %}
-    </div>
-  </a>
+      <div class="asset-meta">
+        <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
+        {% if asset.content_rating %}
+        <span class="badge rating-{{ asset.content_rating }}">{{ asset.content_rating }}</span>
+        {% elif asset.nsfw_auto_rating %}
+        <span class="badge rating-auto">自動判定: {{ asset.nsfw_auto_rating }}（未承認）</span>
+        {% else %}
+        <span class="badge rating-none">未判定</span>
+        {% endif %}
+      </div>
+    </a>
+  </div>
   {% else %}
   <p>該当するアセットがありません。</p>
   {% endfor %}
 </section>
+
+<div id="bulk-toolbar" class="bulk-toolbar" hidden>
+  <span id="bulk-count" class="bulk-count"></span>
+
+  <span class="bulk-group">
+    <input type="text" id="bulk-tag-input" placeholder="タグ名">
+    <button type="button" id="bulk-tag-apply">タグ付与</button>
+  </span>
+
+  <span class="bulk-group">
+    <select id="bulk-folder-select">
+      <option value="">フォルダを選択</option>
+      {% for f in folders %}
+      <option value="{{ f.id }}">{{ f.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" id="bulk-folder-apply">フォルダに追加</button>
+  </span>
+
+  <span class="bulk-group">
+    <select id="bulk-rating-select">
+      {% for r in content_ratings %}
+      <option value="{{ r }}">{{ r }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" id="bulk-rating-apply">区分を一括承認</button>
+  </span>
+
+  <button type="button" id="bulk-clear">選択解除</button>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='upload.js') }}"></script>
+<script src="{{ url_for('static', filename='bulk.js') }}"></script>
 {% endblock %}

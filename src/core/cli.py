@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -10,7 +9,7 @@ from core.config import Config, ensure_directories, load_config
 from core.db import get_connection, init_db
 from core.events import log_event
 from core.ingest import ingest_inbox
-from core.nsfw import NsfwClassifier
+from core.nsfw import try_create_classifier
 
 
 def cmd_doctor(config: Config) -> int:
@@ -51,19 +50,13 @@ def cmd_init(config: Config) -> int:
     return 0
 
 
-def _try_create_nsfw_classifier(config: Config) -> NsfwClassifier | None:
-    """torch/timmが未インストールの環境でもingest自体は動くよう、事前に有無を確認する。"""
-    if importlib.util.find_spec("torch") is None or importlib.util.find_spec("timm") is None:
-        print("[ingest] torch/timm が見つからないため、NSFW自動仕分けをスキップします")
-        print("[ingest] 有効化するには: pip install -e \".[nsfw]\"")
-        return None
-    return NsfwClassifier(config.nsfw)
-
-
 def cmd_ingest(config: Config) -> int:
     conn = get_connection(config.paths.db_path)
     init_db(conn)
-    nsfw_classifier = _try_create_nsfw_classifier(config)
+    nsfw_classifier = try_create_classifier(config.nsfw)
+    if nsfw_classifier is None:
+        print("[ingest] torch/timm が見つからないため、NSFW自動仕分けをスキップします")
+        print("[ingest] 有効化するには: pip install -e \".[nsfw]\"")
     results = ingest_inbox(config, conn, nsfw_classifier=nsfw_classifier)
     conn.close()
     if not results:

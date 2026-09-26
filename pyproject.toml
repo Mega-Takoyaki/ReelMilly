@@ -7,21 +7,22 @@ dependencies = [
     "Flask>=3.0",
     "PyYAML>=6.0",
     "python-dotenv>=1.0",
+    # 画像・動画のプロパティ表示(解像度・長さ等)や将来のサムネイル生成で使う
+    # コア機能のため、NSFW仕分け専用ではなくベース依存関係とする
+    "pillow",
+    "opencv-python-headless",
 ]
 
 [project.optional-dependencies]
+# torch/timmはNSFW自動仕分け専用。重量級のためオプション化する
 nsfw = [
     "torch",
     "timm",
-    "pillow",
-    "opencv-python-headless",
 ]
 # devはCIで使う。torch/timmは重量級のため意図的に含めない
 # (test_nsfw.pyはモデル推論部分をモックしてテストする)
 dev = [
     "pytest",
-    "pillow",
-    "opencv-python-headless",
     "numpy",
 ]
 

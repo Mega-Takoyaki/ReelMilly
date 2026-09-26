@@ -33,6 +33,37 @@ main {
   margin: 0 auto;
 }
 
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 1.75rem;
+  text-align: center;
+  color: #999;
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover {
+  border-color: var(--accent);
+}
+
+.dropzone.dragover {
+  border-color: var(--accent);
+  background: rgba(122, 162, 247, 0.08);
+}
+
+.dropzone.uploading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.dropzone-status {
+  font-size: 0.85rem;
+  color: var(--accent);
+  min-height: 1.2em;
+}
+
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -55,13 +86,17 @@ main {
 }
 
 .asset-card {
-  display: block;
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  background: #1a1a1a;
+}
+
+.asset-card-link {
+  display: block;
   text-decoration: none;
   color: inherit;
-  background: #1a1a1a;
 }
 
 .asset-card img,
@@ -71,6 +106,23 @@ main {
   object-fit: cover;
   display: block;
   background: #000;
+}
+
+.asset-select {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  padding: 0.15rem;
+  line-height: 0;
+}
+
+.asset-select input {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
 }
 
 .asset-meta {
@@ -128,8 +180,24 @@ form.inline {
 
 .tag-list li, .folder-list li {
   background: #2a2a2a;
-  padding: 0.2rem 0.5rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.5rem;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tag-remove, .folder-remove {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+}
+
+.tag-remove:hover, .folder-remove:hover {
+  color: #f77;
 }
 
 .hint {
@@ -139,4 +207,30 @@ form.inline {
 
 button {
   cursor: pointer;
+}
+
+.bulk-toolbar {
+  position: sticky;
+  bottom: 0;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: #1f1f1f;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.bulk-count {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.bulk-group {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
 }

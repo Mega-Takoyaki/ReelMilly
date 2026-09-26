@@ -17,6 +17,20 @@
     <dl>
       <dt>ステータス</dt><dd>{{ asset.status }}</dd>
       <dt>種別</dt><dd>{{ asset.kind }}</dd>
+      <dt>解像度</dt>
+      <dd>
+        {% if properties.width and properties.height %}
+        {{ properties.width }} × {{ properties.height }}
+        {% else %}
+        不明
+        {% endif %}
+      </dd>
+      {% if asset.kind == 'video' %}
+      <dt>長さ</dt>
+      <dd>{{ properties.duration_seconds ~ '秒' if properties.duration_seconds else '不明' }}</dd>
+      {% endif %}
+      <dt>ファイルサイズ</dt><dd>{{ properties.file_size_human or '不明' }}</dd>
+      <dt>取り込み日時</dt><dd>{{ asset.created_at }}</dd>
       <dt>投稿先チャンネル</dt><dd>{{ channels | join(', ') if channels else '未設定' }}</dd>
       <dt>NSFW自動判定（参考値）</dt>
       <dd>
@@ -49,34 +63,30 @@
     <p class="hint">これはAIによる一次判定の補助表示です。最終判断は必ず人が行ってください。</p>
 
     <h2>タグ</h2>
-    <ul class="tag-list">
+    <ul class="tag-list" id="tag-list" data-asset-id="{{ asset.id }}">
       {% for tag in tags %}
-      <li>
-        {{ tag }}
-        <form method="post" action="{{ url_for('remove_tag', asset_id=asset.id, tag_name=tag) }}" class="inline">
-          <button type="submit">削除</button>
-        </form>
+      <li data-tag="{{ tag }}">
+        <span class="tag-name">{{ tag }}</span>
+        <button type="button" class="tag-remove" data-tag="{{ tag }}">×</button>
       </li>
       {% endfor %}
     </ul>
-    <form method="post" action="{{ url_for('add_tag', asset_id=asset.id) }}">
-      <input type="text" name="tag_name" placeholder="新しいタグ">
+    <form id="tag-add-form" data-asset-id="{{ asset.id }}">
+      <input type="text" name="tag_name" placeholder="新しいタグ" required>
       <button type="submit">タグ追加</button>
     </form>
 
     <h2>フォルダ</h2>
-    <ul class="folder-list">
+    <ul class="folder-list" id="folder-list" data-asset-id="{{ asset.id }}">
       {% for folder in asset_folders %}
-      <li>
-        {{ folder.name }}
-        <form method="post" action="{{ url_for('remove_from_folder', asset_id=asset.id, folder_id=folder.id) }}" class="inline">
-          <button type="submit">削除</button>
-        </form>
+      <li data-folder-id="{{ folder.id }}">
+        <span class="folder-name">{{ folder.name }}</span>
+        <button type="button" class="folder-remove" data-folder-id="{{ folder.id }}">×</button>
       </li>
       {% endfor %}
     </ul>
     {% if all_folders %}
-    <form method="post" action="{{ url_for('add_to_folder', asset_id=asset.id) }}">
+    <form id="folder-add-form" data-asset-id="{{ asset.id }}">
       <select name="folder_id">
         {% for folder in all_folders %}
         <option value="{{ folder.id }}">{{ folder.name }}</option>
@@ -87,4 +97,7 @@
     {% endif %}
   </div>
 </section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='detail.js') }}"></script>
 {% endblock %}

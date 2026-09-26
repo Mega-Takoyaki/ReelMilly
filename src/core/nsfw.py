@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,3 +111,15 @@ class NsfwClassifier:
         if media_path.suffix.lower() in VIDEO_EXTENSIONS:
             return self.classify_video_path(media_path)
         return self.classify_image_path(media_path)
+
+
+def is_available() -> bool:
+    """torch/timmがインストールされているか(NSFW自動仕分けが実行可能か)を返す。"""
+    return importlib.util.find_spec("torch") is not None and importlib.util.find_spec("timm") is not None
+
+
+def try_create_classifier(config: NsfwConfig) -> "NsfwClassifier | None":
+    """torch/timmが未インストールならNoneを返す。CLI/Web両方から共通で使う。"""
+    if not is_available():
+        return None
+    return NsfwClassifier(config)
