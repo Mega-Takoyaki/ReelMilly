@@ -72,6 +72,8 @@ def ingest_inbox(
     nsfw_classifierを渡した場合、取り込んだ各アセットに対してNSFW自動仕分け
     を実行し、`nsfw_auto_rating`/`nsfw_auto_confidence`をあわせて記録する
     （ADR-0008/0009。あくまで参考値で、確定にはcontent_rating_confirmedが必要）。
+    分類に失敗した場合（破損ファイル等）はingest自体は継続し、当該アセットの
+    `nsfw_auto_rating`はNoneのまま`events.jsonl`に`nsfw_classify_failed`を記録する。
     """
     results: list[IngestResult] = []
     inbox = config.paths.inbox
@@ -101,9 +103,18 @@ def ingest_inbox(
         nsfw_auto_rating = None
         nsfw_auto_confidence = None
         if nsfw_classifier is not None:
-            nsfw_result = nsfw_classifier.classify(dest_path)
-            nsfw_auto_rating = nsfw_result.rating
-            nsfw_auto_confidence = nsfw_result.confidence
+            try:
+                nsfw_result = nsfw_classifier.classify(dest_path)
+                nsfw_auto_rating = nsfw_result.rating
+                nsfw_auto_confidence = nsfw_result.confidence
+            except Exception as exc:  # noqa: BLE001 - 破損ファイル等でingest全体を止めない
+                log_event(
+                    config.paths.events_path,
+                    "nsfw_classify_failed",
+                    asset_id=asset_id,
+                    filename=media_path.name,
+                    error=str(exc),
+                )
 
         now = datetime.now(timezone.utc).isoformat()
         asset = {

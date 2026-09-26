@@ -59,13 +59,16 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-NSFW自動仕分け機能（[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）を使う場合は、追加でtorch/timmをインストールします（数百MB〜のダウンロードが発生します）。
+NSFW自動仕分け機能（[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）を使う場合は、追加でtorch/timmをインストールします。GPUが不要であればCPU版を先に指定しておくとダウンロード容量を抑えられます（推奨、動作確認済み）。
 
 ```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -e ".[nsfw]"
 ```
 
-これを入れなくても本体（一覧・フォルダ・タグ・承認UI）は動作します。ingest時にNSFW自動仕分けがスキップされる旨のメッセージが出るだけです。
+（GPU版を使いたい場合、または既に`torch`をインストール済みの場合は`pip install -e ".[nsfw]"`のみで構いません）
+
+これを入れなくても本体（一覧・フォルダ・タグ・承認UI）は動作します。ingest時にNSFW自動仕分けがスキップされる旨のメッセージが出るだけです。初回`ingest`実行時、Marqoモデルの重み（`marqo/nsfw-image-detection-384`）がHugging Face Hubから自動ダウンロードされます。
 
 ### 3. 秘密情報の設定
 

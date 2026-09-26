@@ -108,6 +108,28 @@ def test_run_fanvue_drop_success_marks_posted(setup):
     assert any(e["event"] == "drop_ok" and e["asset_id"] == "a1" for e in events)
 
 
+def test_run_fanvue_drop_success_tags_asset_as_posted(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn)
+
+    run_fanvue_drop(
+        config, conn, _mock_fanvue_client(), fanvue_handle="creator", post_url_template="https://f.com/{handle}"
+    )
+
+    assert "fanvue投稿済み" in db.list_tags_for_asset(conn, "a1")
+
+
+def test_run_fanvue_drop_failure_does_not_tag_asset(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn)
+    client = _mock_fanvue_client()
+    client.upload_media.side_effect = RuntimeError("upload failed")
+
+    run_fanvue_drop(config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}")
+
+    assert db.list_tags_for_asset(conn, "a1") == []
+
+
 def test_run_fanvue_drop_picks_oldest_ready_asset(setup):
     config, conn = setup
     _make_ready_asset(config, conn, "a1", created_at="2026-01-02T00:00:00+00:00")

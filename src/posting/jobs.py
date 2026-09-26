@@ -20,6 +20,7 @@ from core.policy import can_auto_post
 from posting.fanvue import FanvueClient, build_post_url
 
 FANVUE_CHANNEL = "fanvue"
+FANVUE_POSTED_TAG = "fanvue投稿済み"
 
 
 def _now() -> str:
@@ -100,6 +101,7 @@ def run_fanvue_drop(
             fanvue_uuid=media_uuid,
             updated_at=_now(),
         )
+        db.add_tag_to_asset(conn, asset_id, FANVUE_POSTED_TAG)
         log_event(
             config.paths.events_path,
             "drop_ok",

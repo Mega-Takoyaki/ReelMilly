@@ -27,7 +27,8 @@
 - [x] ~~NSFW自動仕分けの実装方式の選定~~ → 決定: Marqo/nsfw-image-detection-384（[ADR-0009](docs/adr/0009-nsfw-classifier-marqo.md)）
 - [x] ~~`assets`テーブル（SQLite）に`content_rating_confirmed`・`nsfw_auto_rating`・`nsfw_auto_confidence`を追加~~ → `src/core/schema.sql`に実装済み
 - [x] ~~`timm` / `torch` / `pillow` / `opencv-python` を依存関係に追加~~ → `pyproject.toml`の`nsfw`/`dev` extraに実装済み
-- [ ] 動画のフレームサンプリング間隔（初期値2秒）・判定閾値（初期値0.5）を実機でReelMilly実データを使い検証・調整する（`src/core/nsfw.py`のロジック自体はテスト済み、精度検証は未実施）
+- [x] ~~NSFW自動仕分けが実機で動作するか確認する~~ → torch(CPU版)+timmをインストールし、Marqoモデルのロード・画像分類・`reelmilly ingest`経由での統合動作をこのセッションの開発環境で確認済み（image: nsfw判定、confidence記録まで正常動作）。この過程で発見した「破損・非画像ファイルの分類失敗でingest全体が止まる」問題は`ingest_inbox`で例外を捕捉し`nsfw_classify_failed`イベントを記録する形に修正済み
+- [ ] 動画のフレームサンプリング間隔（初期値2秒）・判定閾値（初期値0.5）を実際のGrok Imagine出力データを使い検証・調整する（ロジック自体はテスト済み、判定精度の検証は未実施。ReelMillyコンテンツに対する誤判定率を見て閾値を調整する必要がある）
 - [ ] オフライン運用が必要な場合、Marqoモデルの事前キャッシュ手順を用意
 - [x] ~~`config.yaml`に`platform_auto_post_ratings`を追加~~ → 実装済み
 - [x] ~~自動仕分け結果の確認・補正操作を本体UI（Phase 1.5）に実装する~~ → `/assets/<id>/confirm`として実装済み。Telegram簡易版は未着手
