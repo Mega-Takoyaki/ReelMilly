@@ -99,7 +99,7 @@ pip install -e ".[vlm]"
 
 本体UIの設定画面で生成AIプロバイダーを「自前ホスト型VLM」に切り替えてください。既定モデル（`prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`）の重み（数GB）は初回利用時にHugging Face Hubから自動ダウンロードされます。GPUがあれば自動的に使われ高速化されます。GPUが無い環境ではCPU推論となり、1枚あたり数秒〜数十秒かかる見込みです（実機未検証）。`reelmilly analyze`はバックグラウンドのバッチ処理として設計されているため、即日投稿が不要な運用であれば実用上問題ない想定です。
 
-> **重要**: 一覧・フォルダ・タグ・承認UIなど本体機能はNSFW自動仕分け・画像内容説明のどちらも未設定でも動作しますが、**両方が取得できたアセットのみ`status="ready"`（Fanvue投稿対象）になります**（ADR-0015）。片方でも未設定・失敗の場合は`status="analyzing"`のまま残り、Fanvueへは自動投稿されません。以前のバージョンでは「NSFW仕分けなしでもすぐready」でしたが、投稿文の自動生成を導入したことでこの挙動に変更しました。
+> **重要**: 一覧・フォルダ・タグ・承認UIなど本体機能はNSFW自動仕分け・画像内容説明のどちらも未設定でも動作しますが、**両方が取得できたアセットのみ`status="pending_approval"`（人間の承認待ち）になります**（ADR-0015、ADR-0019）。片方でも未設定・失敗の場合は`status="analyzing"`のまま残り、Fanvueへは自動投稿されません。以前のバージョンでは「NSFW仕分けなしでもすぐready」でしたが、投稿文の自動生成を導入したことでこの挙動に変更しました。
 
 ### 3. 秘密情報の設定
 
@@ -134,13 +134,23 @@ channels: [fanvue, x]
 tags: [推し, 夏]
 ```
 
-NSFW自動仕分け・画像内容説明の両方が成功したアセットは`status="ready"`になります。どちらか一方でも未設定・失敗の場合は`status="analyzing"`のまま残ります（一覧・タグ・フォルダ操作は可能ですが、Fanvue投稿の対象にはなりません）。`analyzing`のまま残ったアセットは、設定を直してから以下のコマンドで再試行できます。
+NSFW自動仕分け・画像内容説明の両方が成功したアセットは`status="pending_approval"`（人間の承認待ち）になります。どちらか一方でも未設定・失敗の場合は`status="analyzing"`のまま残ります（一覧・タグ・フォルダ操作は可能ですが、Fanvue投稿の対象にはなりません）。`analyzing`のまま残ったアセットは、設定を直してから以下のコマンドで再試行できます。
 
 ```bash
 reelmilly analyze
 ```
 
-`reelmilly watch`実行中は上記の分析が定期的に非同期実行されるため、`status="ready"`になったアセットが承認待ちのまま溜まっていきます（[ADR-0018](docs/adr/0018-auto-tagging-and-pending-approval-review.md)）。一覧画面の「承認状態」フィルタで「承認待ち」を選び、「表示中をすべて選択」＋一括承認（`content_rating`確定）を組み合わせることで、後でまとめてレビューできます。また、内容説明の生成時にはAIがタグを2〜3個自動で提案し、NSFW自動仕分けの結果（`sfw`/`nsfw`）もタグとして自動付与されます。
+`reelmilly watch`実行中は上記の分析が定期的に非同期実行されるため、`status="pending_approval"`のアセットが承認待ちのまま溜まっていきます（[ADR-0018](docs/adr/0018-auto-tagging-and-pending-approval-review.md)）。一覧画面の「ステータス」フィルタで「pending_approval」を選び、「表示中をすべて選択」＋一括承認（`content_rating`確定）を組み合わせることで、後でまとめてレビューできます。承認すると`status="ready"`（文字通り投稿準備完了）に自動的に遷移します（[ADR-0019](docs/adr/0019-status-rename-pending-approval.md)）。また、内容説明の生成時にはAIがタグを2〜3個自動で提案し、NSFW自動仕分けの結果（`sfw`/`nsfw`）もタグとして自動付与されます。
+
+アセットのステータスは次の順に遷移します。
+
+| ステータス | 意味 |
+|---|---|
+| `analyzing` | NSFW自動仕分け・内容説明のいずれかが未完了（分析中） |
+| `pending_approval` | 両方完了、人間の承認待ち |
+| `ready` | 人間が承認済み、投稿準備完了 |
+| `posted` | Fanvueへ投稿済み |
+| `failed_fanvue` | 投稿試行に失敗（自動リトライなし） |
 
 ### 6. 本体UIを起動する
 

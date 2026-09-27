@@ -17,7 +17,7 @@
     <label>ステータス
       <select name="status" onchange="this.form.submit()">
         <option value="">すべて</option>
-        {% for s in ["analyzing", "ready", "posted", "failed_fanvue"] %}
+        {% for s in ["analyzing", "pending_approval", "ready", "posted", "failed_fanvue"] %}
         <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>

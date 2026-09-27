@@ -96,7 +96,13 @@ def cmd_ingest(config: Config) -> int:
 
 
 def cmd_analyze(config: Config) -> int:
-    """`status="analyzing"`のアセットにNSFW自動仕分け・内容説明取得を再試行する(ADR-0015)。"""
+    """`status="analyzing"`のアセットにNSFW自動仕分け・内容説明取得を再試行する(ADR-0015)。
+
+    成功時は`status="pending_approval"`(人間の承認待ち)に更新する。ただし、
+    分析待ちの間に既に`content_rating_confirmed`が立てられていた場合は、
+    承認待ちを経由せず`status="ready"`(投稿準備完了)に直接昇格させる
+    (ADR-0019)。
+    """
     conn = get_connection(config.paths.db_path)
     init_db(conn)
 
@@ -114,22 +120,23 @@ def cmd_analyze(config: Config) -> int:
         result = analyze_asset(conn, nsfw_classifier, generator, Path(asset["file_path"]))
         apply_auto_tags(conn, asset["id"], result)
         if result.success:
+            new_status = "ready" if asset["content_rating_confirmed"] else "pending_approval"
             db_module.update_asset(
                 conn,
                 asset["id"],
-                status="ready",
+                status=new_status,
                 nsfw_auto_rating=result.nsfw_auto_rating,
                 nsfw_auto_confidence=result.nsfw_auto_confidence,
                 content_description=result.content_description,
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
             promoted += 1
-            print(f"[analyze] {asset['id']}: readyに昇格しました")
+            print(f"[analyze] {asset['id']}: {new_status}に更新しました")
         else:
             print(f"[analyze] {asset['id']}: 未完了のままです ({result.error})")
 
     conn.close()
-    print(f"[analyze] {promoted}/{len(pending)} 件をreadyに昇格しました")
+    print(f"[analyze] {promoted}/{len(pending)} 件を更新しました")
     return 0
 
 

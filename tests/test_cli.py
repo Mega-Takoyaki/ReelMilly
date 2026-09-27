@@ -305,7 +305,7 @@ def test_run_due_passes_cadence_dict_options_to_run_drop(tmp_path, monkeypatch):
     mocked.assert_called_once_with(config, count=3, kind="image", rating="sfw")
 
 
-def test_analyze_promotes_asset_to_ready_on_success(tmp_path, capsys):
+def test_analyze_promotes_asset_to_pending_approval_on_success(tmp_path, capsys):
     config = _load(tmp_path)
     cmd_init(config)
     conn = db.get_connection(config.paths.db_path)
@@ -342,10 +342,51 @@ def test_analyze_promotes_asset_to_ready_on_success(tmp_path, capsys):
     asset = db.get_asset(conn, "a1")
     tags = db.list_tags_for_asset(conn, "a1")
     conn.close()
-    assert asset["status"] == "ready"
+    assert asset["status"] == "pending_approval"  # ADR-0019: 人間の承認待ち(旧readyから改名)
     assert asset["content_description"] == "説明文"
     assert set(tags) == {"屋外", "sfw"}
-    assert "readyに昇格" in capsys.readouterr().out
+    assert "pending_approvalに更新" in capsys.readouterr().out
+
+
+def test_analyze_promotes_asset_directly_to_ready_when_already_confirmed(tmp_path, capsys):
+    """分析待ちの間に人間が先に承認していた場合、pending_approvalを経由せずreadyになる(ADR-0019)。"""
+    config = _load(tmp_path)
+    cmd_init(config)
+    conn = db.get_connection(config.paths.db_path)
+    media_path = config.paths.ready / "a1" / "look.jpg"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"fake-bytes")
+    db.insert_asset(
+        conn,
+        {
+            "id": "a1",
+            "status": "analyzing",
+            "kind": "image",
+            "file_path": str(media_path),
+            "content_rating": "sfw",
+            "content_rating_confirmed": 1,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
+    conn.close()
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.1)
+    fake_generator = MagicMock()
+    fake_generator.describe_image.return_value = DescriptionResult(description="説明文")
+
+    with patch("core.cli.try_create_classifier", return_value=fake_classifier), patch(
+        "core.generation.try_create_generator", return_value=fake_generator
+    ):
+        exit_code = cmd_analyze(config)
+
+    assert exit_code == 0
+    conn = db.get_connection(config.paths.db_path)
+    asset = db.get_asset(conn, "a1")
+    conn.close()
+    assert asset["status"] == "ready"
+    assert "readyに更新" in capsys.readouterr().out
 
 
 def test_analyze_reports_no_pending_assets(tmp_path, capsys):

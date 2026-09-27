@@ -149,6 +149,18 @@ def test_confirm_rating_sets_content_rating_confirmed(app_and_conn):
     assert asset["content_rating_confirmed"] == 1
 
 
+def test_confirm_rating_promotes_pending_approval_to_ready(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.update_asset(conn, "a1", status="pending_approval")
+
+    response = client.post("/assets/a1/confirm", data={"content_rating": "sfw"})
+
+    assert response.status_code == 302
+    asset = db.get_asset(conn, "a1")
+    assert asset["status"] == "ready"
+
+
 def test_confirm_rating_rejects_invalid_value(app_and_conn):
     app, conn = app_and_conn
     client = app.test_client()
@@ -354,7 +366,7 @@ def test_bulk_confirm_rating(app_and_conn):
         conn,
         {
             "id": "a2",
-            "status": "ready",
+            "status": "pending_approval",
             "kind": "image",
             "file_path": "unused.jpg",
             "created_at": "now",
@@ -373,6 +385,7 @@ def test_bulk_confirm_rating(app_and_conn):
         asset = db.get_asset(conn, asset_id)
         assert asset["content_rating"] == "sfw"
         assert asset["content_rating_confirmed"] == 1
+        assert asset["status"] == "ready"  # ADR-0019: pending_approval→readyへ自動遷移
 
 
 def test_bulk_confirm_rejects_invalid_rating(app_and_conn):

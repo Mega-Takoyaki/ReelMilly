@@ -118,7 +118,7 @@ def test_ingest_without_classifier_leaves_nsfw_fields_null(tmp_path):
     assert asset["status"] == "analyzing"
 
 
-def test_ingest_becomes_ready_when_nsfw_and_description_both_succeed(tmp_path):
+def test_ingest_becomes_pending_approval_when_nsfw_and_description_both_succeed(tmp_path):
     config, conn = _setup(tmp_path)
     (config.paths.inbox / "look-a.jpg").write_bytes(b"fake-image-bytes")
 
@@ -129,7 +129,7 @@ def test_ingest_becomes_ready_when_nsfw_and_description_both_succeed(tmp_path):
     results = ingest_inbox(config, conn, nsfw_classifier=classifier, generator=generator)
 
     asset = db.get_asset(conn, results[0].asset_id)
-    assert asset["status"] == "ready"
+    assert asset["status"] == "pending_approval"  # ADR-0019: 人間の承認待ち(旧readyから改名)
     assert asset["content_description"] == "赤いドレスの女性が微笑んでいる"
 
 

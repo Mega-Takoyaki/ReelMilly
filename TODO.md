@@ -73,6 +73,11 @@
 - [ ] 自動提案タグ・NSFW判定タグと、人間が手動で付けたタグを画面上で区別できるようにするか検討する（現状は見た目上の区別なし。誤って自動タグを人力タグと勘違いする可能性がある）
 - [ ] タグの自動生成・自動付与の実際の精度・有用性を、実データで確認する
 
+## ステータス名の改名（ADR-0019）
+
+- [x] ~~`status="ready"`（AI処理完了・承認待ち）を`pending_approval`に改名し、承認後の状態として`status="ready"`（投稿準備完了）を新設~~ → `core/ingest.py`・`core/cli.py`（`cmd_analyze`）・`core/web/app.py`（`confirm_rating`/`bulk_confirm_rating`）として実装済み
+- [ ] 実データでの移行は不要（本セッションでは実DBデータなし）だが、既存運用でこの変更を取り込む場合、DB内の既存`status="ready"`（旧意味）行が新しい`pending_approval`/`ready`のどちらに該当するかを`content_rating_confirmed`列で判定し一括更新するマイグレーションが必要になる点に注意
+
 ## 接続設定（Fanvue/Telegram/生成AI、ADR-0016）
 
 - [x] ~~Fanvue APIトークン・ハンドル等を本体UIの設定画面から編集できるようにする~~ → `src/core/env_settings.py`（`.env`の読み書き）と`/settings`ページの「接続設定」セクションとして実装済み。秘密情報は`.env`のみに保持する方針は維持（DBには保存しない）

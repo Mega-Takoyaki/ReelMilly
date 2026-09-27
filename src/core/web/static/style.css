@@ -377,7 +377,8 @@ main {
   border: 1px solid var(--border);
 }
 
-.badge.status-ready { background: color-mix(in srgb, var(--accent) 20%, var(--surface-alt)); color: var(--accent); border-color: transparent; }
+.badge.status-pending_approval { background: color-mix(in srgb, var(--accent) 20%, var(--surface-alt)); color: var(--accent); border-color: transparent; }
+.badge.status-ready { background: color-mix(in srgb, var(--success) 20%, var(--surface-alt)); color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
 .badge.status-posted { background: color-mix(in srgb, var(--success) 22%, var(--surface-alt)); color: var(--success); border-color: transparent; }
 .badge.status-analyzing { background: var(--surface-alt); color: var(--fg-muted); }
 .badge.status-failed_fanvue { background: color-mix(in srgb, var(--danger) 22%, var(--surface-alt)); color: var(--danger); border-color: transparent; }

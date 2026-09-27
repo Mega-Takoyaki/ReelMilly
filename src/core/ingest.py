@@ -72,7 +72,8 @@ def ingest_inbox(
     取り込み後は削除する。sidecarがない場合はデフォルト値を使う。
 
     NSFW自動仕分け(nsfw_classifier)と内容説明取得(generator)の両方が成功した
-    場合のみ`status="ready"`とする(ADR-0015)。いずれか一方でも未設定・失敗の
+    場合のみ`status="pending_approval"`(人間の承認待ち)とする(ADR-0015、
+    ADR-0019でステータス名を`ready`から変更)。いずれか一方でも未設定・失敗の
     場合は`status="analyzing"`のまま残し、`reelmilly analyze`で再試行できる。
     失敗の詳細は`events.jsonl`に`analysis_incomplete`として記録する。
     取得できた分の内容説明タグ・NSFW自動仕分け結果は、成否に関わらずタグとして
@@ -108,7 +109,7 @@ def ingest_inbox(
         now = datetime.now(timezone.utc).isoformat()
         asset = {
             "id": asset_id,
-            "status": "ready" if analysis.success else "analyzing",
+            "status": "pending_approval" if analysis.success else "analyzing",
             "kind": kind,
             "file_path": str(dest_path),
             "caption": sidecar_data.get("caption"),

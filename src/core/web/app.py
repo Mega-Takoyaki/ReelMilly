@@ -164,13 +164,15 @@ def create_app(config: Config) -> Flask:
         if content_rating not in CONTENT_RATINGS:
             conn.close()
             abort(400)
-        db.update_asset(
-            conn,
-            asset_id,
-            content_rating=content_rating,
-            content_rating_confirmed=1,
-            updated_at=_now(),
-        )
+        asset = db.get_asset(conn, asset_id)
+        updates = {
+            "content_rating": content_rating,
+            "content_rating_confirmed": 1,
+            "updated_at": _now(),
+        }
+        if asset is not None and asset["status"] == "pending_approval":
+            updates["status"] = "ready"
+        db.update_asset(conn, asset_id, **updates)
         conn.close()
         return redirect(url_for("asset_detail", asset_id=asset_id))
 
@@ -315,13 +317,15 @@ def create_app(config: Config) -> Flask:
         conn = get_conn()
         now = _now()
         for asset_id in asset_ids:
-            db.update_asset(
-                conn,
-                asset_id,
-                content_rating=content_rating,
-                content_rating_confirmed=1,
-                updated_at=now,
-            )
+            asset = db.get_asset(conn, asset_id)
+            updates = {
+                "content_rating": content_rating,
+                "content_rating_confirmed": 1,
+                "updated_at": now,
+            }
+            if asset is not None and asset["status"] == "pending_approval":
+                updates["status"] = "ready"
+            db.update_asset(conn, asset_id, **updates)
         conn.close()
         return jsonify({"updated": len(asset_ids), "content_rating": content_rating})
 
