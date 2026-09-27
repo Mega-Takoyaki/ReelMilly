@@ -49,8 +49,14 @@
         <select name="generation_provider">
           <option value="claude" {% if settings.generation_provider == 'claude' %}selected{% endif %}>Claude API</option>
           <option value="openai" {% if settings.generation_provider == 'openai' %}selected{% endif %}>OpenAI API（実API疎通は未検証）</option>
+          <option value="local" {% if settings.generation_provider == 'local' %}selected{% endif %}>自前ホスト型VLM（explicit対応、要torch/transformers）</option>
         </select>
       </label>
+      <p class="hint">
+        Claude API/OpenAI APIは利用ポリシーにより性的に露骨なコンテンツの説明を拒否する可能性が高いため（ADR-0017）、
+        explicit判定のアセットには「自前ホスト型VLM」を選んでください。初回利用時にモデルの重み（数GB）が
+        自動ダウンロードされ、GPUが無い環境ではCPU推論になります。
+      </p>
 
       <label>モデル名
         <input type="text" name="generation_model" value="{{ settings.generation_model }}">

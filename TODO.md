@@ -38,7 +38,7 @@
 
 - [x] ~~生成AIプロバイダーの抽象化（Claude API既定、OpenAI API選択可）を実装~~ → `src/core/generation.py`(`ClaudeGenerator`/`OpenAiGenerator`/`try_create_generator`)として実装済み。ClaudeGeneratorはモックでテスト済み(6件)
 - [ ] OpenAiGeneratorは実API疎通を検証していない。Fanvueクライアントと同様、実行して失敗する場合は本項目を参照して調整すること
-- [ ] AWS Bedrock対応（ADR-0015で将来対応として保留）。AWSへのデプロイを行う場合に着手する
+- [x] ~~AWS Bedrock対応の要否を検討~~ → **不採用と判断**（[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）。Bedrock上のClaudeも同じ利用ポリシーが適用される上、AWS自身のService Terms（sexually explicit/adult servicesの送信禁止）が別途重なるため、explicit対応の解決策にはならない
 - [x] ~~`assets`テーブルに`content_description`・`fanvue_caption_draft`を追加~~ → `src/core/schema.sql`に実装済み
 - [x] ~~システムプロンプト等を保存する`settings`テーブルと本体UIの設定画面を実装~~ → `src/core/settings.py`・`/settings`ルート・`settings.html`として実装済み
 - [x] ~~READY昇格条件をNSFW自動仕分け・内容説明の両方の成功に変更~~ → `src/core/analysis.py`(`analyze_asset`)・`src/core/ingest.py`として実装済み。**重要な方針転換**: 以前は本体機能単体（NSFW/生成AI未設定）でもreadyになったが、現在は両方成功しないとreadyにならない（README参照）
@@ -47,6 +47,19 @@
 - [x] ~~投稿文の自動生成(`auto`/`draft`モード)を`run_fanvue_drop`に統合~~ → `posting/jobs.py`(`_resolve_caption`)として実装済み
 - [x] ~~投稿オプション（枚数・種別・レーティング）をCLI(`--count`/`--kind`/`--rating`)とconfig.yamlのcadence(辞書形式)の両方に対応~~ → 実装済み。`run_fanvue_drop_batch`は候補が尽きる・スキップ・失敗のいずれかの時点で打ち切る（次候補へのスキップは行わない、既知の制約）
 - [ ] 生成AIのAPI課金（Claude API/OpenAI APIとも従量課金）の実運用コストを、実際の投稿頻度で見積もる
+
+## 自前ホスト型VLMによるexplicit対応（ADR-0017）
+
+- [x] ~~Claude API/OpenAI API/xAI Grok API/AWS Bedrockが性的に露骨なコンテンツを処理できるか調査~~ → いずれも利用ポリシー上の制約により不適（ADR-0017に詳細）
+- [x] ~~自前ホスト型VLM(`LocalVlmGenerator`)を実装~~ → `src/core/generation.py`として実装済み。既定モデル`prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`
+- [ ] **実機でのモデルロード・生成動作を未検証**。このセッションでは実際のモデル重み(数GB)のダウンロード・推論は行っておらず、`transformers`の`AutoProcessor`/`AutoModelForImageTextToText`+`apply_chat_template`という一般的なVLMチャット向けAPIパターンに基づく実装に留まる。実機（CPU推論、GPUなし）で以下を確認する必要がある:
+  - モデルが実際にダウンロード・ロードできるか（`pip install -e ".[vlm]"`後、初回`reelmilly analyze`実行時）
+  - `describe_image`/`generate_caption`が例外なく実行でき、意味のある説明文・投稿文を返すか
+  - CPU推論1枚あたりの所要時間（実用に耐えるか）
+  - `prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`自体の品質（個人配布モデルのため実績が薄い。品質が不十分な場合はJoyCaption等の代替モデルに切り替える）
+- [ ] GPU搭載PCへ移行した場合に実際に高速化されるかの実機確認（`torch.cuda.is_available()`による自動切り替えは実装済みだが未検証）
+- [ ] `content_rating`（explicit/suggestive/sfw）に応じて生成AIプロバイダーを自動的に切り替える仕組みは未実装。現状は`generation_provider`設定を運用者が手動で切り替える必要がある。頻繁に切り替えるようであれば自動化を検討する
+- [ ] `vlm` extraのインストール（`torch`+`transformers`、数百MB〜）が実機のディスク容量・回線で問題なく完了するか確認する
 
 ## 接続設定（Fanvue/Telegram/生成AI、ADR-0016）
 

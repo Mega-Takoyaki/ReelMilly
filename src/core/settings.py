@@ -23,7 +23,11 @@ DEFAULT_CAPTION_SYSTEM_PROMPT = (
 )
 
 DEFAULT_GENERATION_PROVIDER = "claude"
-DEFAULT_GENERATION_MODEL = {"claude": "claude-opus-5", "openai": "gpt-4o"}
+DEFAULT_GENERATION_MODEL = {
+    "claude": "claude-opus-5",
+    "openai": "gpt-4o",
+    "local": "prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it",
+}
 DEFAULT_CAPTION_MODE = "auto"  # "auto" | "draft"
 
 _KEY_DESCRIPTION_PROMPT = "description_system_prompt"

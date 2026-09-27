@@ -25,8 +25,14 @@ nsfw = [
 ai = [
     "anthropic",
 ]
-# devはCIで使う。torch/timmは重量級のため意図的に含めない
-# (test_nsfw.pyはモデル推論部分をモックしてテストする)
+# vlm: 自前ホスト型VLMによる画像内容説明・投稿文生成(ADR-0017)。
+# Claude API/OpenAI APIが拒否しうる性的に露骨なコンテンツにも使える
+vlm = [
+    "torch",
+    "transformers>=4.45",
+]
+# devはCIで使う。torch/timm/transformersは重量級のため意図的に含めない
+# (test_nsfw.py/LocalVlmGeneratorのテストはロード済みインスタンスをモックして検証する)
 # anthropicは軽量なためdevに含め、core/generation.pyをモックでテストする
 dev = [
     "pytest",

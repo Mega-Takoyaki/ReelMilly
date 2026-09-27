@@ -4,7 +4,7 @@
 
 ## ステータス
 
-本体（画像・動画管理アプリ、Phase 0〜1.5相当）、Fanvue投稿ジョブ（Phase 2・4のFanvue部分）、NSFW自動仕分け（実機動作確認済み）、自動実行スケジューラ（`run-due`/`watch`）、AIによる画像内容説明・Fanvue投稿文の自動生成（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）を実装済み。FanvueのAPI実疎通・OpenAI APIプロバイダーの実疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
+本体（画像・動画管理アプリ、Phase 0〜1.5相当）、Fanvue投稿ジョブ（Phase 2・4のFanvue部分）、NSFW自動仕分け（実機動作確認済み）、自動実行スケジューラ（`run-due`/`watch`）、AIによる画像内容説明・Fanvue投稿文の自動生成（Claude API/OpenAI API/自前ホスト型VLM、[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)・[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）を実装済み。FanvueのAPI実疎通・OpenAI APIプロバイダー・自前ホスト型VLMの実疎通は未確認。X投稿（Phase 3）はX開発者アプリの申請待ちで未着手。進捗は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## ドキュメント
 
@@ -78,6 +78,16 @@ pip install -e ".[ai]"
 
 OpenAI APIを使いたい場合は別途 `pip install openai` してください（本体UIの設定画面でプロバイダーを切り替えます。実API疎通は未検証です）。
 
+> **注意（重要）**: Claude API/OpenAI APIは、利用ポリシー上「性的に露骨なコンテンツ」の生成・説明を拒否する可能性が高いです（[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）。`content_rating=explicit`のアセットには、次段落の「自前ホスト型VLM」を使ってください。AWS Bedrock経由でも同じ制約（+AWS自身の利用規約）がかかるため回避策にはなりません。
+
+`explicit`判定のアセットにも対応する場合は、自前ホスト型VLM（Vision-Language Model）を使います（[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）。外部サービスの利用ポリシーに縛られず、ローカルで推論するためAPI課金も発生しません。
+
+```bash
+pip install -e ".[vlm]"
+```
+
+本体UIの設定画面で生成AIプロバイダーを「自前ホスト型VLM」に切り替えてください。既定モデル（`prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`）の重み（数GB）は初回利用時にHugging Face Hubから自動ダウンロードされます。GPU（CUDA）があれば自動的に使われ高速化されます。GPUが無い環境ではCPU推論となり、1枚あたり数秒〜数十秒かかる見込みです（実機未検証）。`reelmilly analyze`はバックグラウンドのバッチ処理として設計されているため、即日投稿が不要な運用であれば実用上問題ない想定です。
+
 > **重要**: 一覧・フォルダ・タグ・承認UIなど本体機能はNSFW自動仕分け・画像内容説明のどちらも未設定でも動作しますが、**両方が取得できたアセットのみ`status="ready"`（Fanvue投稿対象）になります**（ADR-0015）。片方でも未設定・失敗の場合は`status="analyzing"`のまま残り、Fanvueへは自動投稿されません。以前のバージョンでは「NSFW仕分けなしでもすぐready」でしたが、投稿文の自動生成を導入したことでこの挙動に変更しました。
 
 ### 3. 秘密情報の設定
@@ -132,7 +142,7 @@ reelmilly web
 画面右上の「設定」（`/settings`）では以下を設定できます。
 
 - **接続設定**（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）: Fanvue APIトークン・ハンドル・投稿URLテンプレート、Telegram（連携自体は未実装）、Anthropic/OpenAIのAPIキー。実体は`.env`ファイルで、画面はその読み書きを行うだけです。APIトークン等の秘密項目は画面に値を表示せず「設定済み/未設定」のみ表示し、空欄のまま保存すれば既存の値は変更されません
-- **画像内容説明・Fanvue投稿文の自動生成**（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）: 生成AIプロバイダー（Claude API/OpenAI API）・モデル名・システムプロンプト・投稿文の生成モード（`auto`/`draft`）
+- **画像内容説明・Fanvue投稿文の自動生成**（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)・[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）: 生成AIプロバイダー（Claude API/OpenAI API/自前ホスト型VLM）・モデル名・システムプロンプト・投稿文の生成モード（`auto`/`draft`）。`explicit`判定のアセットには自前ホスト型VLMを使ってください（Claude API/OpenAI APIは拒否する可能性が高いため）
 
 保存できても実際にAPIへ接続できるとは限りません。疎通確認は`reelmilly doctor`で行ってください。
 
