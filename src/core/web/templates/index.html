@@ -46,6 +46,13 @@
         {% endfor %}
       </select>
     </label>
+    <label>承認状態
+      <select name="confirmed" onchange="this.form.submit()">
+        <option value="">すべて</option>
+        <option value="0" {% if confirmed_param == '0' %}selected{% endif %}>承認待ち</option>
+        <option value="1" {% if confirmed_param == '1' %}selected{% endif %}>承認済み</option>
+      </select>
+    </label>
   </form>
 
   <form method="post" action="{{ url_for('create_folder') }}" class="new-folder">
@@ -55,7 +62,12 @@
 </section>
 
 <div class="grid-toolbar">
-  <p class="hint">{{ assets | length }}件を表示中</p>
+  <div class="grid-toolbar-left">
+    <p class="hint">{{ assets | length }}件を表示中</p>
+    {% if assets %}
+    <button type="button" id="select-all-toggle" class="btn-ghost-inline">表示中をすべて選択</button>
+    {% endif %}
+  </div>
   <label class="grid-size-control">
     サムネイルサイズ
     <input type="range" id="thumb-size-slider" min="120" max="320" step="10" value="190">

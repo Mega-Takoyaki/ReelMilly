@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from core import db as db_module
 from core import generation
-from core.analysis import analyze_asset
+from core.analysis import analyze_asset, apply_auto_tags
 from core.config import Config, ensure_directories, load_config
 from core.db import get_connection, init_db
 from core.events import log_event
@@ -112,6 +112,7 @@ def cmd_analyze(config: Config) -> int:
     promoted = 0
     for asset in pending:
         result = analyze_asset(conn, nsfw_classifier, generator, Path(asset["file_path"]))
+        apply_auto_tags(conn, asset["id"], result)
         if result.success:
             db_module.update_asset(
                 conn,

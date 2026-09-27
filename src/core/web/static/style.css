@@ -245,6 +245,27 @@ main {
   margin: -0.5rem 0 1rem;
 }
 
+.grid-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.btn-ghost-inline {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+}
+
+.btn-ghost-inline:hover {
+  color: var(--fg);
+  background: var(--surface-hover);
+}
+
 .grid-size-control {
   display: flex;
   align-items: center;

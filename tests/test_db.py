@@ -130,6 +130,30 @@ def test_list_assets_confirmed_only(conn):
     assert {row["id"] for row in result} == {"a1"}
 
 
+def test_list_assets_confirmed_true_filters_to_confirmed_only(conn):
+    db.insert_asset(conn, _make_asset("a1", content_rating_confirmed=1))
+    db.insert_asset(conn, _make_asset("a2", content_rating_confirmed=0))
+
+    result = db.list_assets(conn, confirmed=True)
+    assert {row["id"] for row in result} == {"a1"}
+
+
+def test_list_assets_confirmed_false_filters_to_unconfirmed_only(conn):
+    db.insert_asset(conn, _make_asset("a1", content_rating_confirmed=1))
+    db.insert_asset(conn, _make_asset("a2", content_rating_confirmed=0))
+
+    result = db.list_assets(conn, confirmed=False)
+    assert {row["id"] for row in result} == {"a2"}
+
+
+def test_list_assets_confirmed_none_returns_all(conn):
+    db.insert_asset(conn, _make_asset("a1", content_rating_confirmed=1))
+    db.insert_asset(conn, _make_asset("a2", content_rating_confirmed=0))
+
+    result = db.list_assets(conn, confirmed=None)
+    assert {row["id"] for row in result} == {"a1", "a2"}
+
+
 def test_list_assets_order_asc_returns_oldest_first(conn):
     db.insert_asset(conn, _make_asset("a1", created_at="2026-01-01T00:00:00+00:00"))
     db.insert_asset(conn, _make_asset("a2", created_at="2026-01-02T00:00:00+00:00"))

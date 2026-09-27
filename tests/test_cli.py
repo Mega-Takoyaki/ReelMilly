@@ -14,6 +14,7 @@ from core.cli import (
     cmd_watch,
 )
 from core.config import load_config
+from core.generation import DescriptionResult
 from core.nsfw import NsfwResult
 
 
@@ -327,7 +328,9 @@ def test_analyze_promotes_asset_to_ready_on_success(tmp_path, capsys):
     fake_classifier = MagicMock()
     fake_classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.1)
     fake_generator = MagicMock()
-    fake_generator.describe_image.return_value = "説明文"
+    fake_generator.describe_image.return_value = DescriptionResult(
+        description="説明文", suggested_tags=["屋外"]
+    )
 
     with patch("core.cli.try_create_classifier", return_value=fake_classifier), patch(
         "core.generation.try_create_generator", return_value=fake_generator
@@ -337,9 +340,11 @@ def test_analyze_promotes_asset_to_ready_on_success(tmp_path, capsys):
     assert exit_code == 0
     conn = db.get_connection(config.paths.db_path)
     asset = db.get_asset(conn, "a1")
+    tags = db.list_tags_for_asset(conn, "a1")
     conn.close()
     assert asset["status"] == "ready"
     assert asset["content_description"] == "説明文"
+    assert set(tags) == {"屋外", "sfw"}
     assert "readyに昇格" in capsys.readouterr().out
 
 

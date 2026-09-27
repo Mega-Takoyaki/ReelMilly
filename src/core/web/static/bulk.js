@@ -28,6 +28,23 @@
     });
   });
 
+  const selectAllToggle = document.getElementById("select-all-toggle");
+  if (selectAllToggle) {
+    selectAllToggle.addEventListener("click", () => {
+      const shouldSelectAll = selected.size < checkboxes.length;
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = shouldSelectAll;
+        if (shouldSelectAll) {
+          selected.add(checkbox.value);
+        } else {
+          selected.delete(checkbox.value);
+        }
+      });
+      selectAllToggle.textContent = shouldSelectAll ? "表示中の選択を解除" : "表示中をすべて選択";
+      refreshToolbar();
+    });
+  }
+
   async function postJson(url, body) {
     const response = await fetch(url, {
       method: "POST",
@@ -44,6 +61,7 @@
   document.getElementById("bulk-clear").addEventListener("click", () => {
     selected.clear();
     checkboxes.forEach((cb) => (cb.checked = false));
+    if (selectAllToggle) selectAllToggle.textContent = "表示中をすべて選択";
     refreshToolbar();
   });
 

@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_CLAUDE_MODEL = "claude-opus-5"
 DEFAULT_OPENAI_MODEL = "gpt-4o"
 DEFAULT_LOCAL_VLM_MODEL = "prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it"
+
+MAX_SUGGESTED_TAGS = 5
 
 _IMAGE_MEDIA_TYPES = {
     ".jpg": "image/jpeg",
@@ -27,11 +31,24 @@ _IMAGE_MEDIA_TYPES = {
     ".gif": "image/gif",
 }
 
+# 説明文生成の応答は「説明: ...」「タグ: ...」の2行形式を期待する(core/settings.pyの
+# DEFAULT_DESCRIPTION_SYSTEM_PROMPTで指示)。形式に従わない応答が返っても、
+# 全文を説明文・タグなしとして扱いエラーにはしない(ADR-0018参照)。
 _DESCRIBE_USER_PROMPT = "この画像の内容を説明してください。"
+_TAG_LINE_PATTERN = re.compile(r"タグ[:：]\s*(.+)")
+_DESCRIPTION_LINE_PATTERN = re.compile(r"説明[:：]\s*(.+)", re.DOTALL)
 
 
 class GenerationError(Exception):
     """画像解析・投稿文生成の呼び出しに失敗したことを示す。"""
+
+
+@dataclass
+class DescriptionResult:
+    """`describe_image`の戻り値。内容説明と、AIが提案したタグ候補を保持する(ADR-0018)。"""
+
+    description: str
+    suggested_tags: list[str] = field(default_factory=list)
 
 
 def _image_media_type(path: Path) -> str:
@@ -40,6 +57,28 @@ def _image_media_type(path: Path) -> str:
 
 def _encode_image_base64(path: Path) -> str:
     return base64.standard_b64encode(path.read_bytes()).decode("utf-8")
+
+
+def _parse_description_response(text: str) -> DescriptionResult:
+    """「説明: ...」「タグ: タグ1, タグ2」形式の応答を分解する。
+
+    形式に従わない場合は応答全体を説明文として扱い、タグは空にする
+    (フォーマット崩れでパイプライン全体を失敗させないため)。
+    """
+    text = text.strip()
+    description = text
+    tags: list[str] = []
+
+    tag_match = _TAG_LINE_PATTERN.search(text)
+    if tag_match:
+        tags = [t.strip() for t in re.split(r"[,、]", tag_match.group(1)) if t.strip()]
+        description = text[: tag_match.start()].strip()
+
+    desc_match = _DESCRIPTION_LINE_PATTERN.match(description)
+    if desc_match:
+        description = desc_match.group(1).strip()
+
+    return DescriptionResult(description=description, suggested_tags=tags[:MAX_SUGGESTED_TAGS])
 
 
 class ClaudeGenerator:
@@ -51,7 +90,7 @@ class ClaudeGenerator:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
-    def describe_image(self, image_path: Path, system_prompt: str) -> str:
+    def describe_image(self, image_path: Path, system_prompt: str) -> DescriptionResult:
         image_b64 = _encode_image_base64(image_path)
         try:
             response = self._client.messages.create(
@@ -77,7 +116,7 @@ class ClaudeGenerator:
             )
         except Exception as exc:  # noqa: BLE001 - 呼び出し元でイベント記録するため詳細を残す
             raise GenerationError(str(exc)) from exc
-        return _extract_text(response)
+        return _parse_description_response(_extract_text(response))
 
     def generate_caption(self, content_description: str, system_prompt: str) -> str:
         try:
@@ -115,7 +154,7 @@ class OpenAiGenerator:
         self._client = openai.OpenAI(api_key=api_key)
         self._model = model
 
-    def describe_image(self, image_path: Path, system_prompt: str) -> str:
+    def describe_image(self, image_path: Path, system_prompt: str) -> DescriptionResult:
         image_b64 = _encode_image_base64(image_path)
         media_type = _image_media_type(image_path)
         try:
@@ -137,7 +176,7 @@ class OpenAiGenerator:
             )
         except Exception as exc:  # noqa: BLE001
             raise GenerationError(str(exc)) from exc
-        return (response.choices[0].message.content or "").strip()
+        return _parse_description_response(response.choices[0].message.content or "")
 
     def generate_caption(self, content_description: str, system_prompt: str) -> str:
         try:
@@ -204,7 +243,7 @@ class LocalVlmGenerator:
         text = self._processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return text.strip()
 
-    def describe_image(self, image_path: Path, system_prompt: str) -> str:
+    def describe_image(self, image_path: Path, system_prompt: str) -> DescriptionResult:
         from PIL import Image
 
         image = Image.open(image_path).convert("RGB")
@@ -219,9 +258,10 @@ class LocalVlmGenerator:
             },
         ]
         try:
-            return self._generate(messages)
+            text = self._generate(messages)
         except Exception as exc:  # noqa: BLE001
             raise GenerationError(str(exc)) from exc
+        return _parse_description_response(text)
 
     def generate_caption(self, content_description: str, system_prompt: str) -> str:
         messages = [

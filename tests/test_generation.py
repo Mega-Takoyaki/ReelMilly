@@ -54,7 +54,8 @@ def test_claude_generator_describe_image_returns_text(tmp_path):
         generator = generation.ClaudeGenerator(api_key="test-key", model="claude-opus-5")
         result = generator.describe_image(image_path, "説明してください")
 
-    assert result == "赤いドレスを着た女性が微笑んでいる"
+    assert result.description == "赤いドレスを着た女性が微笑んでいる"
+    assert result.suggested_tags == []
     mock_client.messages.create.assert_called_once()
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-opus-5"
@@ -71,6 +72,58 @@ def test_claude_generator_generate_caption_returns_text(tmp_path):
         result = generator.generate_caption("赤いドレスの女性", "投稿文を作って")
 
     assert result == "今日の一枚です"
+
+
+def test_parse_description_response_extracts_description_and_tags():
+    text = "説明: 赤いドレスを着た女性が屋外で微笑んでいる。\nタグ: 赤, ドレス, 屋外, 笑顔"
+
+    result = generation._parse_description_response(text)
+
+    assert result.description == "赤いドレスを着た女性が屋外で微笑んでいる。"
+    assert result.suggested_tags == ["赤", "ドレス", "屋外", "笑顔"]
+
+
+def test_parse_description_response_handles_full_width_comma():
+    text = "説明: 説明文\nタグ: タグ1、タグ2"
+
+    result = generation._parse_description_response(text)
+
+    assert result.suggested_tags == ["タグ1", "タグ2"]
+
+
+def test_parse_description_response_limits_to_max_tags():
+    text = "説明: 説明文\nタグ: a, b, c, d, e, f, g"
+
+    result = generation._parse_description_response(text)
+
+    assert len(result.suggested_tags) == generation.MAX_SUGGESTED_TAGS
+
+
+def test_parse_description_response_without_tag_line_returns_whole_text_as_description():
+    text = "特にフォーマットに従わない自由な説明文です。"
+
+    result = generation._parse_description_response(text)
+
+    assert result.description == text
+    assert result.suggested_tags == []
+
+
+def test_claude_generator_describe_image_parses_tags_from_response(tmp_path):
+    image_path = tmp_path / "look.jpg"
+    image_path.write_bytes(b"fake-image-bytes")
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _fake_text_response(
+            "説明: 赤いドレスの女性が微笑んでいる\nタグ: 赤, ドレス, 屋外"
+        )
+        mock_anthropic_cls.return_value = mock_client
+
+        generator = generation.ClaudeGenerator(api_key="test-key")
+        result = generator.describe_image(image_path, "説明してください")
+
+    assert result.description == "赤いドレスの女性が微笑んでいる"
+    assert result.suggested_tags == ["赤", "ドレス", "屋外"]
 
 
 def test_claude_generator_wraps_errors_as_generation_error(tmp_path):
@@ -156,10 +209,25 @@ def test_local_vlm_generator_describe_image_sends_image_and_system_prompt(tmp_pa
         mock_open.return_value.convert.return_value = "fake-pil-image"
         result = generator.describe_image(image_path, "説明してください")
 
-    assert result == "赤いドレスの女性が微笑んでいる"
+    assert result.description == "赤いドレスの女性が微笑んでいる"
     messages = generator._processor.apply_chat_template.call_args[0][0]
     assert messages[0] == {"role": "system", "content": "説明してください"}
     assert messages[1]["content"][0] == {"type": "image", "image": "fake-pil-image"}
+
+
+def test_local_vlm_generator_describe_image_parses_tags_from_response(tmp_path):
+    image_path = tmp_path / "look.jpg"
+    image_path.write_bytes(b"fake-image-bytes")
+
+    generator = _make_local_generator()
+    generator._processor.batch_decode.return_value = ["説明: 赤いドレスの女性\nタグ: 赤, ドレス"]
+
+    with patch("PIL.Image.open") as mock_open:
+        mock_open.return_value.convert.return_value = "fake-pil-image"
+        result = generator.describe_image(image_path, "説明してください")
+
+    assert result.description == "赤いドレスの女性"
+    assert result.suggested_tags == ["赤", "ドレス"]
 
 
 def test_local_vlm_generator_generate_caption_sends_description_text(tmp_path):

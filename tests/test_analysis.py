@@ -1,8 +1,9 @@
 from unittest.mock import Mock
 
 from core import db
-from core.analysis import analyze_asset
+from core.analysis import analyze_asset, apply_auto_tags
 from core.config import load_config
+from core.generation import DescriptionResult
 from core.nsfw import NsfwResult
 
 
@@ -42,13 +43,16 @@ def test_analyze_asset_succeeds_when_both_available(tmp_path):
     classifier = Mock()
     classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.2)
     generator = Mock()
-    generator.describe_image.return_value = "笑顔の女性"
+    generator.describe_image.return_value = DescriptionResult(
+        description="笑顔の女性", suggested_tags=["笑顔", "屋外"]
+    )
 
     result = analyze_asset(conn, classifier, generator, media_path)
 
     assert result.success is True
     assert result.nsfw_auto_rating == "sfw"
     assert result.content_description == "笑顔の女性"
+    assert result.suggested_tags == ["笑顔", "屋外"]
     assert result.error is None
 
 
@@ -58,7 +62,7 @@ def test_analyze_asset_fails_when_classifier_missing(tmp_path):
     media_path.write_bytes(b"fake-image-bytes")
 
     generator = Mock()
-    generator.describe_image.return_value = "笑顔の女性"
+    generator.describe_image.return_value = DescriptionResult(description="笑顔の女性")
 
     result = analyze_asset(conn, None, generator, media_path)
 
@@ -107,8 +111,57 @@ def test_analyze_asset_uses_configured_description_system_prompt(tmp_path):
     classifier = Mock()
     classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.2)
     generator = Mock()
-    generator.describe_image.return_value = "説明"
+    generator.describe_image.return_value = DescriptionResult(description="説明")
 
     analyze_asset(conn, classifier, generator, media_path)
 
     generator.describe_image.assert_called_once_with(media_path, "カスタムプロンプト")
+
+
+def test_apply_auto_tags_adds_suggested_tags_and_nsfw_rating(tmp_path):
+    conn = _make_conn(tmp_path)
+    db.insert_asset(
+        conn,
+        {
+            "id": "a1",
+            "status": "analyzing",
+            "kind": "image",
+            "file_path": "look.jpg",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
+    from core.analysis import AnalysisResult
+
+    analysis_result = AnalysisResult(
+        success=True,
+        nsfw_auto_rating="sfw",
+        content_description="説明",
+        suggested_tags=["屋外", "笑顔"],
+    )
+
+    apply_auto_tags(conn, "a1", analysis_result)
+
+    assert set(db.list_tags_for_asset(conn, "a1")) == {"屋外", "笑顔", "sfw"}
+
+
+def test_apply_auto_tags_applies_partial_results_even_when_not_successful(tmp_path):
+    conn = _make_conn(tmp_path)
+    db.insert_asset(
+        conn,
+        {
+            "id": "a1",
+            "status": "analyzing",
+            "kind": "image",
+            "file_path": "look.jpg",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
+    from core.analysis import AnalysisResult
+
+    analysis_result = AnalysisResult(success=False, nsfw_auto_rating="nsfw", suggested_tags=[])
+
+    apply_auto_tags(conn, "a1", analysis_result)
+
+    assert db.list_tags_for_asset(conn, "a1") == ["nsfw"]

@@ -60,6 +60,8 @@ def create_app(config: Config) -> Flask:
         rating_filter = request.args.get("content_rating") or None
         tag_filter = request.args.get("tag") or None
         folder_id = request.args.get("folder_id", type=int)
+        confirmed_param = request.args.get("confirmed") or None
+        confirmed_filter = {"0": False, "1": True}.get(confirmed_param)
 
         assets = db.list_assets(
             conn,
@@ -67,6 +69,7 @@ def create_app(config: Config) -> Flask:
             content_rating=rating_filter,
             tag=tag_filter,
             folder_id=folder_id,
+            confirmed=confirmed_filter,
             limit=200,
         )
         folders = db.list_folders(conn)
@@ -81,6 +84,7 @@ def create_app(config: Config) -> Flask:
             rating_filter=rating_filter,
             tag_filter=tag_filter,
             folder_id=folder_id,
+            confirmed_param=confirmed_param,
             content_ratings=CONTENT_RATINGS,
         )
 

@@ -79,6 +79,44 @@ def test_index_lists_asset(app_and_conn):
     assert 'id="thumb-size-slider"' in body
 
 
+def test_index_filters_by_confirmed_status(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1)
+    now = datetime.now(timezone.utc).isoformat()
+    db.insert_asset(
+        conn,
+        {
+            "id": "a2",
+            "status": "ready",
+            "kind": "image",
+            "file_path": str(app.config["REELMILLY_CONFIG"].paths.ready / "a1" / "look-a.jpg"),
+            "content_rating_confirmed": 0,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+
+    response_pending = client.get("/?confirmed=0")
+    body_pending = response_pending.get_data(as_text=True)
+    assert 'data-asset-id="a2"' in body_pending
+    assert 'data-asset-id="a1"' not in body_pending
+
+    response_done = client.get("/?confirmed=1")
+    body_done = response_done.get_data(as_text=True)
+    assert 'data-asset-id="a1"' in body_done
+    assert 'data-asset-id="a2"' not in body_done
+
+
+def test_index_shows_select_all_button_when_assets_present(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.get("/")
+
+    assert 'id="select-all-toggle"' in response.get_data(as_text=True)
+
+
 def test_asset_detail_shows_unconfirmed_state(app_and_conn):
     app, _ = app_and_conn
     client = app.test_client()

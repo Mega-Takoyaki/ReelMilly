@@ -2,13 +2,16 @@ from unittest.mock import Mock
 
 from core import db
 from core.config import load_config
+from core.generation import DescriptionResult
 from core.ingest import ingest_inbox
 from core.nsfw import NsfwResult
 
 
-def _mock_generator(description="赤いドレスの女性が微笑んでいる"):
+def _mock_generator(description="赤いドレスの女性が微笑んでいる", tags=None):
     generator = Mock()
-    generator.describe_image.return_value = description
+    generator.describe_image.return_value = DescriptionResult(
+        description=description, suggested_tags=tags or []
+    )
     return generator
 
 

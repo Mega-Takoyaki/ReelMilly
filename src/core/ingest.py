@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 from core import db
-from core.analysis import analyze_asset
+from core.analysis import analyze_asset, apply_auto_tags
 from core.config import Config
 from core.events import log_event
 from core.nsfw import NsfwClassifier
@@ -75,6 +75,8 @@ def ingest_inbox(
     場合のみ`status="ready"`とする(ADR-0015)。いずれか一方でも未設定・失敗の
     場合は`status="analyzing"`のまま残し、`reelmilly analyze`で再試行できる。
     失敗の詳細は`events.jsonl`に`analysis_incomplete`として記録する。
+    取得できた分の内容説明タグ・NSFW自動仕分け結果は、成否に関わらずタグとして
+    自動付与する(ADR-0018)。
     """
     results: list[IngestResult] = []
     inbox = config.paths.inbox
@@ -127,6 +129,8 @@ def ingest_inbox(
 
         for tag in sidecar_data.get("tags", []):
             db.add_tag_to_asset(conn, asset_id, tag)
+
+        apply_auto_tags(conn, asset_id, analysis)
 
         log_event(
             config.paths.events_path,

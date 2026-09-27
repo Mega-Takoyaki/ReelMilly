@@ -80,6 +80,7 @@ def list_assets(
     channel: str | None = None,
     confirmed_only: bool = False,
     kind: str | None = None,
+    confirmed: bool | None = None,
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
@@ -115,6 +116,11 @@ def list_assets(
 
     if confirmed_only:
         conditions.append("assets.content_rating_confirmed = 1")
+
+    if confirmed is True:
+        conditions.append("assets.content_rating_confirmed = 1")
+    elif confirmed is False:
+        conditions.append("assets.content_rating_confirmed = 0")
 
     if kind is not None:
         conditions.append("assets.kind = :kind")

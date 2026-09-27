@@ -140,6 +140,8 @@ NSFW自動仕分け・画像内容説明の両方が成功したアセットは`
 reelmilly analyze
 ```
 
+`reelmilly watch`実行中は上記の分析が定期的に非同期実行されるため、`status="ready"`になったアセットが承認待ちのまま溜まっていきます（[ADR-0018](docs/adr/0018-auto-tagging-and-pending-approval-review.md)）。一覧画面の「承認状態」フィルタで「承認待ち」を選び、「表示中をすべて選択」＋一括承認（`content_rating`確定）を組み合わせることで、後でまとめてレビューできます。また、内容説明の生成時にはAIがタグを2〜3個自動で提案し、NSFW自動仕分けの結果（`sfw`/`nsfw`）もタグとして自動付与されます。
+
 ### 6. 本体UIを起動する
 
 ```bash
