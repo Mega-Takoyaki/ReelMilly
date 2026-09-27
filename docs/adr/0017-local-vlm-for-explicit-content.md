@@ -24,7 +24,7 @@
 
 - `core/generation.py`に`LocalVlmGenerator`を追加し、`generation_provider`設定の選択肢に`local`を追加する（既存の`claude`/`openai`と同列、[ADR-0015](0015-ai-content-description-and-caption-generation.md)の設定画面から切り替え可能）
 - 既定モデル: `prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`（Hugging Face上の公開モデル、SFW/NSFWを区別せず学習された画像キャプション用ファインチューン）。モデル名は設定画面から変更可能
-- 実装は`transformers`の`AutoProcessor`/`AutoModelForImageTextToText`を使う一般的なVLMチャットテンプレートのパターンに基づく。`torch.cuda.is_available()`でGPUの有無を実行時に自動判定し、GPUがあれば自動的にそちらを使う（同じコード・同じ設定のまま、CUDA対応PCに移行すれば自動的に高速化される）
+- 実装は`transformers`の`AutoProcessor`/`AutoModelForImageTextToText`を使う一般的なVLMチャットテンプレートのパターンに基づく。`torch.cuda.is_available()`でGPUの有無を実行時に自動判定し、GPUがあれば自動的にそちらを使う（同じコード・同じ設定のまま、CUDA対応PCに移行すれば自動的に高速化される）。ただしtorch自体をCPU専用ビルド（`--index-url https://download.pytorch.org/whl/cpu`）でインストールした場合はCUDAを利用できないため、GPU環境に移行する際はCUDA対応ビルドで入れ直す必要がある（README参照）
 - GPUが無い環境（CPU推論）では1枚あたり数秒〜数十秒程度かかる見込み（実機未検証）。`reelmilly analyze`は元々バックグラウンドのバッチ処理として設計されているため、投稿ペースに対しては許容範囲と判断（プロジェクトオーナーの意向：「今日作った作品を今日投稿する必要はない」）
 - 依存関係は`pyproject.toml`の`vlm` extra（`torch`, `transformers`）として追加。重量級のため、`nsfw` extra同様デフォルトではインストールしない
 

@@ -82,11 +82,22 @@ OpenAI APIを使いたい場合は別途 `pip install openai` してください
 
 `explicit`判定のアセットにも対応する場合は、自前ホスト型VLM（Vision-Language Model）を使います（[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）。外部サービスの利用ポリシーに縛られず、ローカルで推論するためAPI課金も発生しません。
 
+CPUのみの環境（ダウンロード容量を抑える場合、動作確認済みのNSFW自動仕分けと同様）:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[vlm]"
+```
+
+GPU（NVIDIA/CUDA）を搭載した環境、または将来GPUマシンに移行する場合は、CPU専用ビルドを指定せず通常どおりインストールしてください（GPU対応ビルドが入ります）。
+
 ```bash
 pip install -e ".[vlm]"
 ```
 
-本体UIの設定画面で生成AIプロバイダーを「自前ホスト型VLM」に切り替えてください。既定モデル（`prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`）の重み（数GB）は初回利用時にHugging Face Hubから自動ダウンロードされます。GPU（CUDA）があれば自動的に使われ高速化されます。GPUが無い環境ではCPU推論となり、1枚あたり数秒〜数十秒かかる見込みです（実機未検証）。`reelmilly analyze`はバックグラウンドのバッチ処理として設計されているため、即日投稿が不要な運用であれば実用上問題ない想定です。
+コード側は`torch.cuda.is_available()`でGPUの有無を実行時に自動判定するため、どちらの手順でインストールしても設定変更は不要です。ただし**CPU専用ビルドを一度インストールすると、後からそのマシンにGPUを追加してもCUDAは使えません**（ビルド自体にCUDA対応コードが含まれないため）。GPU環境に移行する際は、CPU専用の`--index-url`を付けずに入れ直してください。
+
+本体UIの設定画面で生成AIプロバイダーを「自前ホスト型VLM」に切り替えてください。既定モデル（`prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`）の重み（数GB）は初回利用時にHugging Face Hubから自動ダウンロードされます。GPUがあれば自動的に使われ高速化されます。GPUが無い環境ではCPU推論となり、1枚あたり数秒〜数十秒かかる見込みです（実機未検証）。`reelmilly analyze`はバックグラウンドのバッチ処理として設計されているため、即日投稿が不要な運用であれば実用上問題ない想定です。
 
 > **重要**: 一覧・フォルダ・タグ・承認UIなど本体機能はNSFW自動仕分け・画像内容説明のどちらも未設定でも動作しますが、**両方が取得できたアセットのみ`status="ready"`（Fanvue投稿対象）になります**（ADR-0015）。片方でも未設定・失敗の場合は`status="analyzing"`のまま残り、Fanvueへは自動投稿されません。以前のバージョンでは「NSFW仕分けなしでもすぐready」でしたが、投稿文の自動生成を導入したことでこの挙動に変更しました。
 
