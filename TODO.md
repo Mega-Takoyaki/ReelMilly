@@ -56,7 +56,10 @@
   - モデルが実際にダウンロード・ロードできるか（`pip install -e ".[vlm]"`後、初回`reelmilly analyze`実行時）
   - `describe_image`/`generate_caption`が例外なく実行でき、意味のある説明文・投稿文を返すか
   - CPU推論1枚あたりの所要時間（実用に耐えるか）
-  - `prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`自体の品質（個人配布モデルのため実績が薄い。品質が不十分な場合はJoyCaption等の代替モデルに切り替える）
+  - `prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`自体の品質（個人配布モデルのため実績が薄い）。代替候補の比較検討はWeb検索ベースの机上調査のみで実機比較はしていない:
+    - [JoyCaption](https://github.com/fpgaminer/joycaption)（8B前後、SFW/NSFWを分け隔てなく学習した汎用モデル。CPU推論には重い）
+    - [ToriiGate-v0.4-2B](https://huggingface.co/Minthy/ToriiGate-v0.4-2B)（2B、NSFWを無検閲で扱うことを明示的な売りにした専用モデル。ただしアニメ・デジタルアート中心のデータセットで学習されており、Grok Imagineのような写実系画像での精度は未確認）
+    - 実際のGrok Imagine出力で3モデルを比較し、説明文の精度・実行速度を見て選定し直す
 - [ ] GPU搭載PCへ移行した場合に実際に高速化されるかの実機確認（`torch.cuda.is_available()`による自動切り替えは実装済みだが未検証）
 - [ ] `content_rating`（explicit/suggestive/sfw）に応じて生成AIプロバイダーを自動的に切り替える仕組みは未実装。現状は`generation_provider`設定を運用者が手動で切り替える必要がある。頻繁に切り替えるようであれば自動化を検討する
 - [ ] `vlm` extraのインストール（`torch`+`transformers`、数百MB〜）が実機のディスク容量・回線で問題なく完了するか確認する
