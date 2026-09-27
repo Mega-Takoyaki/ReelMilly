@@ -574,6 +574,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   width: 100%;
 }
 
+.settings-form label.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-form label.checkbox-label input {
+  width: auto;
+}
+
 /* Toasts ------------------------------------------------------------- */
 
 #toast-stack {

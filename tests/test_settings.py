@@ -17,6 +17,7 @@ def test_defaults_are_returned_when_unset(conn):
     assert settings.get_generation_provider(conn) == "claude"
     assert settings.get_generation_model(conn) == "claude-opus-5"
     assert settings.get_caption_mode(conn) == "auto"
+    assert settings.get_auto_ingest(conn) is False
 
 
 def test_update_settings_overrides_defaults(conn):
@@ -51,6 +52,7 @@ def test_get_all_settings_returns_dict(conn):
         "generation_provider": "claude",
         "generation_model": "claude-opus-5",
         "caption_mode": "auto",
+        "auto_ingest": False,
     }
 
 
@@ -60,3 +62,11 @@ def test_update_settings_ignores_none_and_empty_values(conn):
     settings.update_settings(conn, caption_mode="")
 
     assert settings.get_caption_mode(conn) == "draft"
+
+
+def test_set_auto_ingest_persists_true_and_false(conn):
+    settings.set_auto_ingest(conn, True)
+    assert settings.get_auto_ingest(conn) is True
+
+    settings.set_auto_ingest(conn, False)
+    assert settings.get_auto_ingest(conn) is False

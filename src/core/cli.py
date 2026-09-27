@@ -10,7 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from core import db as db_module
-from core import generation
+from core import generation, settings
 from core.analysis import analyze_asset, apply_auto_tags
 from core.config import Config, ensure_directories, load_config
 from core.db import get_connection, init_db
@@ -269,10 +269,19 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
 
     Ctrl+Cで終了する。「定期バッチ処理」(ADR-0015)としてNSFW仕分け・内容説明
     取得の再試行と投稿ジョブの両方をこのループでまとめて扱う。
+    設定画面の「inboxフォルダの自動取り込み」がオンの場合、`ingest`も
+    毎回実行する(ADR-0020)。オン/オフは`settings`テーブルに保存され、
+    watchプロセスを再起動しなくても次のループから反映される。
     """
     print(f"[watch] {interval_seconds}秒間隔でanalyze/run-dueを実行します（Ctrl+Cで終了）")
     try:
         while True:
+            conn = get_connection(config.paths.db_path)
+            init_db(conn)
+            auto_ingest = settings.get_auto_ingest(conn)
+            conn.close()
+            if auto_ingest:
+                cmd_ingest(config)
             cmd_analyze(config)
             cmd_run_due(config)
             time.sleep(interval_seconds)

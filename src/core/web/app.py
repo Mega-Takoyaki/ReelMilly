@@ -264,6 +264,7 @@ def create_app(config: Config) -> Flask:
                 generation_model=request.form.get("generation_model"),
                 caption_mode=request.form.get("caption_mode"),
             )
+            settings_module.set_auto_ingest(conn, bool(request.form.get("auto_ingest")))
             env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
             env_settings.update_connection_values(config.env_path, env_updates)
             conn.close()

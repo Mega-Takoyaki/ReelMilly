@@ -278,6 +278,37 @@ def test_watch_calls_analyze_each_tick(tmp_path):
     mocked_analyze.assert_called_once_with(config)
 
 
+def test_watch_skips_ingest_when_auto_ingest_disabled(tmp_path):
+    """auto_ingest設定の既定値はFalseのため、ingestは呼ばれない(ADR-0020)。"""
+    config = _load(tmp_path)
+    cmd_init(config)
+
+    with patch("core.cli.cmd_ingest") as mocked_ingest, patch("core.cli.cmd_analyze"), patch(
+        "core.cli.cmd_run_due"
+    ), patch("core.cli.time.sleep", side_effect=KeyboardInterrupt):
+        cmd_watch(config)
+
+    mocked_ingest.assert_not_called()
+
+
+def test_watch_calls_ingest_each_tick_when_auto_ingest_enabled(tmp_path):
+    """設定でauto_ingestをオンにすると、watchの各ループでingestも実行される(ADR-0020)。"""
+    from core import settings
+
+    config = _load(tmp_path)
+    cmd_init(config)
+    conn = db.get_connection(config.paths.db_path)
+    settings.set_auto_ingest(conn, True)
+    conn.close()
+
+    with patch("core.cli.cmd_ingest") as mocked_ingest, patch("core.cli.cmd_analyze"), patch(
+        "core.cli.cmd_run_due"
+    ), patch("core.cli.time.sleep", side_effect=KeyboardInterrupt):
+        cmd_watch(config)
+
+    mocked_ingest.assert_called_once_with(config)
+
+
 def test_parse_cadence_entry_accepts_plain_string():
     time_str, options = _parse_cadence_entry("21:00")
     assert time_str == "21:00"

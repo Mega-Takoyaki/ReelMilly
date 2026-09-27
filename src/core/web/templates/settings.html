@@ -43,6 +43,21 @@
   </div>
 
   <div class="card">
+    <h2 style="margin-top: 0;">定期実行（watch）の自動取り込み（ADR-0020）</h2>
+    <div class="settings-form">
+      <label class="checkbox-label">
+        <input type="checkbox" name="auto_ingest" {% if settings.auto_ingest %}checked{% endif %}>
+        inboxフォルダの自動取り込みを有効にする
+      </label>
+      <p class="hint">
+        オンにすると、<code>reelmilly watch</code>実行中は一定間隔でinboxフォルダを自動的に取り込みます（<code>reelmilly ingest</code>の手動実行が不要になります）。
+        オフの場合は、これまで通り手動での<code>reelmilly ingest</code>実行、またはWeb UIのドラッグ&ドロップアップロードで取り込んでください。
+        取り込みはコピーではなく<strong>移動</strong>です。inboxに置いたファイルは、取り込み後は本体管理下のフォルダへ移されinboxからは無くなります。
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
     <h2 style="margin-top: 0;">画像内容説明・Fanvue投稿文の自動生成（ADR-0015）</h2>
     <div class="settings-form">
       <label>生成AIプロバイダー

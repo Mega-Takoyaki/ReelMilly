@@ -1,4 +1,4 @@
-"""ユーザー調整可能な生成設定(ADR-0015)。
+"""ユーザー調整可能な生成設定(ADR-0015)・watch動作設定(ADR-0020)。
 
 初期値はこのモジュールの定数として持ち、本体UIの設定画面(`/settings`)から
 `settings`テーブル(`core.db`)へ保存した値があればそちらを優先する。
@@ -33,12 +33,14 @@ DEFAULT_GENERATION_MODEL = {
     "local": "prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it",
 }
 DEFAULT_CAPTION_MODE = "auto"  # "auto" | "draft"
+DEFAULT_AUTO_INGEST = False  # ADR-0020: watchループでのフォルダ自動取り込み
 
 _KEY_DESCRIPTION_PROMPT = "description_system_prompt"
 _KEY_CAPTION_PROMPT = "caption_system_prompt"
 _KEY_PROVIDER = "generation_provider"
 _KEY_MODEL = "generation_model"
 _KEY_CAPTION_MODE = "caption_mode"
+_KEY_AUTO_INGEST = "watch_auto_ingest"
 
 
 def get_description_system_prompt(conn: sqlite3.Connection) -> str:
@@ -65,6 +67,17 @@ def get_caption_mode(conn: sqlite3.Connection) -> str:
     return db.get_setting(conn, _KEY_CAPTION_MODE) or DEFAULT_CAPTION_MODE
 
 
+def get_auto_ingest(conn: sqlite3.Connection) -> bool:
+    stored = db.get_setting(conn, _KEY_AUTO_INGEST)
+    if stored is None:
+        return DEFAULT_AUTO_INGEST
+    return stored == "1"
+
+
+def set_auto_ingest(conn: sqlite3.Connection, enabled: bool) -> None:
+    db.set_setting(conn, _KEY_AUTO_INGEST, "1" if enabled else "0")
+
+
 def get_all_settings(conn: sqlite3.Connection) -> dict:
     return {
         "description_system_prompt": get_description_system_prompt(conn),
@@ -72,6 +85,7 @@ def get_all_settings(conn: sqlite3.Connection) -> dict:
         "generation_provider": get_generation_provider(conn),
         "generation_model": get_generation_model(conn),
         "caption_mode": get_caption_mode(conn),
+        "auto_ingest": get_auto_ingest(conn),
     }
 
 

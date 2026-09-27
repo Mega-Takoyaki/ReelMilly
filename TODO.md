@@ -78,6 +78,12 @@
 - [x] ~~`status="ready"`（AI処理完了・承認待ち）を`pending_approval`に改名し、承認後の状態として`status="ready"`（投稿準備完了）を新設~~ → `core/ingest.py`・`core/cli.py`（`cmd_analyze`）・`core/web/app.py`（`confirm_rating`/`bulk_confirm_rating`）として実装済み
 - [ ] 実データでの移行は不要（本セッションでは実DBデータなし）だが、既存運用でこの変更を取り込む場合、DB内の既存`status="ready"`（旧意味）行が新しい`pending_approval`/`ready`のどちらに該当するかを`content_rating_confirmed`列で判定し一括更新するマイグレーションが必要になる点に注意
 
+## watchループの自動取り込み設定（ADR-0020）
+
+- [x] ~~`watch`ループに`ingest`を組み込み、設定（`settings`テーブル`watch_auto_ingest`、既定オフ）でオン/オフできるようにする~~ → `core/settings.py`（`get_auto_ingest`/`set_auto_ingest`）・`core/cli.py`（`cmd_watch`）・`/settings`ページのチェックボックスとして実装済み
+- [ ] 実際のGrok Imagine出力フォルダを`inbox`として運用する場合、`config.yaml`の`paths.library_root`をそのフォルダの親に向けるか、生成物を定期的に`inbox`へ移す運用にするかは実機構成が決まってから確定する
+- [ ] auto_ingestオンの状態で、意図しないファイル（メディア以外の一時ファイル等）がinboxに混入した場合の挙動（現状は拡張子で判定し対象外は無視、`ingest_inbox`の`_kind_for_extension`参照）を実データで確認する
+
 ## 接続設定（Fanvue/Telegram/生成AI、ADR-0016）
 
 - [x] ~~Fanvue APIトークン・ハンドル等を本体UIの設定画面から編集できるようにする~~ → `src/core/env_settings.py`（`.env`の読み書き）と`/settings`ページの「接続設定」セクションとして実装済み。秘密情報は`.env`のみに保持する方針は維持（DBには保存しない）

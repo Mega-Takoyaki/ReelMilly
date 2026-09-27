@@ -495,6 +495,31 @@ def test_settings_page_post_updates_values(app_and_conn):
     assert settings_module.get_caption_mode(conn) == "draft"
 
 
+def test_settings_page_post_enables_auto_ingest_when_checkbox_checked(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+
+    response = client.post("/settings", data={"auto_ingest": "on"})
+
+    assert response.status_code == 302
+    from core import settings as settings_module
+
+    assert settings_module.get_auto_ingest(conn) is True
+
+
+def test_settings_page_post_disables_auto_ingest_when_checkbox_unchecked(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    from core import settings as settings_module
+
+    settings_module.set_auto_ingest(conn, True)
+
+    response = client.post("/settings", data={})
+
+    assert response.status_code == 302
+    assert settings_module.get_auto_ingest(conn) is False
+
+
 def test_settings_page_get_shows_connection_status(app_and_conn):
     app, _ = app_and_conn
     client = app.test_client()
