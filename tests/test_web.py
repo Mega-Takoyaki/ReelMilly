@@ -1,5 +1,8 @@
 import io
+import time
 from datetime import datetime, timezone
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -520,6 +523,109 @@ def test_settings_page_post_disables_auto_ingest_when_checkbox_unchecked(app_and
     assert settings_module.get_auto_ingest(conn) is False
 
 
+def test_settings_page_shows_not_connected_by_default(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.get("/settings")
+
+    assert "未連携".encode() in response.data
+
+
+def test_settings_page_shows_connected_when_tokens_exist(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    from posting.fanvue_oauth import FanvueTokenStore, TokenSet
+
+    config = app.config["REELMILLY_CONFIG"]
+    store = FanvueTokenStore(config.paths.state_dir / "fanvue_oauth_tokens.json")
+    store.save(TokenSet(access_token="a", refresh_token="r", expires_at=time.time() + 3600))
+
+    response = client.get("/settings")
+
+    assert "連携済み".encode() in response.data
+
+
+def test_fanvue_oauth_start_without_client_id_redirects_with_error(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.get("/settings/fanvue/oauth/start")
+
+    assert response.status_code == 302
+    assert "fanvue_error" in response.headers["Location"]
+
+
+def test_fanvue_oauth_start_redirects_to_authorization_url(app_and_conn, monkeypatch):
+    app, _ = app_and_conn
+    client = app.test_client()
+    monkeypatch.setenv("FANVUE_OAUTH_CLIENT_ID", "client-1")
+
+    response = client.get("/settings/fanvue/oauth/start")
+
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert location.startswith("https://auth.fanvue.com/oauth2/auth?")
+    assert "client_id=client-1" in location
+    assert "code_challenge_method=S256" in location
+
+
+def test_fanvue_oauth_callback_exchanges_code_and_saves_tokens(app_and_conn, monkeypatch):
+    app, _ = app_and_conn
+    client = app.test_client()
+    monkeypatch.setenv("FANVUE_OAUTH_CLIENT_ID", "client-1")
+    monkeypatch.setenv("FANVUE_OAUTH_CLIENT_SECRET", "secret-1")
+
+    start_response = client.get("/settings/fanvue/oauth/start")
+    query = parse_qs(urlparse(start_response.headers["Location"]).query)
+    state = query["state"][0]
+
+    from posting.fanvue_oauth import TokenSet
+
+    fake_tokens = TokenSet(access_token="at", refresh_token="rt", expires_at=time.time() + 3600)
+    with patch("posting.fanvue_oauth.exchange_code_for_tokens", return_value=fake_tokens) as mocked:
+        callback_response = client.get(
+            "/settings/fanvue/oauth/callback", query_string={"code": "auth-code", "state": state}
+        )
+
+    assert callback_response.status_code == 302
+    assert "fanvue_connected=1" in callback_response.headers["Location"]
+    mocked.assert_called_once()
+
+    from posting.fanvue_oauth import FanvueTokenStore
+
+    config = app.config["REELMILLY_CONFIG"]
+    stored = FanvueTokenStore(config.paths.state_dir / "fanvue_oauth_tokens.json").load()
+    assert stored == fake_tokens
+
+
+def test_fanvue_oauth_callback_rejects_mismatched_state(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+
+    response = client.get(
+        "/settings/fanvue/oauth/callback", query_string={"code": "auth-code", "state": "unknown-state"}
+    )
+
+    assert response.status_code == 302
+    assert "fanvue_error" in response.headers["Location"]
+
+
+def test_fanvue_oauth_disconnect_clears_tokens(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    from posting.fanvue_oauth import FanvueTokenStore, TokenSet
+
+    config = app.config["REELMILLY_CONFIG"]
+    store = FanvueTokenStore(config.paths.state_dir / "fanvue_oauth_tokens.json")
+    store.save(TokenSet(access_token="a", refresh_token="r", expires_at=time.time() + 3600))
+
+    response = client.post("/settings/fanvue/disconnect")
+
+    assert response.status_code == 302
+    assert store.load() is None
+
+
 def test_settings_page_get_shows_connection_status(app_and_conn):
     app, _ = app_and_conn
     client = app.test_client()
@@ -559,7 +665,7 @@ def test_settings_page_post_saves_connection_values_to_env(app_and_conn):
     response = client.post(
         "/settings",
         data={
-            "FANVUE_API_TOKEN": "fanvue-secret-token",
+            "FANVUE_OAUTH_CLIENT_SECRET": "fanvue-secret-token",
             "FANVUE_HANDLE": "my-creator",
             "generation_provider": "claude",
             "generation_model": "claude-opus-5",
@@ -573,7 +679,7 @@ def test_settings_page_post_saves_connection_values_to_env(app_and_conn):
     from core import env_settings
 
     status = env_settings.read_connection_status(env_path)
-    assert status["FANVUE_API_TOKEN"]["is_set"] is True
+    assert status["FANVUE_OAUTH_CLIENT_SECRET"]["is_set"] is True
     assert status["FANVUE_HANDLE"]["value"] == "my-creator"
 
 
@@ -585,7 +691,7 @@ def test_settings_page_post_blank_token_keeps_existing_value(app_and_conn):
     client.post(
         "/settings",
         data={
-            "FANVUE_API_TOKEN": "first-token",
+            "FANVUE_OAUTH_CLIENT_SECRET": "first-token",
             "generation_provider": "claude",
             "generation_model": "claude-opus-5",
             "caption_mode": "auto",
@@ -596,7 +702,7 @@ def test_settings_page_post_blank_token_keeps_existing_value(app_and_conn):
     client.post(
         "/settings",
         data={
-            "FANVUE_API_TOKEN": "",
+            "FANVUE_OAUTH_CLIENT_SECRET": "",
             "generation_provider": "claude",
             "generation_model": "claude-opus-5",
             "caption_mode": "auto",
@@ -608,4 +714,4 @@ def test_settings_page_post_blank_token_keeps_existing_value(app_and_conn):
     from core import env_settings
 
     status = env_settings.read_connection_status(env_path)
-    assert status["FANVUE_API_TOKEN"]["is_set"] is True
+    assert status["FANVUE_OAUTH_CLIENT_SECRET"]["is_set"] is True

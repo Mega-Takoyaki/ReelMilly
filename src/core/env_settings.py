@@ -12,7 +12,9 @@ from dotenv import dotenv_values, load_dotenv, set_key
 
 # (env変数名, 表示ラベル, 秘密情報かどうか)
 CONNECTION_FIELDS = [
-    ("FANVUE_API_TOKEN", "Fanvue APIトークン", True),
+    ("FANVUE_OAUTH_CLIENT_ID", "Fanvue OAuthアプリのClient ID", False),
+    ("FANVUE_OAUTH_CLIENT_SECRET", "Fanvue OAuthアプリのClient Secret", True),
+    ("FANVUE_OAUTH_REDIRECT_URI", "Fanvue OAuthリダイレクトURI（既定のままで通常は変更不要）", False),
     ("FANVUE_HANDLE", "Fanvueハンドル（アカウント名）", False),
     ("FANVUE_POST_URL_TEMPLATE", "Fanvue投稿URLテンプレート", False),
     ("FANVUE_API_BASE_URL", "Fanvue APIベースURL（既定のままで通常は変更不要）", False),

@@ -94,8 +94,15 @@
 ## Fanvue投稿機能（Phase 2〜4、ADR-0003）
 
 - [x] ~~Fanvueクライアント実装（multipart upload、post作成）~~ → `src/posting/fanvue.py`(`FanvueClient`)として実装済み。外部HTTPはモックでテスト済み(10件)
-- [x] ~~`reelmilly doctor`にFanvue疎通確認を追加~~ → `.env`の`FANVUE_API_TOKEN`が設定されていれば`GET /users/me`を実行
-- [ ] レスポンス形式（`uploadId`/`mediaUuid`/`status`等のフィールド名）は一次情報を検証しておらず、CLAUDE_HANDOFF.md 7章からの推測実装。実際のFanvue APIで疎通確認する際に調整が必要になる可能性が高い
+- [x] ~~`reelmilly doctor`にFanvue疎通確認を追加~~ → OAuth連携済み（[ADR-0021](docs/adr/0021-fanvue-oauth2-authentication.md)）であれば`GET /users/me`を実行
+- [x] ~~レスポンス形式（`uploadId`/`mediaUuid`/`status`等のフィールド名）を一次情報で検証~~ → Fanvue公式OpenAPI仕様（`https://api.fanvue.com/docs/openapi.json`、2026-09-28取得）で照合済み。結果は以下の通り
+  - ✅ ベースURL(`https://api.fanvue.com`)・パス構造（`/users/me`・`/media/uploads`・`/posts`等、`/v1`プレフィックスなし＝現行既定バージョン）・`POST /media/uploads`のリクエストボディ（`name`/`filename`/`mediaType`/`sizeBytes`）・`PATCH /media/uploads/{id}`のボディ（`parts: [{ETag, PartNumber}]`）・`POST /posts`のボディ（`audience`/`text`/`mediaUuids`/`price`≥300セント/`mediaPreviewUuid`）は実装済みのコードと一致していた
+  - [x] ~~署名URLレスポンスのオブジェクト誤認識バグ~~ → `GET /media/uploads/{uploadId}/parts/{partNumber}/url`のレスポンスは`{"url": "..."}`ではなく署名URLそのものを表す文字列だった。修正済み
+  - [x] ~~パートサイズの固定値使用バグ~~ → `POST /media/uploads`レスポンスの`partSize`を優先して使うよう修正済み（無い場合のみ5MBにフォールバック）
+  - [x] ~~`wait_for_media_ready`の`status`判定を実際のenum（`created`/`processing`/`ready`/`error`）に合わせる~~ → `"finalised"`判定を削除し、`"error"`を即座に失敗として検知するよう修正済み
+  - [x] ~~認証方式をOAuth 2.0（authorization code + PKCE）に作り直す~~ → [ADR-0021](docs/adr/0021-fanvue-oauth2-authentication.md)として実装済み。`posting/fanvue_oauth.py`（PKCE生成・認可URL・トークン交換/リフレッシュ・`FanvueTokenStore`）、本体UIの`/settings/fanvue/oauth/{start,callback}`・`/settings/fanvue/disconnect`、設定画面の連携ボタンを実装。スコープは`write:media`・`write:post`・`read:self`・`read:post`
+  - [ ] **未検証**: トークンエンドポイント（`auth.fanvue.com`側）の実際のレスポンス形式は一次情報で確認できておらず、OAuth 2.0標準(RFC 6749)の形式（`access_token`/`refresh_token`/`expires_in`）を前提にした実装。実際にFanvue Developer領域でOAuthアプリを作成し、認可コードフローを最後まで通して確認する必要がある
+  - [ ] **未確認**: Fanvue Developer領域でのAPIアクセス自体が現状ウェイティングリスト制の可能性がある（調査時点の複数の情報源で記述に幅があり断定できなかった）。実際に申請してみて状況を確認する必要がある
 - [x] ~~「1アセットをFanvueへ投稿する」一連の処理をまとめるジョブ関数を実装する~~ → `src/posting/jobs.py`(`run_fanvue_drop`)として実装済み。対象選定→ポリシー判定→upload→ready待ち→post作成→DB更新（成功時`status=posted`、失敗時`status=failed_fanvue`）を一通り実装、8件のテストで検証
 - [x] ~~`reelmilly run drop`コマンドと同日二重実行防止を実装~~ → `job_runs`テーブル（Asia/Tokyo基準の日付）で管理
 - [x] ~~ingest→承認→run drop→タグ付与→二重実行防止→run-due連携の一連の流れを通しで動作確認する~~ → このセッションの開発環境で、実際のingest（実NSFWモデル使用）・実SQLite・実CLIコマンドを使い通しで確認済み（Fanvue API呼び出し部分のみモック。トークン未取得のため実API疎通はまだ未確認、上記参照）。単体（Fanvue投稿のみ）の一連のワークフローとしては動作するレベルに到達

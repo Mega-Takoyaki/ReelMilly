@@ -21,17 +21,30 @@ def client():
     return FanvueClient(api_token="test-token")
 
 
-def test_client_sets_auth_headers(client):
-    assert client._session.headers["Authorization"] == "Bearer test-token"
+def test_client_sets_api_version_header_at_construction(client):
     assert client._session.headers["X-Fanvue-API-Version"] == "2025-06-26"
 
 
-def test_get_me_calls_correct_endpoint(client):
+def test_get_me_calls_correct_endpoint_with_bearer_token(client):
     with patch.object(client._session, "request", return_value=_mock_response(json_data={"id": "u1"})) as mocked:
         result = client.get_me()
 
     assert result == {"id": "u1"}
-    mocked.assert_called_once_with("GET", "https://api.fanvue.com/users/me")
+    mocked.assert_called_once_with(
+        "GET", "https://api.fanvue.com/users/me", headers={"Authorization": "Bearer test-token"}
+    )
+
+
+def test_client_accepts_callable_token_provider_and_calls_it_per_request():
+    tokens = iter(["token-1", "token-2"])
+    client = FanvueClient(api_token=lambda: next(tokens))
+
+    with patch.object(client._session, "request", return_value=_mock_response(json_data={})) as mocked:
+        client.get_me()
+        client.get_me()
+
+    headers_used = [call.kwargs["headers"]["Authorization"] for call in mocked.call_args_list]
+    assert headers_used == ["Bearer token-1", "Bearer token-2"]
 
 
 def test_request_raises_on_error_response(client):
@@ -41,12 +54,13 @@ def test_request_raises_on_error_response(client):
 
 
 def test_upload_media_single_part(client, tmp_path):
+    """署名URLのレスポンスはオブジェクトではなくURLそのものを表す文字列(公式OpenAPI仕様で確認済み)。"""
     file_path = tmp_path / "look.jpg"
     file_path.write_bytes(b"small-file-content")
 
-    init_response = _mock_response(json_data={"uploadId": "up1"})
-    part_url_response = _mock_response(json_data={"url": "https://s3.example.com/part1"})
-    finalize_response = _mock_response(json_data={"mediaUuid": "media-uuid-1"})
+    init_response = _mock_response(json_data={"uploadId": "up1", "mediaUuid": "media-uuid-1"})
+    part_url_response = _mock_response(json_data="https://s3.example.com/part1")
+    finalize_response = _mock_response(json_data={"status": "processing"})
 
     put_response = _mock_response(status_code=200, headers={"ETag": "etag-1"})
 
@@ -66,10 +80,10 @@ def test_upload_media_multiple_parts(client, tmp_path):
     file_path = tmp_path / "big.mp4"
     file_path.write_bytes(b"x" * (PART_SIZE_BYTES + 100))
 
-    init_response = _mock_response(json_data={"uploadId": "up2"})
-    part1_url = _mock_response(json_data={"url": "https://s3.example.com/part1"})
-    part2_url = _mock_response(json_data={"url": "https://s3.example.com/part2"})
-    finalize_response = _mock_response(json_data={"mediaUuid": "media-uuid-2"})
+    init_response = _mock_response(json_data={"uploadId": "up2", "mediaUuid": "media-uuid-2"})
+    part1_url = _mock_response(json_data="https://s3.example.com/part1")
+    part2_url = _mock_response(json_data="https://s3.example.com/part2")
+    finalize_response = _mock_response(json_data={"status": "processing"})
     put_response = _mock_response(status_code=200, headers={"ETag": "etag"})
 
     with patch.object(
@@ -83,12 +97,32 @@ def test_upload_media_multiple_parts(client, tmp_path):
     assert mocked_put.call_count == 2
 
 
+def test_upload_media_uses_server_provided_part_size(client, tmp_path):
+    """POST /media/uploadsレスポンスのpartSizeでチャンク分割する(固定5MBは使わない)。"""
+    file_path = tmp_path / "look.mp4"
+    file_path.write_bytes(b"x" * 25)
+
+    init_response = _mock_response(json_data={"uploadId": "up4", "mediaUuid": "media-uuid-4", "partSize": 10})
+    part_urls = [_mock_response(json_data=f"https://s3.example.com/part{i}") for i in range(1, 4)]
+    finalize_response = _mock_response(json_data={"status": "processing"})
+    put_response = _mock_response(status_code=200, headers={"ETag": "etag"})
+
+    with patch.object(
+        client._session, "request", side_effect=[init_response, *part_urls, finalize_response]
+    ), patch("posting.fanvue.requests.put", return_value=put_response) as mocked_put:
+        client.upload_media(file_path, media_type="video")
+
+    # 25バイトをpartSize=10で分割すると3パート(10, 10, 5バイト)になる
+    assert mocked_put.call_count == 3
+    assert [call.kwargs["data"] for call in mocked_put.call_args_list] == [b"x" * 10, b"x" * 10, b"x" * 5]
+
+
 def test_upload_media_raises_when_part_upload_fails(client, tmp_path):
     file_path = tmp_path / "look.jpg"
     file_path.write_bytes(b"content")
 
-    init_response = _mock_response(json_data={"uploadId": "up3"})
-    part_url_response = _mock_response(json_data={"url": "https://s3.example.com/part1"})
+    init_response = _mock_response(json_data={"uploadId": "up3", "mediaUuid": "media-uuid-3"})
+    part_url_response = _mock_response(json_data="https://s3.example.com/part1")
     failed_put = _mock_response(status_code=500)
 
     with patch.object(
@@ -111,6 +145,12 @@ def test_wait_for_media_ready_times_out(client):
         result = client.wait_for_media_ready("media-1", timeout_seconds=0, poll_interval_seconds=0)
 
     assert result is False
+
+
+def test_wait_for_media_ready_raises_immediately_on_error_status(client):
+    with patch.object(client._session, "request", return_value=_mock_response(json_data={"status": "error"})):
+        with pytest.raises(FanvueApiError):
+            client.wait_for_media_ready("media-1", timeout_seconds=10, poll_interval_seconds=0)
 
 
 def test_create_post_builds_expected_body(client):

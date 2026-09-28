@@ -19,6 +19,31 @@ from core.ingest import ingest_inbox
 from core.nsfw import try_create_classifier
 
 
+def _try_create_fanvue_client(config: Config):
+    """OAuth連携済み(ADR-0021)の場合のみFanvueClientを返す。
+
+    coreはposting/telegramに依存しない方針(ADR-0013)だが、doctor/run drop
+    はCLIエントリポイントとしてここでのみ遅延importする。
+    未連携の場合は`(None, 理由)`を返す。
+    """
+    from posting.fanvue import DEFAULT_API_BASE_URL, DEFAULT_API_VERSION, FanvueClient
+    from posting.fanvue_oauth import FanvueTokenStore
+
+    client_id = os.environ.get("FANVUE_OAUTH_CLIENT_ID")
+    client_secret = os.environ.get("FANVUE_OAUTH_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return None, "FANVUE_OAUTH_CLIENT_ID/FANVUE_OAUTH_CLIENT_SECRETが未設定です（.envを確認してください）"
+
+    store = FanvueTokenStore(config.paths.state_dir / "fanvue_oauth_tokens.json")
+    if store.load() is None:
+        return None, "Fanvueと未連携です（本体UIの設定画面から連携してください）"
+
+    base_url = os.environ.get("FANVUE_API_BASE_URL", DEFAULT_API_BASE_URL)
+    api_version = os.environ.get("FANVUE_API_VERSION", DEFAULT_API_VERSION)
+    token_provider = lambda: store.get_access_token(client_id, client_secret)  # noqa: E731
+    return FanvueClient(token_provider, base_url=base_url, api_version=api_version), None
+
+
 def cmd_doctor(config: Config) -> int:
     ok = True
     print(f"[doctor] timezone: {config.timezone}")
@@ -42,18 +67,12 @@ def cmd_doctor(config: Config) -> int:
     events_status = "exists" if config.paths.events_path.exists() else "not yet created"
     print(f"[doctor] events log {config.paths.events_path}: {events_status}")
 
-    fanvue_token = os.environ.get("FANVUE_API_TOKEN")
-    if not fanvue_token:
-        print("[doctor] Fanvue API: トークン未設定のためスキップ（.envのFANVUE_API_TOKENを設定してください）")
+    fanvue_client, fanvue_skip_reason = _try_create_fanvue_client(config)
+    if fanvue_client is None:
+        print(f"[doctor] Fanvue API: 未接続のためスキップ（{fanvue_skip_reason}）")
     else:
-        # coreはposting/telegramに依存しない方針(ADR-0013)だが、doctorは
-        # 本体+連携先の統合疎通確認という役割のため、ここでのみ遅延importする
-        from posting.fanvue import DEFAULT_API_BASE_URL, DEFAULT_API_VERSION, FanvueClient
-
-        base_url = os.environ.get("FANVUE_API_BASE_URL", DEFAULT_API_BASE_URL)
-        api_version = os.environ.get("FANVUE_API_VERSION", DEFAULT_API_VERSION)
         try:
-            FanvueClient(fanvue_token, base_url=base_url, api_version=api_version).get_me()
+            fanvue_client.get_me()
             print("[doctor] Fanvue API: OK")
         except Exception as exc:  # noqa: BLE001 - doctorは診断結果を表示するのが目的
             ok = False
@@ -164,23 +183,19 @@ def cmd_run_drop(
         conn.close()
         return 0
 
-    fanvue_token = os.environ.get("FANVUE_API_TOKEN")
-    if not fanvue_token:
-        print("[run drop] FANVUE_API_TOKEN が未設定のため実行できません（.envを確認してください）")
+    client, skip_reason = _try_create_fanvue_client(config)
+    if client is None:
+        print(f"[run drop] 実行できません（{skip_reason}）")
         conn.close()
         return 1
 
     # coreはposting/telegramに依存しない方針(ADR-0013)だが、CLIエントリポイント
     # としてここでのみ遅延importする(doctorと同様の扱い)
-    from posting.fanvue import DEFAULT_API_BASE_URL, DEFAULT_API_VERSION, FanvueClient
     from posting.jobs import run_fanvue_drop_batch
 
-    base_url = os.environ.get("FANVUE_API_BASE_URL", DEFAULT_API_BASE_URL)
-    api_version = os.environ.get("FANVUE_API_VERSION", DEFAULT_API_VERSION)
     handle = os.environ.get("FANVUE_HANDLE", "")
     url_template = os.environ.get("FANVUE_POST_URL_TEMPLATE", "https://www.fanvue.com/{handle}")
 
-    client = FanvueClient(fanvue_token, base_url=base_url, api_version=api_version)
     generator = generation.try_create_generator(conn)
     results = run_fanvue_drop_batch(
         config,

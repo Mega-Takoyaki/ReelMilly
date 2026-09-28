@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +17,7 @@ from core.cli import (
 from core.config import load_config
 from core.generation import DescriptionResult
 from core.nsfw import NsfwResult
+from posting.fanvue_oauth import FanvueTokenStore, TokenSet
 
 
 CONFIG_YAML = """
@@ -53,8 +55,17 @@ def _load_with_cadence(tmp_path):
     return load_config(base_dir=tmp_path)
 
 
+def _connect_fanvue(config, monkeypatch):
+    """Fanvue OAuth連携済み(ADR-0021)の状態を疑似的に用意する。"""
+    monkeypatch.setenv("FANVUE_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setenv("FANVUE_OAUTH_CLIENT_SECRET", "client-secret")
+    store = FanvueTokenStore(config.paths.state_dir / "fanvue_oauth_tokens.json")
+    store.save(TokenSet(access_token="access-token", refresh_token="refresh-token", expires_at=time.time() + 3600))
+
+
 def test_doctor_reports_missing_before_init(tmp_path, capsys, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
+    monkeypatch.delenv("FANVUE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("FANVUE_OAUTH_CLIENT_SECRET", raising=False)
     config = _load(tmp_path)
 
     exit_code = cmd_doctor(config)
@@ -65,7 +76,8 @@ def test_doctor_reports_missing_before_init(tmp_path, capsys, monkeypatch):
 
 
 def test_init_then_doctor_is_ok(tmp_path, capsys, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
+    monkeypatch.delenv("FANVUE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("FANVUE_OAUTH_CLIENT_SECRET", raising=False)
     config = _load(tmp_path)
 
     init_exit_code = cmd_init(config)
@@ -76,15 +88,15 @@ def test_init_then_doctor_is_ok(tmp_path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "MISSING" not in out
     assert "database" in out
-    assert "トークン未設定のためスキップ" in out
+    assert "未接続のためスキップ" in out
 
     assert config.paths.events_path.exists()
 
 
-def test_doctor_checks_fanvue_when_token_present(tmp_path, capsys, monkeypatch):
-    monkeypatch.setenv("FANVUE_API_TOKEN", "test-token")
+def test_doctor_checks_fanvue_when_connected(tmp_path, capsys, monkeypatch):
     config = _load(tmp_path)
     cmd_init(config)
+    _connect_fanvue(config, monkeypatch)
     capsys.readouterr()
 
     with patch("posting.fanvue.FanvueClient.get_me", return_value={"id": "u1"}):
@@ -95,9 +107,9 @@ def test_doctor_checks_fanvue_when_token_present(tmp_path, capsys, monkeypatch):
 
 
 def test_doctor_reports_fanvue_failure(tmp_path, capsys, monkeypatch):
-    monkeypatch.setenv("FANVUE_API_TOKEN", "bad-token")
     config = _load(tmp_path)
     cmd_init(config)
+    _connect_fanvue(config, monkeypatch)
     capsys.readouterr()
 
     with patch("posting.fanvue.FanvueClient.get_me", side_effect=RuntimeError("401 unauthorized")):
@@ -107,8 +119,9 @@ def test_doctor_reports_fanvue_failure(tmp_path, capsys, monkeypatch):
     assert "Fanvue API: NG" in capsys.readouterr().out
 
 
-def test_run_drop_requires_token(tmp_path, capsys, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
+def test_run_drop_requires_fanvue_connection(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("FANVUE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("FANVUE_OAUTH_CLIENT_SECRET", raising=False)
     config = _load(tmp_path)
     cmd_init(config)
     capsys.readouterr()
@@ -116,11 +129,10 @@ def test_run_drop_requires_token(tmp_path, capsys, monkeypatch):
     exit_code = cmd_run_drop(config)
 
     assert exit_code == 1
-    assert "FANVUE_API_TOKEN" in capsys.readouterr().out
+    assert "FANVUE_OAUTH_CLIENT_ID" in capsys.readouterr().out
 
 
 def test_run_drop_skips_if_already_run_today(tmp_path, capsys, monkeypatch):
-    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
     config = _load(tmp_path)
     cmd_init(config)
     capsys.readouterr()
@@ -136,10 +148,10 @@ def test_run_drop_skips_if_already_run_today(tmp_path, capsys, monkeypatch):
 
 
 def test_run_drop_executes_job_and_records_last_run(tmp_path, capsys, monkeypatch):
-    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
-    monkeypatch.setenv("FANVUE_HANDLE", "creator")
     config = _load(tmp_path)
     cmd_init(config)
+    _connect_fanvue(config, monkeypatch)
+    monkeypatch.setenv("FANVUE_HANDLE", "creator")
     capsys.readouterr()
 
     from posting.jobs import DropResult
@@ -158,9 +170,9 @@ def test_run_drop_executes_job_and_records_last_run(tmp_path, capsys, monkeypatc
 
 
 def test_run_drop_failure_returns_nonzero(tmp_path, capsys, monkeypatch):
-    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
     config = _load(tmp_path)
     cmd_init(config)
+    _connect_fanvue(config, monkeypatch)
     capsys.readouterr()
 
     from posting.jobs import DropResult
@@ -185,7 +197,6 @@ def test_is_job_due_false_when_now_before_cadence_time():
 
 
 def test_run_due_without_cadence_config_does_nothing(tmp_path, capsys, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
     config = _load(tmp_path)  # cadence未設定
     cmd_init(config)
     capsys.readouterr()
@@ -199,7 +210,6 @@ def test_run_due_without_cadence_config_does_nothing(tmp_path, capsys, monkeypat
 
 
 def test_run_due_skips_when_not_yet_due(tmp_path, capsys, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
     config = _load_with_cadence(tmp_path)
     cmd_init(config)
     capsys.readouterr()
@@ -213,7 +223,6 @@ def test_run_due_skips_when_not_yet_due(tmp_path, capsys, monkeypatch):
 
 
 def test_run_due_executes_job_when_due(tmp_path, capsys, monkeypatch):
-    monkeypatch.setenv("FANVUE_API_TOKEN", "token")
     config = _load_with_cadence(tmp_path)
     cmd_init(config)
     capsys.readouterr()
@@ -226,7 +235,6 @@ def test_run_due_executes_job_when_due(tmp_path, capsys, monkeypatch):
 
 
 def test_run_due_skips_unsupported_job_name(tmp_path, capsys, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
     (tmp_path / "config.yaml").write_text(
         CONFIG_YAML + "\ncadence:\n  x_teaser: \"21:00\"\n", encoding="utf-8"
     )
@@ -322,7 +330,6 @@ def test_parse_cadence_entry_accepts_dict_with_options():
 
 
 def test_run_due_passes_cadence_dict_options_to_run_drop(tmp_path, monkeypatch):
-    monkeypatch.delenv("FANVUE_API_TOKEN", raising=False)
     (tmp_path / "config.yaml").write_text(
         CONFIG_YAML + '\ncadence:\n  drop:\n    time: "00:00"\n    count: 3\n    kind: image\n    rating: sfw\n',
         encoding="utf-8",

@@ -107,16 +107,18 @@ pip install -e ".[vlm]"
 cp .env.example .env
 ```
 
-`FANVUE_API_TOKEN`・`ANTHROPIC_API_KEY`等の値は、直接`.env`を編集する代わりに本体UIの設定画面（`/settings`、後述6.）からも設定できます（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）。本体のみの動作にはFanvue/Telegram/生成AIの値は不要です。
+`FANVUE_OAUTH_CLIENT_ID`・`ANTHROPIC_API_KEY`等の値は、直接`.env`を編集する代わりに本体UIの設定画面（`/settings`、後述6.）からも設定できます（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）。本体のみの動作にはFanvue/Telegram/生成AIの値は不要です。
+
+Fanvueへの投稿にはFanvue側での事前準備（クリエイター登録・KYC完了・Developer領域でのOAuthアプリ作成）が必要です。Fanvue APIは静的なAPIトークンではなくOAuth 2.0認証専用のため、`.env`にはトークンではなくOAuthアプリの`FANVUE_OAUTH_CLIENT_ID`・`FANVUE_OAUTH_CLIENT_SECRET`を設定します（[ADR-0021](docs/adr/0021-fanvue-oauth2-authentication.md)）。実際の連携（アクセストークンの取得）は本体UIの設定画面から行います（後述6.）。
 
 ### 4. 初期化と疎通確認
 
 ```bash
 reelmilly init     # ディレクトリとSQLiteデータベースを作成
-reelmilly doctor   # ディレクトリ・DB・(設定していれば)Fanvue APIの疎通を確認
+reelmilly doctor   # ディレクトリ・DB・(連携済みであれば)Fanvue APIの疎通を確認
 ```
 
-`.env`に`FANVUE_API_TOKEN`を設定していれば、`doctor`が`GET /users/me`でFanvue APIの疎通も確認します（未設定ならスキップされ、失敗にはなりません）。Fanvue APIレスポンスの形式は一次情報での検証を行っていない実装のため、実行して失敗する場合は[TODO.md](TODO.md)を参照してください。
+Fanvueと連携済み（後述6.で連携）であれば、`doctor`が`GET /users/me`でFanvue APIの疎通も確認します（未連携ならスキップされ、失敗にはなりません）。Fanvue APIのトークンエンドポイントのレスポンス形式は一次情報での検証を行っていない実装のため、実行して失敗する場合は[TODO.md](TODO.md)を参照してください。
 
 ### 5. 画像・動画を取り込む
 
@@ -164,14 +166,15 @@ reelmilly web
 
 画面右上の「設定」（`/settings`）では以下を設定できます。
 
-- **接続設定**（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）: Fanvue APIトークン・ハンドル・投稿URLテンプレート、Telegram（連携自体は未実装）、Anthropic/OpenAIのAPIキー。実体は`.env`ファイルで、画面はその読み書きを行うだけです。APIトークン等の秘密項目は画面に値を表示せず「設定済み/未設定」のみ表示し、空欄のまま保存すれば既存の値は変更されません
+- **接続設定**（[ADR-0016](docs/adr/0016-connection-settings-editable-via-web-ui.md)）: Fanvue OAuthアプリのClient ID/Secret・ハンドル・投稿URLテンプレート、Telegram（連携自体は未実装）、Anthropic/OpenAIのAPIキー。実体は`.env`ファイルで、画面はその読み書きを行うだけです。Client Secret等の秘密項目は画面に値を表示せず「設定済み/未設定」のみ表示し、空欄のまま保存すれば既存の値は変更されません
+- **Fanvue連携**（[ADR-0021](docs/adr/0021-fanvue-oauth2-authentication.md)）: 上記の接続設定でClient ID/Secretを保存した後、「Fanvueと連携する」ボタンからOAuth 2.0認可フローを開始できます。連携が成功するとアクセストークン・リフレッシュトークンが`data/state/fanvue_oauth_tokens.json`に保存され、以降は期限切れ前に自動更新されます（トークンそのものは`.env`には保存されません）。連携解除ボタンでこのファイルを削除できます
 - **画像内容説明・Fanvue投稿文の自動生成**（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)・[ADR-0017](docs/adr/0017-local-vlm-for-explicit-content.md)）: 生成AIプロバイダー（Claude API/OpenAI API/自前ホスト型VLM）・モデル名・システムプロンプト・投稿文の生成モード（`auto`/`draft`）。`explicit`判定のアセットには自前ホスト型VLMを使ってください（Claude API/OpenAI APIは拒否する可能性が高いため）
 
 保存できても実際にAPIへ接続できるとは限りません。疎通確認は`reelmilly doctor`で行ってください。
 
 ### 7. Fanvueへ投稿する（Phase 2〜4）
 
-`FANVUE_API_TOKEN`・`FANVUE_HANDLE`・`FANVUE_POST_URL_TEMPLATE`を設定した上で（`.env`を直接編集するか、本体UIの設定画面から設定）、承認済み（`content_rating_confirmed`）かつFanvueチャンネル指定のアセットがある状態で実行します。
+本体UIの設定画面でFanvueと連携し（上記6.）、`FANVUE_HANDLE`・`FANVUE_POST_URL_TEMPLATE`を設定した上で、承認済み（`content_rating_confirmed`）かつFanvueチャンネル指定のアセットがある状態で実行します。
 
 ```bash
 reelmilly run drop

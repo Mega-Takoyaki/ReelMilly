@@ -21,6 +21,37 @@
   </div>
   {% endif %}
 
+  {% if fanvue_just_connected %}
+  <div class="banner banner-success">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 6L9 17l-5-5"></path>
+    </svg>
+    Fanvueとの連携が完了しました
+  </div>
+  {% endif %}
+
+  {% if fanvue_error %}
+  <div class="banner banner-error">{{ fanvue_error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h2 style="margin-top: 0;">Fanvue連携（OAuth・ADR-0021）</h2>
+    <p class="hint">
+      Fanvue APIは静的なAPIトークンではなくOAuth 2.0認証専用です。下の「接続設定」で
+      Client ID・Client Secretを保存したうえで連携してください
+      （Fanvue Developer領域でOAuthアプリを作成して取得します。クリエイター登録・KYC完了が前提です）。
+    </p>
+    {% if fanvue_connected %}
+    <p><strong>連携済み</strong></p>
+    <form method="post" action="{{ url_for('fanvue_oauth_disconnect') }}">
+      <button type="submit" class="btn-ghost-inline">連携を解除する</button>
+    </form>
+    {% else %}
+    <p>未連携</p>
+    <a href="{{ url_for('fanvue_oauth_start') }}"><button type="button">Fanvueと連携する</button></a>
+    {% endif %}
+  </div>
+
   <form method="post" action="{{ url_for('settings_page') }}">
 
   <div class="card">

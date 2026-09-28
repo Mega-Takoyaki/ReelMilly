@@ -295,6 +295,11 @@ def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.commit()
 
 
+def delete_setting(conn: sqlite3.Connection, key: str) -> None:
+    conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+    conn.commit()
+
+
 def list_settings(conn: sqlite3.Connection) -> dict[str, str]:
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     return {row["key"]: row["value"] for row in rows}

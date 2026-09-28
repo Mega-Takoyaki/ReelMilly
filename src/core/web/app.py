@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import os
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,10 @@ def _now() -> str:
 
 def _is_xhr() -> bool:
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _fanvue_token_store_path(config: Config) -> Path:
+    return config.paths.state_dir / "fanvue_oauth_tokens.json"
 
 
 def _unique_inbox_path(inbox: Path, filename: str) -> Path:
@@ -272,12 +277,94 @@ def create_app(config: Config) -> Flask:
         current_settings = settings_module.get_all_settings(conn)
         connections = env_settings.read_connection_status(config.env_path)
         conn.close()
+
+        from posting.fanvue_oauth import FanvueTokenStore
+
+        fanvue_connected = FanvueTokenStore(_fanvue_token_store_path(config)).load() is not None
+
         return render_template(
             "settings.html",
             settings=current_settings,
             connections=connections,
             saved=request.args.get("saved") == "1",
+            fanvue_connected=fanvue_connected,
+            fanvue_just_connected=request.args.get("fanvue_connected") == "1",
+            fanvue_error=request.args.get("fanvue_error"),
         )
+
+    @app.route("/settings/fanvue/oauth/start")
+    def fanvue_oauth_start():
+        """Fanvue OAuth連携を開始する(ADR-0021)。認可ページへリダイレクトする。"""
+        from posting import fanvue_oauth
+
+        client_id = os.environ.get("FANVUE_OAUTH_CLIENT_ID")
+        if not client_id:
+            return redirect(url_for("settings_page", fanvue_error="FANVUE_OAUTH_CLIENT_IDが未設定です"))
+
+        redirect_uri = os.environ.get("FANVUE_OAUTH_REDIRECT_URI") or url_for(
+            "fanvue_oauth_callback", _external=True
+        )
+        pkce = fanvue_oauth.generate_pkce_pair()
+        state = fanvue_oauth.generate_state()
+
+        conn = get_conn()
+        db.set_setting(conn, "_fanvue_oauth_pending_state", state)
+        db.set_setting(conn, "_fanvue_oauth_pending_verifier", pkce.verifier)
+        db.set_setting(conn, "_fanvue_oauth_pending_redirect_uri", redirect_uri)
+        conn.close()
+
+        authorization_url = fanvue_oauth.build_authorization_url(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=pkce.challenge,
+        )
+        return redirect(authorization_url)
+
+    @app.route("/settings/fanvue/oauth/callback")
+    def fanvue_oauth_callback():
+        """Fanvueからの認可コードを受け取り、アクセストークンと交換する(ADR-0021)。"""
+        from posting import fanvue_oauth
+
+        oauth_error = request.args.get("error")
+        if oauth_error:
+            return redirect(url_for("settings_page", fanvue_error=oauth_error))
+
+        code = request.args.get("code")
+        state = request.args.get("state")
+
+        conn = get_conn()
+        pending_state = db.get_setting(conn, "_fanvue_oauth_pending_state")
+        pending_verifier = db.get_setting(conn, "_fanvue_oauth_pending_verifier")
+        pending_redirect_uri = db.get_setting(conn, "_fanvue_oauth_pending_redirect_uri")
+        db.delete_setting(conn, "_fanvue_oauth_pending_state")
+        db.delete_setting(conn, "_fanvue_oauth_pending_verifier")
+        db.delete_setting(conn, "_fanvue_oauth_pending_redirect_uri")
+        conn.close()
+
+        if not code or not state or not pending_state or state != pending_state:
+            return redirect(url_for("settings_page", fanvue_error="連携状態が確認できませんでした。もう一度お試しください"))
+
+        try:
+            tokens = fanvue_oauth.exchange_code_for_tokens(
+                client_id=os.environ.get("FANVUE_OAUTH_CLIENT_ID", ""),
+                client_secret=os.environ.get("FANVUE_OAUTH_CLIENT_SECRET", ""),
+                redirect_uri=pending_redirect_uri,
+                code=code,
+                code_verifier=pending_verifier,
+            )
+        except fanvue_oauth.FanvueOAuthError as exc:
+            return redirect(url_for("settings_page", fanvue_error=str(exc)))
+
+        fanvue_oauth.FanvueTokenStore(_fanvue_token_store_path(config)).save(tokens)
+        return redirect(url_for("settings_page", fanvue_connected="1"))
+
+    @app.route("/settings/fanvue/disconnect", methods=["POST"])
+    def fanvue_oauth_disconnect():
+        from posting.fanvue_oauth import FanvueTokenStore
+
+        FanvueTokenStore(_fanvue_token_store_path(config)).clear()
+        return redirect(url_for("settings_page"))
 
     @app.route("/assets/bulk/tag", methods=["POST"])
     def bulk_add_tag():

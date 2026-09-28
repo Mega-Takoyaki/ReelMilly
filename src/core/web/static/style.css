@@ -161,6 +161,12 @@ main {
   color: var(--fg);
 }
 
+.banner-error {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--fg);
+}
+
 /* Dropzone ------------------------------------------------------------*/
 
 .dropzone {
