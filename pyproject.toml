@@ -12,6 +12,9 @@ dependencies = [
     # コア機能のため、NSFW仕分け専用ではなくベース依存関係とする
     "pillow",
     "opencv-python-headless",
+    # Windowsにはシステムのタイムゾーンデータベースがなく、zoneinfo.ZoneInfo("Asia/Tokyo")が
+    # 失敗するため、Windowsのみtzdataを必須にする(cadence/run dropの日付判定で使用)
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
