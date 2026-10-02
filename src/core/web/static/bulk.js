@@ -95,6 +95,13 @@
     }
   });
 
+  [["bulk-ai-nsfw", "nsfw"], ["bulk-ai-describe", "describe"]].forEach(([id, kind]) => {
+    document.getElementById(id).addEventListener("click", () => {
+      if (selected.size === 0 || !window.aiLive) return;
+      window.aiLive.enqueue(Array.from(selected), kind);
+    });
+  });
+
   document.getElementById("bulk-rating-apply").addEventListener("click", async () => {
     const rating = document.getElementById("bulk-rating-select").value;
     if (!rating || selected.size === 0) return;

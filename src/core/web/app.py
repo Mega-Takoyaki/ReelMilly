@@ -14,6 +14,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 from werkzeug.utils import secure_filename
 
 from core import db, env_settings, generation
+from core import worker as worker_module
 from core import settings as settings_module
 from core.config import Config
 from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
@@ -47,6 +48,13 @@ def _unique_inbox_path(inbox: Path, filename: str) -> Path:
         if not candidate.exists():
             return candidate
     raise RuntimeError("could not find a unique filename in inbox")
+
+
+def _suggested_rating(asset) -> str | None:
+    """承認フォームの初期選択値。確定済みならその値、未確定ならAI判定から保守的に推定する。"""
+    if asset["content_rating"]:
+        return asset["content_rating"]
+    return {"sfw": "sfw", "nsfw": "explicit"}.get(asset["nsfw_auto_rating"])
 
 
 def create_app(config: Config) -> Flask:
@@ -115,6 +123,7 @@ def create_app(config: Config) -> Flask:
             all_folders=all_folders,
             content_ratings=CONTENT_RATINGS,
             properties=properties,
+            suggested_rating=_suggested_rating(asset),
         )
 
     @app.route("/assets/upload", methods=["POST"])
@@ -138,10 +147,10 @@ def create_app(config: Config) -> Flask:
             file.save(dest)
             saved_names.append(dest.name)
 
+        # 分析(NSFW仕分け・内容説明)はVLM推論に数分かかるため、アップロードでは行わず
+        # status="analyzing"で登録して即応答する。分析は別プロセスのワーカーが行う
         conn = get_conn()
-        nsfw_classifier = try_create_classifier(config.nsfw)
-        generator = generation.try_create_generator(conn)
-        results = ingest_inbox(config, conn, nsfw_classifier=nsfw_classifier, generator=generator)
+        results = ingest_inbox(config, conn, defer_analysis=True)
         conn.close()
 
         return jsonify(
@@ -152,6 +161,49 @@ def create_app(config: Config) -> Flask:
                 "asset_ids": [r.asset_id for r in results],
             }
         )
+
+    @app.route("/api/ai-tasks", methods=["POST"])
+    def enqueue_ai_tasks():
+        """sfw/nsfw判定・説明文生成をキューに積む。処理は別プロセスのワーカーが非同期で行う。"""
+        payload = request.get_json(silent=True) or {}
+        asset_ids = payload.get("asset_ids") or []
+        kind = payload.get("kind")
+        kinds = {"nsfw": ["nsfw"], "describe": ["describe"], "both": ["nsfw", "describe"]}.get(kind)
+        if not asset_ids or kinds is None:
+            return jsonify({"error": "asset_ids and a valid kind are required"}), 400
+        conn = get_conn()
+        known = [a for a in asset_ids if db.get_asset(conn, a) is not None]
+        queued = worker_module.enqueue_for_assets(conn, known, kinds)
+        status = worker_module.get_status(conn)
+        conn.close()
+        return jsonify({"queued": queued, "skipped": len(known) * len(kinds) - queued, "status": status})
+
+    @app.route("/api/ai-live")
+    def ai_live():
+        """一覧/詳細画面が定期的に取得する、AI処理の全体状況と表示中アセットの要約。"""
+        ids = [i for i in (request.args.get("ids") or "").split(",") if i]
+        conn = get_conn()
+        states = db.ai_task_states(conn, ids)
+        assets = {}
+        for asset_id in ids:
+            asset = db.get_asset(conn, asset_id)
+            if asset is None:
+                continue
+            tags = db.list_tags_for_asset(conn, asset_id)
+            assets[asset_id] = {
+                "status": asset["status"],
+                "content_rating": asset["content_rating"],
+                "content_rating_confirmed": bool(asset["content_rating_confirmed"]),
+                "nsfw_auto_rating": asset["nsfw_auto_rating"],
+                "nsfw_auto_confidence": asset["nsfw_auto_confidence"],
+                "has_description": asset["content_description"] is not None,
+                "tags": tags,
+                "tasks": states.get(asset_id, {}),
+                "rev": f"{asset['updated_at']}|{len(tags)}",
+            }
+        status = worker_module.get_status(conn)
+        conn.close()
+        return jsonify({"status": status, "assets": assets})
 
     @app.route("/assets/<asset_id>/media")
     def asset_media(asset_id):
@@ -270,12 +322,34 @@ def create_app(config: Config) -> Flask:
                 caption_mode=request.form.get("caption_mode"),
             )
             settings_module.set_auto_ingest(conn, bool(request.form.get("auto_ingest")))
+            for kind in settings_module.AI_SCHEDULE_KINDS:
+                settings_module.set_ai_schedule(
+                    conn,
+                    kind,
+                    enabled=bool(request.form.get(f"schedule_{kind}_enabled")),
+                    time=request.form.get(f"schedule_{kind}_time", ""),
+                    scope=request.form.get(f"schedule_{kind}_scope", "all"),
+                    days=request.form.get(f"schedule_{kind}_days"),
+                )
+            settings_module.set_tag_categories(
+                conn,
+                [
+                    {"name": name, "options": options}
+                    for name, options in zip(
+                        request.form.getlist("tag_category_name"),
+                        request.form.getlist("tag_category_options"),
+                    )
+                ],
+            )
             env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
             env_settings.update_connection_values(config.env_path, env_updates)
             conn.close()
             return redirect(url_for("settings_page", saved="1"))
         current_settings = settings_module.get_all_settings(conn)
         connections = env_settings.read_connection_status(config.env_path)
+        model_choices = settings_module.get_model_choices(conn)
+        schedules = {k: settings_module.get_ai_schedule(conn, k) for k in settings_module.AI_SCHEDULE_KINDS}
+        tag_categories = settings_module.get_tag_categories(conn)
         conn.close()
 
         from posting.fanvue_oauth import FanvueTokenStore
@@ -285,12 +359,48 @@ def create_app(config: Config) -> Flask:
         return render_template(
             "settings.html",
             settings=current_settings,
+            model_choices=model_choices,
+            schedules=schedules,
+            schedule_labels=settings_module.AI_KIND_LABELS,
+            tag_categories=tag_categories,
             connections=connections,
             saved=request.args.get("saved") == "1",
             fanvue_connected=fanvue_connected,
             fanvue_just_connected=request.args.get("fanvue_connected") == "1",
             fanvue_error=request.args.get("fanvue_error"),
         )
+
+    @app.route("/help")
+    def help_page():
+        return render_template("help.html")
+
+    @app.route("/settings/models/refresh", methods=["POST"])
+    def refresh_models():
+        """保存済みAPIキーで実際に接続し、利用可能なモデル一覧を取得・保存する。"""
+        body = request.get_json(silent=True) or {}
+        provider = body.get("provider")
+        query = (body.get("query") or "").strip()
+        env_key = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}.get(provider)
+        api_key = ""
+        if provider == "local":
+            pass  # Hugging Face Hubの公開APIを使うためキー不要
+        elif env_key is None:
+            return jsonify({"error": "このプロバイダーはモデル一覧の取得に対応していません"}), 400
+        else:
+            api_key = os.environ.get(env_key) or env_settings.read_env_value(config.env_path, env_key)
+            if not api_key:
+                return jsonify({"error": f"{env_key}が未設定です。先にAPIキーを保存してください"}), 400
+        try:
+            models = generation.list_available_models(provider, api_key, query)
+        except generation.GenerationError as exc:
+            return jsonify({"error": str(exc)}), 502
+        if not models:
+            return jsonify({"error": "利用可能なモデルが見つかりませんでした"}), 502
+        if not query:  # 絞り込み検索の結果はキャッシュしない
+            conn = get_conn()
+            settings_module.set_model_cache(conn, provider, models)
+            conn.close()
+        return jsonify({"models": models})
 
     @app.route("/settings/fanvue/oauth/start")
     def fanvue_oauth_start():

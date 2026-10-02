@@ -66,6 +66,38 @@ def apply_auto_tags(conn: sqlite3.Connection, asset_id: str, result: AnalysisRes
         db.add_tag_to_asset(conn, asset_id, result.nsfw_auto_rating)
 
 
+def run_nsfw(nsfw_classifier, media_path: Path):
+    """sfw/nsfw判定を実行する。失敗時は例外を送出する。戻り値は`NsfwResult`(rating, confidence)。"""
+    if nsfw_classifier is None:
+        raise RuntimeError('NSFW判定モデルが利用できません（pip install -e ".[nsfw]" が必要です）')
+    return nsfw_classifier.classify(media_path)
+
+
+def run_describe(conn: sqlite3.Connection, generator, media_path: Path):
+    """説明文生成・タグ提案を実行する。失敗時は例外を送出する。戻り値は`DescriptionResult`。
+
+    動画は代表フレーム1枚を使う。設定画面のタグカテゴリがあれば、システムプロンプトへ
+    カテゴリごとにタグを付けるよう指示を追記する。
+    """
+    from core import settings as settings_module
+
+    if generator is None:
+        raise RuntimeError("生成AIが利用できません（設定画面でプロバイダー・APIキー/モデルを確認してください）")
+
+    frame_path = media_path
+    cleanup_path = None
+    try:
+        if media_path.suffix.lower() in VIDEO_EXTENSIONS:
+            frame_path = _extract_representative_frame(media_path)
+            cleanup_path = frame_path
+        system_prompt = settings_module.get_description_system_prompt(conn)
+        system_prompt += settings_module.tag_category_instructions(conn)
+        return generator.describe_image(frame_path, system_prompt)
+    finally:
+        if cleanup_path is not None:
+            cleanup_path.unlink(missing_ok=True)
+
+
 def analyze_asset(
     conn: sqlite3.Connection,
     nsfw_classifier,
@@ -73,42 +105,25 @@ def analyze_asset(
     media_path: Path,
 ) -> AnalysisResult:
     """NSFW自動仕分けと内容説明取得を試みる。両方成功した場合のみsuccess=Trueを返す。"""
-    from core import settings as settings_module
-
     nsfw_auto_rating = None
     nsfw_auto_confidence = None
     content_description = None
     suggested_tags: list[str] = []
     errors = []
 
-    if nsfw_classifier is not None:
-        try:
-            nsfw_result = nsfw_classifier.classify(media_path)
-            nsfw_auto_rating = nsfw_result.rating
-            nsfw_auto_confidence = nsfw_result.confidence
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"nsfw: {exc}")
-    else:
-        errors.append("nsfw classifier unavailable")
+    try:
+        nsfw_result = run_nsfw(nsfw_classifier, media_path)
+        nsfw_auto_rating = nsfw_result.rating
+        nsfw_auto_confidence = nsfw_result.confidence
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"nsfw: {exc}")
 
-    if generator is not None:
-        frame_path = media_path
-        cleanup_path = None
-        try:
-            if media_path.suffix.lower() in VIDEO_EXTENSIONS:
-                frame_path = _extract_representative_frame(media_path)
-                cleanup_path = frame_path
-            system_prompt = settings_module.get_description_system_prompt(conn)
-            description_result = generator.describe_image(frame_path, system_prompt)
-            content_description = description_result.description
-            suggested_tags = description_result.suggested_tags
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"description: {exc}")
-        finally:
-            if cleanup_path is not None:
-                cleanup_path.unlink(missing_ok=True)
-    else:
-        errors.append("generator unavailable")
+    try:
+        description_result = run_describe(conn, generator, media_path)
+        content_description = description_result.description
+        suggested_tags = description_result.suggested_tags
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"description: {exc}")
 
     success = nsfw_auto_rating is not None and content_description is not None
     return AnalysisResult(

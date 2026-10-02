@@ -18,7 +18,15 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     schema = _SCHEMA_PATH.read_text(encoding="utf-8")
     conn.executescript(schema)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """既存DBへ後から追加した列を補う(マイグレーションツールは未導入のため最小限の対応)。"""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(assets)")}
+    if "analysis_error" not in columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")
 
 
 # --- assets -----------------------------------------------------------------
@@ -303,3 +311,103 @@ def delete_setting(conn: sqlite3.Connection, key: str) -> None:
 def list_settings(conn: sqlite3.Connection) -> dict[str, str]:
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     return {row["key"]: row["value"] for row in rows}
+
+
+# --- ai_tasks（AI処理の非同期キュー） ------------------------------------------
+
+AI_TASK_KINDS = ("nsfw", "describe")
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str) -> bool:
+    """AI処理をキューに積む。同じアセット・種別が待機中/実行中ならFalse(二重登録しない)。"""
+    active = conn.execute(
+        "SELECT 1 FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('queued', 'running')",
+        (asset_id, kind),
+    ).fetchone()
+    if active:
+        return False
+    # 過去の完了/失敗の履歴は最新1件だけ残せば十分なので、積み直すときに消す
+    conn.execute(
+        "DELETE FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('done', 'failed')",
+        (asset_id, kind),
+    )
+    conn.execute(
+        "INSERT INTO ai_tasks (asset_id, kind, status, created_at) VALUES (?, ?, 'queued', ?)",
+        (asset_id, kind, _now_iso()),
+    )
+    conn.commit()
+    return True
+
+
+def claim_next_ai_task(conn: sqlite3.Connection) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM ai_tasks WHERE status = 'queued' ORDER BY id LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute("UPDATE ai_tasks SET status = 'running' WHERE id = ?", (row["id"],))
+    conn.commit()
+    return dict(row)
+
+
+def finish_ai_task(conn: sqlite3.Connection, task_id: int, error: str | None = None) -> None:
+    conn.execute(
+        "UPDATE ai_tasks SET status = ?, error = ?, finished_at = ? WHERE id = ?",
+        ("failed" if error else "done", error, _now_iso(), task_id),
+    )
+    conn.commit()
+
+
+def requeue_running_ai_tasks(conn: sqlite3.Connection) -> None:
+    """ワーカーが異常終了して実行中のまま残ったタスクを待機中へ戻す。"""
+    conn.execute("UPDATE ai_tasks SET status = 'queued' WHERE status = 'running'")
+    conn.commit()
+
+
+def ai_task_counts(conn: sqlite3.Connection) -> dict:
+    counts = {"queued": 0, "running": 0, "failed": 0}
+    for row in conn.execute("SELECT status, COUNT(*) AS n FROM ai_tasks GROUP BY status"):
+        if row["status"] in counts:
+            counts[row["status"]] = row["n"]
+    return counts
+
+
+def running_ai_task(conn: sqlite3.Connection) -> dict | None:
+    row = conn.execute("SELECT * FROM ai_tasks WHERE status = 'running' ORDER BY id LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+def ai_task_states(conn: sqlite3.Connection, asset_ids: list[str]) -> dict[str, dict]:
+    """アセットごとの{kind: {"status", "error"}}(最新のタスク)を返す。"""
+    states: dict[str, dict] = {}
+    if not asset_ids:
+        return states
+    marks = ",".join("?" for _ in asset_ids)
+    rows = conn.execute(
+        f"SELECT asset_id, kind, status, error FROM ai_tasks WHERE asset_id IN ({marks}) ORDER BY id",
+        asset_ids,
+    ).fetchall()
+    for row in rows:  # idの昇順なので後勝ち=最新
+        states.setdefault(row["asset_id"], {})[row["kind"]] = {
+            "status": row["status"],
+            "error": row["error"],
+        }
+    return states
+
+
+def unprocessed_asset_ids(conn: sqlite3.Connection, kind: str, since_iso: str | None = None) -> list[str]:
+    """kindの処理結果がまだ無いアセットID(古い順)。`since_iso`以降に登録されたものに絞れる。"""
+    column = "nsfw_auto_rating" if kind == "nsfw" else "content_description"
+    sql = f"SELECT id FROM assets WHERE {column} IS NULL"
+    params: list = []
+    if since_iso:
+        sql += " AND created_at >= ?"
+        params.append(since_iso)
+    sql += " ORDER BY created_at"
+    return [row["id"] for row in conn.execute(sql, params)]

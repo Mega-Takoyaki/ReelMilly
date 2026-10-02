@@ -69,3 +69,9 @@ def update_connection_values(env_path: Path, updates: dict[str, str]) -> None:
 
     if changed:
         load_dotenv(env_path, override=True)
+
+
+def read_env_value(env_path: Path, key: str) -> str:
+    """`.env`から1項目の実際の値を読む(サーバー内部での利用専用。画面には返さない)。"""
+    values = dotenv_values(env_path) if env_path.exists() else {}
+    return values.get(key) or ""

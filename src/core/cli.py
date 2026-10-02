@@ -11,12 +11,13 @@ from zoneinfo import ZoneInfo
 
 from core import db as db_module
 from core import generation, settings
-from core.analysis import analyze_asset, apply_auto_tags
 from core.config import Config, ensure_directories, load_config
 from core.db import get_connection, init_db
 from core.events import log_event
 from core.ingest import ingest_inbox
 from core.nsfw import try_create_classifier
+from core import worker as worker_module
+from core.worker import AnalysisWorker
 
 
 def _try_create_fanvue_client(config: Config):
@@ -93,9 +94,15 @@ def cmd_init(config: Config) -> int:
     return 0
 
 
-def cmd_ingest(config: Config) -> int:
+def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
     conn = get_connection(config.paths.db_path)
     init_db(conn)
+    if defer_analysis:
+        results = ingest_inbox(config, conn, defer_analysis=True)
+        conn.close()
+        for result in results:
+            print(f"ingested {result.asset_id} ({result.kind}) -> 分析待ち")
+        return 0
     nsfw_classifier = try_create_classifier(config.nsfw)
     if nsfw_classifier is None:
         print("[ingest] torch/timm が見つからないため、NSFW自動仕分けをスキップします")
@@ -114,48 +121,35 @@ def cmd_ingest(config: Config) -> int:
     return 0
 
 
-def cmd_analyze(config: Config) -> int:
-    """`status="analyzing"`のアセットにNSFW自動仕分け・内容説明取得を再試行する(ADR-0015)。
+def cmd_analyze(
+    config: Config,
+    worker: AnalysisWorker | None = None,
+    enqueue_pending: bool = True,
+) -> int:
+    """AI処理(sfw/nsfw判定・説明文生成)のキューを処理する(ADR-0015)。
 
-    成功時は`status="pending_approval"`(人間の承認待ち)に更新する。ただし、
-    分析待ちの間に既に`content_rating_confirmed`が立てられていた場合は、
-    承認待ちを経由せず`status="ready"`(投稿準備完了)に直接昇格させる
-    (ADR-0019)。
+    `enqueue_pending=True`(手動の`reelmilly analyze`)では、まだ判定結果・説明が無い
+    アセットを全てキューに積んでから処理する。`watch`は`False`で呼び、積むのは
+    UIの操作と設定画面の定期実行に任せる。判定と説明の両方が揃った分析中のアセットは
+    `status="pending_approval"`(人間の承認待ち)になる。分析待ちの間に既に
+    `content_rating_confirmed`が立てられていた場合は`status="ready"`に直接昇格する
+    (ADR-0019)。実処理は`core.worker.AnalysisWorker`が行い、複数プロセスの
+    同時実行は排他される。`watch`は同じworkerを使い回してモデルの再ロードを避ける。
     """
     conn = get_connection(config.paths.db_path)
     init_db(conn)
-
-    nsfw_classifier = try_create_classifier(config.nsfw)
-    generator = generation.try_create_generator(conn)
-
-    pending = db_module.list_assets(conn, status="analyzing", order="asc", limit=1000)
-    if not pending:
-        print("[analyze] 分析待ちのアセットはありません")
-        conn.close()
-        return 0
-
-    promoted = 0
-    for asset in pending:
-        result = analyze_asset(conn, nsfw_classifier, generator, Path(asset["file_path"]))
-        apply_auto_tags(conn, asset["id"], result)
-        if result.success:
-            new_status = "ready" if asset["content_rating_confirmed"] else "pending_approval"
-            db_module.update_asset(
-                conn,
-                asset["id"],
-                status=new_status,
-                nsfw_auto_rating=result.nsfw_auto_rating,
-                nsfw_auto_confidence=result.nsfw_auto_confidence,
-                content_description=result.content_description,
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            )
-            promoted += 1
-            print(f"[analyze] {asset['id']}: {new_status}に更新しました")
-        else:
-            print(f"[analyze] {asset['id']}: 未完了のままです ({result.error})")
-
+    if enqueue_pending:
+        for kind in ("nsfw", "describe"):
+            worker_module.enqueue_for_assets(conn, db_module.unprocessed_asset_ids(conn, kind), [kind])
+    result = (worker or AnalysisWorker(config)).run_once(conn)
     conn.close()
-    print(f"[analyze] {promoted}/{len(pending)} 件を更新しました")
+    if result is None:
+        return 0
+    done, failed = result
+    if done == 0 and failed == 0:
+        print("[analyze] 処理待ちのAI処理はありません")
+    else:
+        print(f"[analyze] 成功 {done}件 / 失敗 {failed}件")
     return 0
 
 
@@ -289,6 +283,7 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
     watchプロセスを再起動しなくても次のループから反映される。
     """
     print(f"[watch] {interval_seconds}秒間隔でanalyze/run-dueを実行します（Ctrl+Cで終了）")
+    worker = AnalysisWorker(config, persistent=True)
     try:
         while True:
             conn = get_connection(config.paths.db_path)
@@ -296,12 +291,16 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
             auto_ingest = settings.get_auto_ingest(conn)
             conn.close()
             if auto_ingest:
-                cmd_ingest(config)
-            cmd_analyze(config)
+                cmd_ingest(config, defer_analysis=True)
+            cmd_analyze(config, worker, enqueue_pending=False)
             cmd_run_due(config)
             time.sleep(interval_seconds)
     except KeyboardInterrupt:
         print("\n[watch] 終了します")
+    finally:
+        conn = get_connection(config.paths.db_path)
+        worker.close(conn)
+        conn.close()
     return 0
 
 

@@ -12,6 +12,8 @@
   <p id="dropzone-status" class="dropzone-status"></p>
 </section>
 
+<div id="ai-status" class="banner" hidden></div>
+
 <section class="filters">
   <form method="get">
     <label>ステータス
@@ -115,7 +117,14 @@
 
 <dialog id="lightbox" class="lightbox">
   <button type="button" class="lightbox-close" aria-label="閉じる">&times;</button>
+  <button type="button" class="lightbox-nav lightbox-prev" aria-label="前へ">&#8249;</button>
+  <button type="button" class="lightbox-nav lightbox-next" aria-label="次へ">&#8250;</button>
   <div class="lightbox-media"></div>
+  <div class="lightbox-zoom" hidden>
+    <span>Zoom</span>
+    <input type="range" min="50" max="400" step="10" value="100" aria-label="表示倍率">
+    <output>100%</output>
+  </div>
 </dialog>
 
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
@@ -145,12 +154,18 @@
     <button type="button" id="bulk-rating-apply">区分を一括承認</button>
   </span>
 
+  <span class="bulk-group">
+    <button type="button" id="bulk-ai-nsfw">sfw/nsfw判定</button>
+    <button type="button" id="bulk-ai-describe">説明文・タグ生成</button>
+  </span>
+
   <button type="button" id="bulk-clear">選択解除</button>
 </div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='upload.js') }}"></script>
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
+<script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='grid-controls.js') }}"></script>
 {% endblock %}

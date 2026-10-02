@@ -34,65 +34,78 @@
   <div class="banner banner-error">{{ fanvue_error }}</div>
   {% endif %}
 
-  <div class="card">
-    <h2 style="margin-top: 0;">Fanvue連携（OAuth・ADR-0021）</h2>
-    <p class="hint">
-      Fanvue APIは静的なAPIトークンではなくOAuth 2.0認証専用です。下の「接続設定」で
-      Client ID・Client Secretを保存したうえで連携してください
-      （Fanvue Developer領域でOAuthアプリを作成して取得します。クリエイター登録・KYC完了が前提です）。
-    </p>
-    {% if fanvue_connected %}
-    <p><strong>連携済み</strong></p>
-    <form method="post" action="{{ url_for('fanvue_oauth_disconnect') }}">
-      <button type="submit" class="btn-ghost-inline">連携を解除する</button>
-    </form>
+  {% macro field_input(key, field) %}
+  <label>{{ field.label }}
+    {% if field.secret %}
+    <input type="password" name="{{ key }}" placeholder="{{ '設定済み（変更する場合のみ入力）' if field.is_set else '未設定' }}" autocomplete="off">
     {% else %}
-    <p>未連携</p>
-    <a href="{{ url_for('fanvue_oauth_start') }}"><button type="button">Fanvueと連携する</button></a>
+    <input type="text" name="{{ key }}" value="{{ field.value }}">
     {% endif %}
-  </div>
+  </label>
+  {% endmacro %}
+  {% set advanced_keys = ['FANVUE_OAUTH_REDIRECT_URI', 'FANVUE_API_BASE_URL', 'FANVUE_API_VERSION'] %}
+
+  <nav class="settings-nav" role="tablist">
+    <button type="button" role="tab" data-tab="sec-fanvue">Fanvue</button>
+    <button type="button" role="tab" data-tab="sec-telegram">Telegram</button>
+    <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
+    <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
+    <button type="button" role="tab" data-tab="sec-watch">自動取り込み</button>
+  </nav>
 
   <form method="post" action="{{ url_for('settings_page') }}">
 
-  <div class="card">
-    <h2 style="margin-top: 0;">接続設定（Fanvue・Telegram・生成AI）</h2>
+  <section class="card settings-tab" id="sec-fanvue">
+    <h2 style="margin-top: 0;">Fanvue</h2>
     <p class="hint">
-      APIキー等の秘密情報は<code>.env</code>に保存されます（リポジトリにはコミットされません）。
-      空欄のまま保存すると、既存の値は変更されません。実際に接続できるかは<code>reelmilly doctor</code>で確認してください。
+      Fanvue APIは静的なAPIトークンではなくOAuth 2.0認証専用です（ADR-0021）。
+      Client ID・Client Secretを保存したうえで連携してください
+      （Fanvue Developer領域でOAuthアプリを作成して取得します。クリエイター登録・KYC完了が前提です）。
+      秘密情報は<code>.env</code>に保存され、空欄のまま保存すると既存の値は変更されません。
     </p>
     <div class="settings-form">
-      {% for key, field in connections.items() %}
-      <label>{{ field.label }}
-        {% if field.secret %}
-        <input type="password" name="{{ key }}" placeholder="{{ '設定済み（変更する場合のみ入力）' if field.is_set else '未設定' }}" autocomplete="off">
-        {% else %}
-        <input type="text" name="{{ key }}" value="{{ field.value }}">
-        {% endif %}
-      </label>
+      {% for key, field in connections.items() if key.startswith('FANVUE_') and key not in advanced_keys %}
+      {{ field_input(key, field) }}
+      {% endfor %}
+      <details>
+        <summary>詳細設定（通常は変更不要）</summary>
+        <div class="settings-form">
+          {% for key, field in connections.items() if key in advanced_keys %}
+          {{ field_input(key, field) }}
+          {% endfor %}
+        </div>
+      </details>
+    </div>
+    <h3 style="margin-top: 1rem;">OAuth連携状態</h3>
+    {% if fanvue_connected %}
+    <p><strong>連携済み</strong>（保存後に操作してください）</p>
+    <button type="submit" form="fanvue-disconnect-form" class="btn-ghost-inline">連携を解除する</button>
+    {% else %}
+    <p>未連携（Client ID/Secretを保存してから連携してください）</p>
+    <a href="{{ url_for('fanvue_oauth_start') }}"><button type="button">Fanvueと連携する</button></a>
+    {% endif %}
+  </section>
+
+  <section class="card settings-tab" id="sec-telegram">
+    <h2 style="margin-top: 0;">Telegram</h2>
+    <p class="hint">Telegram連携は未実装のため、値の保存のみ可能です。</p>
+    <div class="settings-form">
+      {% for key, field in connections.items() if key.startswith('TELEGRAM_') %}
+      {{ field_input(key, field) }}
       {% endfor %}
     </div>
-  </div>
+  </section>
 
-  <div class="card">
-    <h2 style="margin-top: 0;">定期実行（watch）の自動取り込み（ADR-0020）</h2>
+  <section class="card settings-tab" id="sec-ai">
+    <h2 style="margin-top: 0;">生成AI（画像内容説明・Fanvue投稿文、ADR-0015）</h2>
+    <p class="hint">実際に接続できるかは<code>reelmilly doctor</code>で確認してください。</p>
     <div class="settings-form">
-      <label class="checkbox-label">
-        <input type="checkbox" name="auto_ingest" {% if settings.auto_ingest %}checked{% endif %}>
-        inboxフォルダの自動取り込みを有効にする
-      </label>
-      <p class="hint">
-        オンにすると、<code>reelmilly watch</code>実行中は一定間隔でinboxフォルダを自動的に取り込みます（<code>reelmilly ingest</code>の手動実行が不要になります）。
-        オフの場合は、これまで通り手動での<code>reelmilly ingest</code>実行、またはWeb UIのドラッグ&ドロップアップロードで取り込んでください。
-        取り込みはコピーではなく<strong>移動</strong>です。inboxに置いたファイルは、取り込み後は本体管理下のフォルダへ移されinboxからは無くなります。
-      </p>
-    </div>
-  </div>
+      {% for key, field in connections.items() if key in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY') %}
+      {{ field_input(key, field) }}
+      {% endfor %}
 
-  <div class="card">
-    <h2 style="margin-top: 0;">画像内容説明・Fanvue投稿文の自動生成（ADR-0015）</h2>
-    <div class="settings-form">
       <label>生成AIプロバイダー
-        <select name="generation_provider">
+        <select name="generation_provider" id="generation-provider">
           <option value="claude" {% if settings.generation_provider == 'claude' %}selected{% endif %}>Claude API</option>
           <option value="openai" {% if settings.generation_provider == 'openai' %}selected{% endif %}>OpenAI API（実API疎通は未検証）</option>
           <option value="local" {% if settings.generation_provider == 'local' %}selected{% endif %}>自前ホスト型VLM（explicit対応、要torch/transformers）</option>
@@ -104,9 +117,15 @@
         自動ダウンロードされ、GPUが無い環境ではCPU推論になります。
       </p>
 
-      <label>モデル名
-        <input type="text" name="generation_model" value="{{ settings.generation_model }}">
+      <label>モデル
+        <select name="generation_model" id="generation-model" data-current="{{ settings.generation_model }}"></select>
       </label>
+      <div id="model-refresh-row">
+        <input type="text" id="model-query" placeholder="モデル名で検索（例: Qwen2-VL）" hidden>
+        <button type="button" id="model-refresh" class="btn-ghost-inline">接続して利用可能なモデルを取得</button>
+        <span class="hint" id="model-refresh-status"></span>
+      </div>
+      <p class="hint">Claude/OpenAIは保存済みのAPIキーで接続して取得した一覧から、自前VLMはHugging Face Hubの画像入力対応モデル（ダウンロード数順）から選べます。</p>
 
       <label>Fanvue投稿文の生成モード
         <select name="caption_mode">
@@ -123,9 +142,163 @@
         <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
       </label>
     </div>
-  </div>
+  </section>
+
+  <section class="card settings-tab" id="sec-auto">
+    <h2 style="margin-top: 0;">AI処理の定期実行</h2>
+    <p class="hint">
+      指定した時刻になると、条件に合う<strong>未処理</strong>のアセット（判定結果・説明がまだ無いもの）を自動でキューに追加します（1日1回）。
+      実際の処理は別プロセスのワーカー（<code>reelmilly watch</code>）が行うため、定期実行を使う場合は常駐させておいてください。
+      個別の実行は、一覧の選択メニューや詳細画面からいつでも手動で開始できます。
+    </p>
+    <div class="settings-form">
+      {% for kind, label in schedule_labels.items() %}
+      {% set sch = schedules[kind] %}
+      <h3 style="margin-bottom: 0.2rem;">{{ label }}</h3>
+      <div class="schedule-grid">
+        <label class="checkbox-label">
+          <input type="checkbox" name="schedule_{{ kind }}_enabled" {% if sch.enabled %}checked{% endif %}>
+          定期実行する
+        </label>
+        <label>時刻
+          <input type="time" name="schedule_{{ kind }}_time" value="{{ sch.time }}" required>
+        </label>
+        <label>対象
+          <select name="schedule_{{ kind }}_scope" data-days-target="days-{{ kind }}">
+            <option value="all" {% if sch.scope == 'all' %}selected{% endif %}>すべての未処理画像</option>
+            <option value="days" {% if sch.scope == 'days' %}selected{% endif %}>直近N日以内に登録された未処理画像</option>
+          </select>
+        </label>
+        <label id="days-{{ kind }}">N =
+          <input type="number" name="schedule_{{ kind }}_days" min="1" max="3650" value="{{ sch.days }}"> 日
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+
+    <h2>タグのカテゴリ</h2>
+    <p class="hint">
+      説明文生成時に、ここで指定したカテゴリごとにタグを1つ付けるようAIへ指示します。
+      「候補」を書くと、その中から選ばせます（省略可。カンマ区切り）。判断できないカテゴリにはタグが付きません。
+      例: 服装 / 性別 / 日本人か（候補: 日本人, 日本人以外） / 胸の大きさ（候補: 大きい, 普通, 小さい） / 背景・ロケーション
+    </p>
+    <div id="category-list">
+      {% for c in tag_categories %}
+      <div class="category-row">
+        <input type="text" name="tag_category_name" value="{{ c.name }}" placeholder="カテゴリ名（例: 服装）">
+        <input type="text" name="tag_category_options" class="category-options" value="{{ c.options }}" placeholder="候補（任意・カンマ区切り）">
+        <button type="button" class="btn-ghost-inline category-remove">削除</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" id="category-add" class="btn-ghost-inline">＋ カテゴリを追加</button>
+  </section>
+
+  <section class="card settings-tab" id="sec-watch">
+    <h2 style="margin-top: 0;">定期実行（watch）の自動取り込み（ADR-0020）</h2>
+    <div class="settings-form">
+      <label class="checkbox-label">
+        <input type="checkbox" name="auto_ingest" {% if settings.auto_ingest %}checked{% endif %}>
+        inboxフォルダの自動取り込みを有効にする
+      </label>
+      <p class="hint">
+        オンにすると、<code>reelmilly watch</code>実行中は一定間隔でinboxフォルダを自動的に取り込みます（<code>reelmilly ingest</code>の手動実行が不要になります）。
+        オフの場合は、これまで通り手動での<code>reelmilly ingest</code>実行、またはWeb UIのドラッグ&ドロップアップロードで取り込んでください。
+        取り込みはコピーではなく<strong>移動</strong>です。inboxに置いたファイルは、取り込み後は本体管理下のフォルダへ移されinboxからは無くなります。
+      </p>
+    </div>
+  </section>
 
   <button type="submit">保存する</button>
   </form>
+
+  <form id="fanvue-disconnect-form" method="post" action="{{ url_for('fanvue_oauth_disconnect') }}"></form>
 </section>
+
+<script>
+(function () {
+  const choices = {{ model_choices | tojson }};
+  const providerSel = document.getElementById("generation-provider");
+  const modelSel = document.getElementById("generation-model");
+  function fill(selected) {
+    const list = (choices[providerSel.value] || []).slice();
+    if (selected && !list.includes(selected)) list.unshift(selected);
+    modelSel.innerHTML = "";
+    list.forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m;
+      o.textContent = m;
+      if (m === selected) o.selected = true;
+      modelSel.appendChild(o);
+    });
+  }
+  const refreshRow = document.getElementById("model-refresh-row");
+  const refreshButton = document.getElementById("model-refresh");
+  const refreshStatus = document.getElementById("model-refresh-status");
+  function updateRefreshVisibility() {
+    document.getElementById("model-query").hidden = providerSel.value !== "local";
+    refreshStatus.textContent = "";
+  }
+  fill(modelSel.dataset.current);
+  updateRefreshVisibility();
+  providerSel.addEventListener("change", () => { fill(""); updateRefreshVisibility(); });
+
+  refreshButton.addEventListener("click", async () => {
+    refreshStatus.textContent = "取得中...";
+    try {
+      const res = await fetch("{{ url_for('refresh_models') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: providerSel.value, query: document.getElementById("model-query").value }),
+      });
+      const data = await res.json();
+      if (!res.ok) { refreshStatus.textContent = data.error || "取得に失敗しました"; return; }
+      choices[providerSel.value] = data.models;
+      fill(modelSel.value);
+      refreshStatus.textContent = data.models.length + "件のモデルを取得しました";
+    } catch (e) {
+      refreshStatus.textContent = "取得に失敗しました: " + e;
+    }
+  });
+
+  // タグカテゴリの追加・削除
+  const categoryList = document.getElementById("category-list");
+  function addCategoryRow(name, options) {
+    const row = document.createElement("div");
+    row.className = "category-row";
+    row.innerHTML =
+      '<input type="text" name="tag_category_name" placeholder="カテゴリ名（例: 服装）">' +
+      '<input type="text" name="tag_category_options" class="category-options" placeholder="候補（任意・カンマ区切り）">' +
+      '<button type="button" class="btn-ghost-inline category-remove">削除</button>';
+    row.children[0].value = name || "";
+    row.children[1].value = options || "";
+    categoryList.appendChild(row);
+  }
+  document.getElementById("category-add").addEventListener("click", () => addCategoryRow());
+  categoryList.addEventListener("click", (e) => {
+    if (e.target.classList.contains("category-remove")) e.target.closest(".category-row").remove();
+  });
+
+  // 定期実行の対象が「直近N日」のときだけ日数を表示
+  document.querySelectorAll("[data-days-target]").forEach((sel) => {
+    const target = document.getElementById(sel.dataset.daysTarget);
+    const sync = () => { target.hidden = sel.value !== "days"; };
+    sel.addEventListener("change", sync);
+    sync();
+  });
+
+  // タブ切り替え(全セクションは同一フォーム内にあり、非表示でも保存時に送信される)
+  const tabButtons = document.querySelectorAll(".settings-nav button");
+  function selectTab(id) {
+    if (!document.getElementById(id)) id = "sec-fanvue";
+    tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === id));
+    document.querySelectorAll(".settings-tab").forEach((sec) => { sec.hidden = sec.id !== id; });
+    try { sessionStorage.setItem("settings-tab", id); } catch (e) {}
+  }
+  tabButtons.forEach((b) => b.addEventListener("click", () => selectTab(b.dataset.tab)));
+  let initial = location.hash.slice(1);
+  if (!initial) { try { initial = sessionStorage.getItem("settings-tab") || ""; } catch (e) {} }
+  selectTab(initial);
+})();
+</script>
 {% endblock %}

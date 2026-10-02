@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Reelmilly - 使用法{% endblock %}
+{% block content %}
+<article class="help-page">
+  <h1>Reelmilly 使用法</h1>
+  <p class="hint">このページは別タブで開いています。マニュアルを見ながら、元のタブでアプリを操作できます。</p>
+
+  <nav class="card help-toc">
+    <a href="#start">1. 起動のしかた</a>
+    <a href="#flow">2. 基本の流れ</a>
+    <a href="#import">3. 画像・動画を取り込む</a>
+    <a href="#list">4. 一覧画面</a>
+    <a href="#preview">5. プレビュー</a>
+    <a href="#ai">6. AI処理</a>
+    <a href="#approve">7. 区分の承認</a>
+    <a href="#tags">8. タグ・フォルダ</a>
+    <a href="#settings">9. 設定</a>
+    <a href="#post">10. Fanvueへ投稿</a>
+    <a href="#keys">11. キー操作一覧</a>
+    <a href="#trouble">12. 困ったとき</a>
+  </nav>
+
+  <h2 id="start">1. 起動のしかた</h2>
+  <p>Reelmilly は2つのプログラムを<strong>別々のターミナル</strong>で動かします。</p>
+  <ul>
+    <li><strong>画面（Web UI）</strong>: <code>reelmilly web</code> を起動し、ブラウザで <code>http://127.0.0.1:8420/</code> を開きます。</li>
+    <li><strong>ワーカー（AI処理・定期実行）</strong>: <code>reelmilly watch</code> を起動したままにします。sfw/nsfw判定や説明文生成といった時間のかかる処理は、このワーカーが裏で行います。</li>
+  </ul>
+  <p class="help-note">ワーカーが止まっていると、AI処理は「待機中」のまま進みません。一覧画面の上部に「ワーカー停止中」と表示されたら <code>reelmilly watch</code> を起動してください。どちらも <kbd>Ctrl</kbd>+<kbd>C</kbd> で停止できます。</p>
+
+  <h2 id="flow">2. 基本の流れ</h2>
+  <ol>
+    <li>画像・動画を<strong>取り込む</strong>（ステータス: <code>analyzing</code>）</li>
+    <li><strong>AI処理</strong>でsfw/nsfw判定と説明文・タグ生成を行う（両方そろうと <code>pending_approval</code>）</li>
+    <li>人が内容を確認して<strong>区分（sfw / suggestive / explicit）を承認</strong>する（<code>ready</code>）</li>
+    <li>承認済みのものがFanvueへ<strong>投稿</strong>される（<code>posted</code>）。投稿に失敗したものは <code>failed_fanvue</code></li>
+  </ol>
+  <p>AIの判定はあくまで参考値です。<strong>最終判断と承認は必ず人が行います。</strong></p>
+
+  <h2 id="import">3. 画像・動画を取り込む</h2>
+  <ul>
+    <li><strong>ドラッグ&ドロップ</strong>: 一覧画面上部の枠に、画像・動画を複数まとめて落とします（クリックしてファイルを選ぶこともできます）。</li>
+    <li><strong>フォルダに置く</strong>: <code>data/library/inbox/</code> に置いて <code>reelmilly ingest</code> を実行します。設定で「inboxフォルダの自動取り込み」をオンにすると、<code>watch</code> が自動で取り込みます。</li>
+  </ul>
+  <p>取り込んだ直後は <code>analyzing</code> で、AI処理はまだ行われません。次の「6. AI処理」で開始します。取り込みは<strong>コピーではなく移動</strong>です（元の場所からは無くなります）。</p>
+
+  <h2 id="list">4. 一覧画面</h2>
+  <ul>
+    <li><strong>絞り込み</strong>: ステータス・区分・タグ・フォルダ・承認状態で絞れます。</li>
+    <li><strong>サムネイルサイズ</strong>: 右上のスライダーで変更できます（次回も保持されます）。</li>
+    <li><strong>選択</strong>: 各画像左上のチェックで複数選択できます。「表示中をすべて選択」で絞り込んだ結果をまとめて選べます。選ぶと画面下部に<strong>操作メニュー</strong>が出ます（タグ付与・フォルダ追加・区分の一括承認・AI処理の開始）。</li>
+    <li><strong>詳細を見る</strong>: 各画像右下の矢印アイコンから詳細画面へ移動します。</li>
+    <li><strong>バッジ</strong>: ステータスと区分を表示します。AI処理が待機中/実行中の画像には「判定中…」「説明生成中…」と表示され、完了すると自動で表示が変わります。</li>
+  </ul>
+
+  <h2 id="preview">5. プレビュー</h2>
+  <p>一覧のサムネイルをクリックすると拡大表示されます。</p>
+  <ul>
+    <li><strong>左右ボタン / <kbd>←</kbd> <kbd>→</kbd> キー</strong>: サムネイルの並び順で前後の画像・動画に切り替えます。</li>
+    <li><strong>Zoom スライダー</strong>: 画像の表示倍率を変えます（元の解像度を超えても拡大できます。拡大するとスクロールできます）。</li>
+    <li><strong>画像をもう一度クリック</strong>、または右上の×、背景のクリック、<kbd>Esc</kbd> で閉じます。</li>
+    <li><strong>動画</strong>は音声オフで自動再生され、閉じると停止します。</li>
+  </ul>
+
+  <h2 id="ai">6. AI処理（判定・説明文・タグ）</h2>
+  <p>AI処理は2種類あり、<strong>それぞれ別々に</strong>開始できます。</p>
+  <table>
+    <tr><th>処理</th><th>内容</th><th>必要なもの</th></tr>
+    <tr><td>sfw/nsfw判定</td><td>画像・動画がsfwかnsfwかを、確信度付きで自動判定します（結果はタグ <code>sfw</code>/<code>nsfw</code> にもなります）</td><td><code>pip install -e ".[nsfw]"</code></td></tr>
+    <tr><td>説明文生成・タグ付与</td><td>内容の説明文を作り、タグ候補を付けます。投稿文の元になります</td><td>設定の「生成AI」（Claude / OpenAI / 自前ホスト型VLM）</td></tr>
+  </table>
+
+  <h3>開始のしかた</h3>
+  <ul>
+    <li><strong>一覧から（複数まとめて）</strong>: 画像を選択 → 下部メニューの「sfw/nsfw判定」または「説明文・タグ生成」。</li>
+    <li><strong>詳細画面から（1件）</strong>: 「AI処理」カードのボタン。再実行すると結果を上書きします。</li>
+    <li><strong>定期実行</strong>: 設定の「AI自動処理・タグ」で、時刻と対象（すべての未処理 / 直近N日以内の未処理）を指定します。</li>
+    <li><strong>まとめて手動</strong>: ターミナルで <code>reelmilly analyze</code>（未処理を全部キューに積んで処理します）。</li>
+  </ul>
+
+  <h3>非同期で動きます</h3>
+  <p>ボタンを押すと処理は<strong>キューに追加</strong>されるだけで、画面は待たされません。ワーカーが順番に処理し、1件終わるごとに画面の表示が更新され、<strong>右下にトースト通知</strong>が出ます（失敗した場合は理由付きで通知します）。他の画面を操作していても構いません。</p>
+  <p class="help-note">自前ホスト型VLMをCPUで動かすと、1件あたり数分かかります。GPUがあれば自動的に使われます。</p>
+
+  <h3>タグのカテゴリ</h3>
+  <p>設定で「服装」「性別」「日本人か」「背景・ロケーション」などのカテゴリを指定すると、説明文生成時にカテゴリごとにタグが1つ付きます。</p>
+
+  <h2 id="approve">7. 区分の承認</h2>
+  <p>詳細画面の「区分の承認」で、sfw / suggestive / explicit のいずれかを選んで「承認する」を押します。一覧では複数選択して「区分を一括承認」もできます。</p>
+  <ul>
+    <li>初期選択はAI判定からの推定です（nsfw → explicit）。suggestive かどうかはAIでは判別できないので、人が選んでください。</li>
+    <li>承認すると <code>pending_approval</code> のものは <code>ready</code>（投稿準備完了）になります。</li>
+    <li>承認していないものは、Fanvueへ自動投稿されません。</li>
+  </ul>
+
+  <h2 id="tags">8. タグ・フォルダ</h2>
+  <ul>
+    <li>詳細画面でタグ・フォルダの追加と削除ができます。一覧の選択メニューからは、複数にまとめて付与できます。</li>
+    <li>AIが付けたタグと手動のタグは、今のところ画面上で区別されません。</li>
+    <li>一覧の絞り込みで、タグ・フォルダから探せます。</li>
+  </ul>
+
+  <h2 id="settings">9. 設定</h2>
+  <p>画面右上の「設定」は、タブで分かれています。</p>
+  <ul>
+    <li><strong>Fanvue</strong>: OAuthアプリの Client ID / Secret、ハンドル等を設定し、「Fanvueと連携する」を押します。秘密の値は画面に表示されず、空欄のまま保存すると変更されません。</li>
+    <li><strong>Telegram</strong>: 値の保存のみ（連携機能は未実装です）。</li>
+    <li><strong>生成AI</strong>: APIキー、プロバイダー、モデル、システムプロンプト、投稿文の生成モード（auto / draft）。モデルは「接続して利用可能なモデルを取得」で、実際に使えるものの一覧から選びます。explicit の画像には<strong>自前ホスト型VLM</strong>を使ってください（Claude / OpenAI は拒否する可能性が高いため）。</li>
+    <li><strong>AI自動処理・タグ</strong>: sfw/nsfw判定と説明文生成の定期実行（時刻・対象範囲）、タグのカテゴリ。</li>
+    <li><strong>自動取り込み</strong>: <code>watch</code> による inbox の自動取り込みのオン/オフ。</li>
+  </ul>
+  <p>設定を変えたら、どのタブからでも一番下の「保存する」を押します（全タブの内容がまとめて保存されます）。</p>
+
+  <h2 id="post">10. Fanvueへ投稿</h2>
+  <p>承認済み（<code>ready</code>）で、投稿先にFanvueが指定されたものが対象です。</p>
+  <ul>
+    <li>手動: <code>reelmilly run drop</code>（<code>--count 3</code> で最大3件、<code>--kind image</code> や <code>--rating sfw</code> で絞り込み）</li>
+    <li>自動: <code>config.yaml</code> の <code>cadence</code> に時刻を書くと、<code>reelmilly watch</code> がその時刻以降に実行します（同じ日に二重には実行されません）。</li>
+  </ul>
+  <p>投稿文が未設定のときは、説明文から自動生成されます（draft モードでは下書きとして保存され、詳細画面で確認・採用します）。</p>
+  <p class="help-note"><strong>投稿前の確認は運用者の責任です。</strong>AI生成であることの明示と、登場人物が18歳未満に見えないことを、毎回目視で確認してください。</p>
+
+  <h2 id="keys">11. キー操作一覧</h2>
+  <table>
+    <tr><th>場所</th><th>キー</th><th>動作</th></tr>
+    <tr><td>プレビュー</td><td><kbd>←</kbd> <kbd>→</kbd></td><td>前/次の画像・動画</td></tr>
+    <tr><td>プレビュー</td><td><kbd>Esc</kbd></td><td>閉じる</td></tr>
+    <tr><td>詳細画面</td><td><kbd>Esc</kbd></td><td>一覧画面に戻る（入力欄にカーソルがあるときは、まず入力欄から抜けます）</td></tr>
+  </table>
+
+  <h2 id="trouble">12. 困ったとき</h2>
+  <dl>
+    <dt>AI処理がずっと「待機中」のまま</dt>
+    <dd>ワーカーが動いていません。別のターミナルで <code>reelmilly watch</code> を起動してください。</dd>
+    <dt>sfw/nsfw判定が「失敗」する</dt>
+    <dd>NSFW判定用のモデルが入っていない可能性があります。<code>pip install -e ".[nsfw]"</code> を実行してください。失敗の理由はトーストと詳細画面に出ます。</dd>
+    <dt>説明文生成が「失敗」する</dt>
+    <dd>設定の「生成AI」でプロバイダーとAPIキー（またはモデル）を確認してください。</dd>
+    <dt>承認待ち（pending_approval）にならない</dt>
+    <dd>sfw/nsfw判定と説明文生成の<strong>両方</strong>が完了すると承認待ちになります。詳細画面で、どちらが未実行か確認してください。</dd>
+    <dt>設定が反映されているか確認したい</dt>
+    <dd>ターミナルで <code>reelmilly doctor</code> を実行すると、ディレクトリ・DB・Fanvue接続の状態を確認できます。</dd>
+  </dl>
+</article>
+{% endblock %}

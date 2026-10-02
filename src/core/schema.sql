@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS assets (
     nsfw_auto_confidence REAL,
     content_description TEXT,
     fanvue_caption_draft TEXT,
+    analysis_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -67,3 +68,16 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- AI処理(sfw/nsfw判定・説明文/タグ生成)の非同期キュー。ワーカーが順に処理する
+CREATE TABLE IF NOT EXISTS ai_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,      -- 'nsfw' | 'describe'
+    status TEXT NOT NULL,    -- 'queued' | 'running' | 'done' | 'failed'
+    error TEXT,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_status ON ai_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_asset ON ai_tasks(asset_id, kind);

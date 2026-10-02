@@ -129,6 +129,7 @@
     });
   }
 
+  window.renderTagList = tagList ? renderTagList : null;
   if (tagList) attachTagRemoveHandlers();
   if (folderList) attachFolderRemoveHandlers();
 })();

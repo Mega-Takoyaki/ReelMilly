@@ -715,3 +715,108 @@ def test_settings_page_post_blank_token_keeps_existing_value(app_and_conn):
 
     status = env_settings.read_connection_status(env_path)
     assert status["FANVUE_OAUTH_CLIENT_SECRET"]["is_set"] is True
+
+
+def test_refresh_models_requires_api_key(app_and_conn, monkeypatch):
+    app, _conn = app_and_conn[:2] if isinstance(app_and_conn, tuple) else (app_and_conn, None)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    client = app.test_client()
+    res = client.post("/settings/models/refresh", json={"provider": "claude"})
+    assert res.status_code == 400
+    assert "ANTHROPIC_API_KEY" in res.get_json()["error"]
+
+
+def test_refresh_models_local_caches_result(app_and_conn):
+    app = app_and_conn[0] if isinstance(app_and_conn, tuple) else app_and_conn
+    client = app.test_client()
+    with patch("core.generation.list_available_models", return_value=["org/m1", "org/m2"]):
+        res = client.post("/settings/models/refresh", json={"provider": "local"})
+    assert res.get_json() == {"models": ["org/m1", "org/m2"]}
+    page = client.get("/settings").get_data(as_text=True)
+    assert "org/m1" in page
+
+
+def test_upload_defers_analysis_and_returns_quickly(app_and_conn):
+    app = app_and_conn[0]
+    client = app.test_client()
+    with patch("core.web.app.ingest_inbox", wraps=__import__("core.web.app", fromlist=["x"]).ingest_inbox) as spy:
+        res = client.post(
+            "/assets/upload",
+            data={"files": (io.BytesIO(b"x"), "u.jpg")},
+            content_type="multipart/form-data",
+        )
+    assert res.status_code == 200
+    assert spy.call_args.kwargs["defer_analysis"] is True
+
+
+def test_analysis_status_endpoint(app_and_conn):
+    app = app_and_conn[0]
+    data = app.test_client().get("/api/ai-live?ids=a1").get_json()
+    assert set(data["status"]) == {"queued", "running", "failed", "worker_alive", "current"}
+    assert data["assets"]["a1"]["nsfw_auto_rating"] == "nsfw"
+
+
+def test_detail_preselects_rating_from_auto_judgement(app_and_conn):
+    app = app_and_conn[0]
+    body = app.test_client().get("/assets/a1").get_data(as_text=True)
+    assert '<option value="explicit" selected>' in body  # AI判定nsfw → explicit
+
+
+def test_enqueue_ai_tasks_endpoint(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+
+    res = client.post("/api/ai-tasks", json={"asset_ids": ["a1", "missing"], "kind": "both"})
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["queued"] == 2  # 存在するa1のnsfw/describe
+    assert data["status"]["queued"] == 2
+
+    again = client.post("/api/ai-tasks", json={"asset_ids": ["a1"], "kind": "nsfw"}).get_json()
+    assert again["queued"] == 0 and again["skipped"] == 1
+
+    assert client.post("/api/ai-tasks", json={"asset_ids": ["a1"], "kind": "bogus"}).status_code == 400
+
+    live = client.get("/api/ai-live?ids=a1").get_json()
+    assert live["assets"]["a1"]["tasks"]["nsfw"]["status"] == "queued"
+
+
+def test_settings_saves_schedule_and_tag_categories(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+
+    client.post(
+        "/settings",
+        data={
+            "schedule_nsfw_enabled": "on",
+            "schedule_nsfw_time": "04:30",
+            "schedule_nsfw_scope": "days",
+            "schedule_nsfw_days": "3",
+            "schedule_describe_time": "05:00",
+            "schedule_describe_scope": "all",
+            "tag_category_name": ["服装", "", "性別"],
+            "tag_category_options": ["水着", "x", ""],
+        },
+    )
+
+    from core import settings as settings_module
+
+    assert settings_module.get_ai_schedule(conn, "nsfw") == {"enabled": True, "time": "04:30", "scope": "days", "days": 3}
+    assert settings_module.get_ai_schedule(conn, "describe")["enabled"] is False
+    assert [c["name"] for c in settings_module.get_tag_categories(conn)] == ["服装", "性別"]
+    page = client.get("/settings").get_data(as_text=True)
+    assert 'value="04:30"' in page and "服装" in page
+
+
+def test_help_page_and_nav_link(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    assert client.get("/help").status_code == 200
+    assert 'href="/help" target="_blank"' in client.get("/").get_data(as_text=True)
+
+
+def test_detail_has_ai_actions_and_esc_script(app_and_conn):
+    app, _ = app_and_conn
+    body = app.test_client().get("/assets/a1").get_data(as_text=True)
+    assert 'data-ai-run="nsfw"' in body and 'data-ai-run="describe"' in body
+    assert "esc-back.js" in body

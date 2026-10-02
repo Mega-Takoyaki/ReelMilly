@@ -1,36 +1,94 @@
 // 一覧画面: サムネイルクリックで画像/動画をポップアップ(dialog)プレビュー表示する。
 // 詳細画面への遷移は.asset-detail-linkアイコン経由のみ(サムネイル本体のクリックとは分離)。
+// 画像は再クリックで閉じ、倍率スライダーで拡大縮小できる。動画は音声オフで自動再生し、閉じると停止する。
 (function () {
   const dialog = document.getElementById("lightbox");
   const mediaContainer = dialog ? dialog.querySelector(".lightbox-media") : null;
   const closeButton = dialog ? dialog.querySelector(".lightbox-close") : null;
+  const zoomBar = dialog ? dialog.querySelector(".lightbox-zoom") : null;
+  const zoomSlider = zoomBar ? zoomBar.querySelector("input") : null;
+  const zoomOutput = zoomBar ? zoomBar.querySelector("output") : null;
 
-  if (!dialog || !mediaContainer || !closeButton) return;
+  const prevButton = dialog ? dialog.querySelector(".lightbox-prev") : null;
+  const nextButton = dialog ? dialog.querySelector(".lightbox-next") : null;
+  const items = Array.from(document.querySelectorAll(".asset-media"));
+  let index = -1;
+
+  if (!dialog || !mediaContainer || !closeButton || !zoomBar || !zoomSlider || !prevButton || !nextButton) return;
+
+  let baseWidth = 0;
+
+  function applyZoom() {
+    const img = mediaContainer.querySelector("img");
+    const percent = Number(zoomSlider.value);
+    zoomOutput.textContent = percent + "%";
+    if (!img || !baseWidth) return;
+    // 倍率100%=画面に収まる大きさ。拡大時はコンテナ内でスクロールできる
+    img.style.maxWidth = "none";
+    img.style.maxHeight = "none";
+    img.style.width = (baseWidth * percent) / 100 + "px";
+  }
+
+  function show(i) {
+    index = i;
+    const el = items[i];
+    prevButton.hidden = i <= 0;
+    nextButton.hidden = i >= items.length - 1;
+    openLightbox(el.dataset.src, el.dataset.kind, el.dataset.alt);
+  }
+
+  function step(delta) {
+    const next = index + delta;
+    if (next >= 0 && next < items.length) show(next);
+  }
 
   function openLightbox(src, kind, alt) {
+    const video = mediaContainer.querySelector("video");
+    if (video) video.pause();
     mediaContainer.innerHTML = "";
+    zoomSlider.value = 100;
+    baseWidth = 0;
     if (kind === "video") {
+      zoomBar.hidden = true;
       const video = document.createElement("video");
       video.src = src;
       video.controls = true;
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
       mediaContainer.appendChild(video);
+      if (!dialog.open) dialog.showModal();
+      video.play().catch(() => {});
     } else {
+      zoomBar.hidden = false;
+      zoomOutput.textContent = "100%";
       const img = document.createElement("img");
-      img.src = src;
       img.alt = alt || "";
+      img.addEventListener("load", () => {
+        baseWidth = img.clientWidth;
+        applyZoom();
+      });
+      img.addEventListener("click", closeLightbox);
+      img.src = src;
       mediaContainer.appendChild(img);
+      if (!dialog.open) dialog.showModal();
     }
-    dialog.showModal();
   }
 
   function closeLightbox() {
     if (dialog.open) dialog.close();
   }
 
-  document.querySelectorAll(".asset-media").forEach((el) => {
-    el.addEventListener("click", () => {
-      openLightbox(el.dataset.src, el.dataset.kind, el.dataset.alt);
-    });
+  items.forEach((el, i) => {
+    el.addEventListener("click", () => show(i));
+  });
+
+  prevButton.addEventListener("click", () => step(-1));
+  nextButton.addEventListener("click", () => step(1));
+  dialog.addEventListener("keydown", (e) => {
+    if (e.target === zoomSlider) return; // スライダー操作中の左右キーは倍率調整に使う
+    if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
   });
 
   document.querySelectorAll(".asset-detail-link").forEach((link) => {
@@ -38,6 +96,7 @@
     link.addEventListener("click", (e) => e.stopPropagation());
   });
 
+  zoomSlider.addEventListener("input", applyZoom);
   closeButton.addEventListener("click", closeLightbox);
 
   dialog.addEventListener("click", (e) => {
@@ -45,6 +104,9 @@
   });
 
   dialog.addEventListener("close", () => {
+    const video = mediaContainer.querySelector("video");
+    if (video) video.pause();
     mediaContainer.innerHTML = "";
+    index = -1;
   });
 })();

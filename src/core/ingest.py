@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 from core import db
-from core.analysis import analyze_asset, apply_auto_tags
+from core.analysis import AnalysisResult, analyze_asset, apply_auto_tags
 from core.config import Config
 from core.events import log_event
 from core.nsfw import NsfwClassifier
@@ -65,6 +65,7 @@ def ingest_inbox(
     conn: sqlite3.Connection,
     nsfw_classifier: NsfwClassifier | None = None,
     generator=None,
+    defer_analysis: bool = False,
 ) -> list[IngestResult]:
     """inbox配下のメディアファイルをreadyへ移動し、SQLiteへ登録する。
 
@@ -78,6 +79,10 @@ def ingest_inbox(
     失敗の詳細は`events.jsonl`に`analysis_incomplete`として記録する。
     取得できた分の内容説明タグ・NSFW自動仕分け結果は、成否に関わらずタグとして
     自動付与する(ADR-0018)。
+
+    `defer_analysis=True`の場合は分析を行わず、全件`status="analyzing"`で登録する。
+    分析は別プロセスのワーカー(`reelmilly watch`/`reelmilly analyze`)が行う
+    (WebのアップロードをVLMの推論時間で待たせないため)。
     """
     results: list[IngestResult] = []
     inbox = config.paths.inbox
@@ -104,7 +109,10 @@ def ingest_inbox(
         if sidecar_path:
             sidecar_path.unlink()
 
-        analysis = analyze_asset(conn, nsfw_classifier, generator, dest_path)
+        if defer_analysis:
+            analysis = AnalysisResult(success=False, error="deferred")
+        else:
+            analysis = analyze_asset(conn, nsfw_classifier, generator, dest_path)
 
         now = datetime.now(timezone.utc).isoformat()
         asset = {
@@ -142,7 +150,7 @@ def ingest_inbox(
             status=asset["status"],
             nsfw_auto_rating=analysis.nsfw_auto_rating,
         )
-        if not analysis.success:
+        if not analysis.success and not defer_analysis:
             log_event(
                 config.paths.events_path,
                 "analysis_incomplete",

@@ -68,7 +68,7 @@ def test_analyze_asset_fails_when_classifier_missing(tmp_path):
 
     assert result.success is False
     assert result.content_description == "笑顔の女性"
-    assert "nsfw classifier unavailable" in result.error
+    assert "NSFW判定モデルが利用できません" in result.error
 
 
 def test_analyze_asset_fails_when_generator_missing(tmp_path):
@@ -83,7 +83,7 @@ def test_analyze_asset_fails_when_generator_missing(tmp_path):
 
     assert result.success is False
     assert result.nsfw_auto_rating == "sfw"
-    assert "generator unavailable" in result.error
+    assert "生成AIが利用できません" in result.error
 
 
 def test_analyze_asset_records_error_when_description_raises(tmp_path):

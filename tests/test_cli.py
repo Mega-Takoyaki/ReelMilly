@@ -283,7 +283,8 @@ def test_watch_calls_analyze_each_tick(tmp_path):
     ):
         cmd_watch(config)
 
-    mocked_analyze.assert_called_once_with(config)
+    mocked_analyze.assert_called_once()
+    assert mocked_analyze.call_args[0][0] == config
 
 
 def test_watch_skips_ingest_when_auto_ingest_disabled(tmp_path):
@@ -314,7 +315,7 @@ def test_watch_calls_ingest_each_tick_when_auto_ingest_enabled(tmp_path):
     ), patch("core.cli.time.sleep", side_effect=KeyboardInterrupt):
         cmd_watch(config)
 
-    mocked_ingest.assert_called_once_with(config)
+    mocked_ingest.assert_called_once_with(config, defer_analysis=True)
 
 
 def test_parse_cadence_entry_accepts_plain_string():
@@ -370,7 +371,7 @@ def test_analyze_promotes_asset_to_pending_approval_on_success(tmp_path, capsys)
         description="説明文", suggested_tags=["屋外"]
     )
 
-    with patch("core.cli.try_create_classifier", return_value=fake_classifier), patch(
+    with patch("core.worker.try_create_classifier", return_value=fake_classifier), patch(
         "core.generation.try_create_generator", return_value=fake_generator
     ):
         exit_code = cmd_analyze(config)
@@ -414,7 +415,7 @@ def test_analyze_promotes_asset_directly_to_ready_when_already_confirmed(tmp_pat
     fake_generator = MagicMock()
     fake_generator.describe_image.return_value = DescriptionResult(description="説明文")
 
-    with patch("core.cli.try_create_classifier", return_value=fake_classifier), patch(
+    with patch("core.worker.try_create_classifier", return_value=fake_classifier), patch(
         "core.generation.try_create_generator", return_value=fake_generator
     ):
         exit_code = cmd_analyze(config)
@@ -434,4 +435,4 @@ def test_analyze_reports_no_pending_assets(tmp_path, capsys):
     exit_code = cmd_analyze(config)
 
     assert exit_code == 0
-    assert "分析待ちのアセットはありません" in capsys.readouterr().out
+    assert "処理待ちのAI処理はありません" in capsys.readouterr().out

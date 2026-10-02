@@ -19,9 +19,11 @@ from pathlib import Path
 
 DEFAULT_CLAUDE_MODEL = "claude-opus-5"
 DEFAULT_OPENAI_MODEL = "gpt-4o"
+LOCAL_VLM_MAX_IMAGE_SIDE = 768
 DEFAULT_LOCAL_VLM_MODEL = "prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it"
 
-MAX_SUGGESTED_TAGS = 5
+MAX_SUGGESTED_TAGS = 12  # タグカテゴリ(設定)を複数指定した場合に1カテゴリ1タグ付くよう余裕を持たせる
+_UNKNOWN_TAG_VALUES = {"不明", "なし", "無し", "該当なし", "判断不能"}
 
 _IMAGE_MEDIA_TYPES = {
     ".jpg": "image/jpeg",
@@ -71,7 +73,10 @@ def _parse_description_response(text: str) -> DescriptionResult:
 
     tag_match = _TAG_LINE_PATTERN.search(text)
     if tag_match:
-        tags = [t.strip() for t in re.split(r"[,、]", tag_match.group(1)) if t.strip()]
+        raw_tags = [t.strip() for t in re.split(r"[,、]", tag_match.group(1)) if t.strip()]
+        # タグカテゴリ指定時は「カテゴリ名=タグ」形式で返るため、タグ部分だけを取り出す
+        tags = [re.split(r"[=＝]", t, maxsplit=1)[-1].strip() for t in raw_tags]
+        tags = [t for t in tags if t and t not in _UNKNOWN_TAG_VALUES]
         description = text[: tag_match.start()].strip()
 
     desc_match = _DESCRIPTION_LINE_PATTERN.match(description)
@@ -247,6 +252,9 @@ class LocalVlmGenerator:
         from PIL import Image
 
         image = Image.open(image_path).convert("RGB")
+        # 大きい画像は画像トークンが多すぎて処理が遅くなり、プロセッサのmax_length切り詰めで
+        # 「image token count mismatch」エラーになるため、長辺を縮小してから渡す
+        image.thumbnail((LOCAL_VLM_MAX_IMAGE_SIDE, LOCAL_VLM_MAX_IMAGE_SIDE))
         messages = [
             {"role": "system", "content": system_prompt},
             {
@@ -275,6 +283,64 @@ class LocalVlmGenerator:
             return self._generate(messages)
         except Exception as exc:  # noqa: BLE001
             raise GenerationError(str(exc)) from exc
+
+
+_OPENAI_EXCLUDE = (
+    "embedding", "tts", "whisper", "transcribe", "realtime", "audio",
+    "image", "moderation", "search", "dall-e", "davinci", "babbage", "instruct",
+)
+
+
+def list_available_models(provider: str, api_key: str = "", query: str = "") -> list[str]:
+    """実際に接続し、利用可能なモデルID一覧を取得する。
+
+    claude/openaiはAPIキーで各社のAPIに、localはHugging Face Hub(APIキー不要)に問い合わせる。
+    localは画像+テキスト入力モデル(image-text-to-text)をダウンロード数順に最大50件、
+    `query`があれば名前で絞り込んで返す。
+
+    失敗時はGenerationErrorを送出する。
+    """
+    import json
+    import urllib.request
+
+    if provider == "claude":
+        request = urllib.request.Request(
+            "https://api.anthropic.com/v1/models?limit=1000",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+        )
+    elif provider == "openai":
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+    elif provider == "local":
+        from urllib.parse import urlencode
+
+        params = {"pipeline_tag": "image-text-to-text", "library": "transformers",
+                  "sort": "downloads", "limit": "50"}
+        if query.strip():
+            params["search"] = query.strip()
+        request = urllib.request.Request("https://huggingface.co/api/models?" + urlencode(params))
+    else:
+        raise GenerationError(f"モデル一覧の取得に対応していないプロバイダーです: {provider}")
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.load(response)
+    except Exception as exc:  # noqa: BLE001
+        raise GenerationError(f"モデル一覧の取得に失敗しました: {exc}") from exc
+
+    if provider == "local":
+        return [item["id"] for item in payload if item.get("id")]
+
+    ids = [item["id"] for item in payload.get("data", []) if item.get("id")]
+    if provider == "openai":
+        ids = [
+            i for i in ids
+            if (i.startswith(("gpt-", "chatgpt-")) or (i[:1] == "o" and i[1:2].isdigit()))
+            and not any(word in i for word in _OPENAI_EXCLUDE)
+        ]
+    return sorted(set(ids))
 
 
 def try_create_generator(conn: sqlite3.Connection):

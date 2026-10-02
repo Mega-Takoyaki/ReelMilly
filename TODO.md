@@ -52,7 +52,9 @@
 
 - [x] ~~Claude API/OpenAI API/xAI Grok API/AWS Bedrockが性的に露骨なコンテンツを処理できるか調査~~ → いずれも利用ポリシー上の制約により不適（ADR-0017に詳細）
 - [x] ~~自前ホスト型VLM(`LocalVlmGenerator`)を実装~~ → `src/core/generation.py`として実装済み。既定モデル`prithivMLmods/Qwen2-VL-2B-Abliterated-Caption-it`
-- [ ] **実機でのモデルロード・生成動作を未検証**。このセッションでは実際のモデル重み(数GB)のダウンロード・推論は行っておらず、`transformers`の`AutoProcessor`/`AutoModelForImageTextToText`+`apply_chat_template`という一般的なVLMチャット向けAPIパターンに基づく実装に留まる。実機（CPU推論、GPUなし）で以下を確認する必要がある:
+- [x] 実機(Windows・CPU・torch 2.14 / transformers 5.18)で既定モデルのロード・日本語説明の生成を確認済み。CPU推論は1件あたり数分(1254px画像で画像トークン過多のエラーも発生したため、長辺768pxへ縮小して渡す対策を実装済み。縮小後の所要時間は要再計測)
+- [x] 設定画面のモデル一覧は決め打ちでなく、Claude/OpenAIは各APIの`/v1/models`、自前VLMはHugging Face Hubの画像入力対応モデル一覧から取得して選択する形にした
+- [ ] (以下は当初の未検証項目。上記で一部解消済み)このセッションでは実際のモデル重み(数GB)のダウンロード・推論は行っておらず、`transformers`の`AutoProcessor`/`AutoModelForImageTextToText`+`apply_chat_template`という一般的なVLMチャット向けAPIパターンに基づく実装に留まる。実機（CPU推論、GPUなし）で以下を確認する必要がある:
   - モデルが実際にダウンロード・ロードできるか（`pip install -e ".[vlm]"`後、初回`reelmilly analyze`実行時）
   - `describe_image`/`generate_caption`が例外なく実行でき、意味のある説明文・投稿文を返すか
   - CPU推論1枚あたりの所要時間（実用に耐えるか）
@@ -163,3 +165,12 @@
 - [ ] NSFW自動仕分けを有効化する場合、`pip install -e ".[nsfw]"`でのtorch/timmインストールが実機で問題なく完了するか確認する
 - [ ] 実際のANTHROPIC_API_KEY（またはOPENAI_API_KEY）を設定し、`reelmilly ingest`経由で画像内容説明が実際に取得できるか確認する（このセッションではモックでのみ検証、実API呼び出しは未実施）
 - [ ] 実際のcontent_descriptionを使い、`run_fanvue_drop`での投稿文自動生成（auto/draft両モード）を実機で確認する
+
+## 分析ワーカーの分離
+- [x] Webアップロードでは分析せず`analyzing`で登録して即応答し、分析は別プロセス(`reelmilly watch`/`reelmilly analyze`)の`AnalysisWorker`が行う
+- [x] sfw/nsfw判定と説明文・タグ生成を別々に実行(詳細画面/一覧の選択メニュー)、非同期キュー(`ai_tasks`)、完了のトースト通知と画面の自動更新、設定画面での定期実行(時刻・対象範囲)とタグカテゴリ指定、使用法ページ(`/help`)、詳細画面のEscで一覧へ戻る、を実装
+- [ ] タグカテゴリへの追従精度(2Bの小型VLMが「カテゴリ名=タグ」形式にどの程度従うか)は実データで未検証。単色の画像でも説明文が幻覚的な内容になった例があり、説明の信頼性は人の確認が前提
+- [ ] 定期実行は`reelmilly watch`が動いている間のみ有効(時刻を過ぎてからwatchを起動した場合は、その日のうちに起動時に実行される)
+- [x] ワーカーの排他(settingsテーブルのロック+ハートビート)、モデルの使い回し、一覧画面への進捗表示(`/api/analysis-status`)、失敗理由(`assets.analysis_error`)を実装
+- [ ] Web UIから分析ワーカーを起動・停止できるようにするか検討(現状は`reelmilly watch`を別途起動する運用)
+- [ ] 別PC(GPUマシン等)へワーカーを分離する場合のDB・ファイル共有方法(現状SQLiteは同一PC前提)

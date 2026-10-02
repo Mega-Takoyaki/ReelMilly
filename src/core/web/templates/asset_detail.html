@@ -9,7 +9,7 @@
   一覧に戻る
 </a>
 
-<section class="asset-detail">
+<section class="asset-detail" id="asset-root" data-asset-id="{{ asset.id }}">
   <div class="preview">
     {% if asset.kind == 'video' %}
     <video src="{{ url_for('asset_media', asset_id=asset.id) }}" controls></video>
@@ -21,11 +21,11 @@
   <div class="info">
     <h1>
       {{ asset.id }}
-      <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
+      <span id="live-status"><span class="badge status-{{ asset.status }}">{{ asset.status }}</span></span>
     </h1>
 
     <div class="card">
-      <dl>
+      <dl id="live-props">
         <dt>種別</dt><dd>{{ asset.kind }}</dd>
         <dt>解像度</dt>
         <dd>
@@ -59,8 +59,20 @@
           {% endif %}
         </dd>
         <dt>内容説明（AI自動生成、参考値）</dt>
-        <dd>{{ asset.content_description or '未取得' }}</dd>
+        <dd>{{ asset.content_description or '未取得' }}
+          {% if asset.analysis_error %}<br><span class="hint">分析エラー: {{ asset.analysis_error }}</span>{% endif %}</dd>
       </dl>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0;">AI処理</h2>
+      <div class="ai-actions">
+        <button type="button" data-ai-run="nsfw">sfw/nsfw判定を実行</button>
+        <button type="button" data-ai-run="describe">説明文・タグ生成を実行</button>
+        <button type="button" class="btn-ghost-inline" data-ai-run="both">両方実行</button>
+      </div>
+      <p class="hint" id="ai-task-state"></p>
+      <p class="hint">処理は別プロセスのワーカー（reelmilly watch）が非同期で行い、完了すると画面が自動で更新されます。再実行すると結果を上書きします。</p>
     </div>
 
     <div class="card">
@@ -84,14 +96,18 @@
       <h2 style="margin-top: 0;">区分の承認</h2>
       <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
         <label>区分を確定して承認する
-          <select name="content_rating">
+          <select name="content_rating" required>
+            {% if not suggested_rating %}<option value="" selected disabled>選択してください</option>{% endif %}
             {% for r in content_ratings %}
-            <option value="{{ r }}" {% if asset.content_rating == r %}selected{% endif %}>{{ r }}</option>
+            <option value="{{ r }}" {% if suggested_rating == r %}selected{% endif %}>{{ r }}</option>
             {% endfor %}
           </select>
         </label>
         <button type="submit">承認する</button>
       </form>
+      {% if not asset.content_rating and suggested_rating %}
+      <p class="hint">初期選択はAIの自動判定（{{ asset.nsfw_auto_rating }}）からの推定値です（nsfw→explicit。suggestiveかどうかはAIでは判別できないため人が選んでください）。</p>
+      {% endif %}
       <p class="hint">これはAIによる一次判定の補助表示です。最終判断は必ず人が行ってください。</p>
     </div>
 
@@ -137,4 +153,6 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='detail.js') }}"></script>
+<script src="{{ url_for('static', filename='ai-live.js') }}"></script>
+<script src="{{ url_for('static', filename='esc-back.js') }}"></script>
 {% endblock %}
