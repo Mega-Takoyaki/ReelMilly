@@ -28,6 +28,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "analysis_error" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")
 
+    # 投稿状態は作品の準備状態(assets.status)から分離した(postsテーブル)。
+    # 旧ステータスposted/failed_fanvueの作品は、準備状態をreadyへ戻し投稿状態へ移す
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO posts (asset_id, channel, status, url, external_id, posted_at)
+        SELECT id, 'fanvue', 'posted', fanvue_url, fanvue_uuid, updated_at FROM assets WHERE status = 'posted'
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO posts (asset_id, channel, status, error, posted_at)
+        SELECT id, 'fanvue', 'failed', '(移行前の失敗記録)', updated_at FROM assets WHERE status = 'failed_fanvue'
+        """
+    )
+    conn.execute("UPDATE assets SET status = 'ready' WHERE status IN ('posted', 'failed_fanvue')")
+
 
 # --- assets -----------------------------------------------------------------
 
@@ -89,6 +105,8 @@ def list_assets(
     confirmed_only: bool = False,
     kind: str | None = None,
     confirmed: bool | None = None,
+    post_channel: str | None = None,
+    post_status: str | None = None,
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
@@ -134,6 +152,20 @@ def list_assets(
         conditions.append("assets.kind = :kind")
         params["kind"] = kind
 
+    # 投稿状態での絞り込み。post_statusは"posted"/"failed"/"none"(その投稿先へ未投稿)
+    if post_channel is not None and post_status is not None:
+        params["post_channel"] = post_channel
+        if post_status == "none":
+            conditions.append(
+                "NOT EXISTS (SELECT 1 FROM posts p WHERE p.asset_id = assets.id AND p.channel = :post_channel)"
+            )
+        else:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM posts p WHERE p.asset_id = assets.id "
+                "AND p.channel = :post_channel AND p.status = :post_status)"
+            )
+            params["post_status"] = post_status
+
     if joins:
         query += " " + " ".join(joins)
     if conditions:
@@ -155,6 +187,48 @@ def update_asset(conn: sqlite3.Connection, asset_id: str, **fields) -> None:
     params["id"] = asset_id
     conn.execute(f"UPDATE assets SET {set_clause} WHERE id = :id", params)
     conn.commit()
+
+
+# --- posts（投稿先ごとの投稿状態) ---------------------------------------------
+
+def set_post(
+    conn: sqlite3.Connection,
+    asset_id: str,
+    channel: str,
+    status: str,
+    url: str | None = None,
+    external_id: str | None = None,
+    error: str | None = None,
+) -> None:
+    """投稿結果を記録する(作品x投稿先で1行。再投稿時は上書き)。"""
+    conn.execute(
+        """
+        INSERT INTO posts (asset_id, channel, status, url, external_id, error, posted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(asset_id, channel) DO UPDATE SET
+            status = excluded.status, url = excluded.url, external_id = excluded.external_id,
+            error = excluded.error, posted_at = excluded.posted_at
+        """,
+        (asset_id, channel, status, url, external_id, error, _now_iso()),
+    )
+    conn.commit()
+
+
+def delete_post(conn: sqlite3.Connection, asset_id: str, channel: str) -> None:
+    conn.execute("DELETE FROM posts WHERE asset_id = ? AND channel = ?", (asset_id, channel))
+    conn.commit()
+
+
+def get_posts(conn: sqlite3.Connection, asset_ids: list[str]) -> dict[str, dict[str, dict]]:
+    """{asset_id: {channel: {"status","url","error","posted_at",...}}}。行が無い投稿先は含まれない。"""
+    result: dict[str, dict[str, dict]] = {}
+    if not asset_ids:
+        return result
+    marks = ",".join("?" for _ in asset_ids)
+    rows = conn.execute(f"SELECT * FROM posts WHERE asset_id IN ({marks})", asset_ids).fetchall()
+    for row in rows:
+        result.setdefault(row["asset_id"], {})[row["channel"]] = dict(row)
+    return result
 
 
 # --- channels -----------------------------------------------------------------

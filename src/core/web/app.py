@@ -15,6 +15,7 @@ from werkzeug.utils import secure_filename
 
 from core import db, env_settings, generation
 from core import worker as worker_module
+from core.channels import POST_CHANNELS, POST_STATUS_LABELS
 from core import settings as settings_module
 from core.config import Config
 from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
@@ -66,6 +67,19 @@ def create_app(config: Config) -> Flask:
         db.init_db(conn)
         return conn
 
+    @app.template_filter("localtime")
+    def localtime_filter(value):
+        """ISO8601(UTC)の日時を、設定のタイムゾーンの「YYYY-MM-DD HH:MM」に変換する。"""
+        try:
+            dt = datetime.fromisoformat(value)
+        except (TypeError, ValueError):
+            return value or ""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        from zoneinfo import ZoneInfo
+
+        return dt.astimezone(ZoneInfo(config.timezone)).strftime("%Y-%m-%d %H:%M")
+
     @app.route("/")
     def index():
         conn = get_conn()
@@ -75,6 +89,13 @@ def create_app(config: Config) -> Flask:
         folder_id = request.args.get("folder_id", type=int)
         confirmed_param = request.args.get("confirmed") or None
         confirmed_filter = {"0": False, "1": True}.get(confirmed_param)
+        # 投稿状態の絞り込み("fanvue:posted"のように「投稿先:状態」)
+        post_param = request.args.get("post") or None
+        post_channel = post_status = None
+        if post_param and ":" in post_param:
+            ch, st = post_param.split(":", 1)
+            if ch in POST_CHANNELS and st in POST_STATUS_LABELS:
+                post_channel, post_status = ch, st
 
         assets = db.list_assets(
             conn,
@@ -83,8 +104,11 @@ def create_app(config: Config) -> Flask:
             tag=tag_filter,
             folder_id=folder_id,
             confirmed=confirmed_filter,
+            post_channel=post_channel,
+            post_status=post_status,
             limit=200,
         )
+        posts = db.get_posts(conn, [a["id"] for a in assets])
         folders = db.list_folders(conn)
         tags = db.list_all_tags(conn)
         conn.close()
@@ -99,6 +123,10 @@ def create_app(config: Config) -> Flask:
             folder_id=folder_id,
             confirmed_param=confirmed_param,
             content_ratings=CONTENT_RATINGS,
+            posts=posts,
+            post_param=post_param if post_channel else None,
+            post_channels=POST_CHANNELS,
+            post_status_labels=POST_STATUS_LABELS,
         )
 
     @app.route("/assets/<asset_id>")
@@ -112,6 +140,7 @@ def create_app(config: Config) -> Flask:
         tags = db.list_tags_for_asset(conn, asset_id)
         asset_folders = db.list_folders_for_asset(conn, asset_id)
         all_folders = db.list_folders(conn)
+        asset_posts = db.get_posts(conn, [asset_id]).get(asset_id, {})
         conn.close()
         properties = get_media_properties(Path(asset["file_path"]), asset["kind"])
         return render_template(
@@ -124,6 +153,8 @@ def create_app(config: Config) -> Flask:
             content_ratings=CONTENT_RATINGS,
             properties=properties,
             suggested_rating=_suggested_rating(asset),
+            posts=asset_posts,
+            post_channels=POST_CHANNELS,
         )
 
     @app.route("/assets/upload", methods=["POST"])
@@ -184,6 +215,7 @@ def create_app(config: Config) -> Flask:
         ids = [i for i in (request.args.get("ids") or "").split(",") if i]
         conn = get_conn()
         states = db.ai_task_states(conn, ids)
+        posts = db.get_posts(conn, ids)
         assets = {}
         for asset_id in ids:
             asset = db.get_asset(conn, asset_id)
@@ -199,7 +231,12 @@ def create_app(config: Config) -> Flask:
                 "has_description": asset["content_description"] is not None,
                 "tags": tags,
                 "tasks": states.get(asset_id, {}),
-                "rev": f"{asset['updated_at']}|{len(tags)}",
+                "posts": {
+                    ch: {k: p[k] for k in ("status", "url", "error", "posted_at")}
+                    for ch, p in posts.get(asset_id, {}).items()
+                },
+                "rev": f"{asset['updated_at']}|{len(tags)}|"
+                + ",".join(f"{c}:{p['status']}" for c, p in sorted(posts.get(asset_id, {}).items())),
             }
         status = worker_module.get_status(conn)
         conn.close()
@@ -230,6 +267,18 @@ def create_app(config: Config) -> Flask:
         if asset is not None and asset["status"] == "pending_approval":
             updates["status"] = "ready"
         db.update_asset(conn, asset_id, **updates)
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/assets/<asset_id>/posts/<channel>/retry", methods=["POST"])
+    def retry_post(asset_id, channel):
+        """失敗した投稿を、次回の投稿対象に戻す(投稿そのものは次回のジョブが行う)。"""
+        conn = get_conn()
+        post = db.get_posts(conn, [asset_id]).get(asset_id, {}).get(channel)
+        if post is None or post["status"] != "failed":
+            conn.close()
+            abort(400)
+        db.delete_post(conn, asset_id, channel)
         conn.close()
         return redirect(url_for("asset_detail", asset_id=asset_id))
 

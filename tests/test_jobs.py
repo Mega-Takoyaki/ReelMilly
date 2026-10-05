@@ -86,7 +86,7 @@ def test_run_fanvue_drop_no_candidates_returns_not_executed(setup):
     assert "ありません" in result.skipped_reason
 
 
-def test_run_fanvue_drop_success_marks_posted(setup):
+def test_run_fanvue_drop_success_records_post(setup):
     config, conn = setup
     _make_ready_asset(config, conn)
     client = _mock_fanvue_client()
@@ -100,7 +100,11 @@ def test_run_fanvue_drop_success_marks_posted(setup):
     assert result.fanvue_url == "https://www.fanvue.com/creator"
 
     asset = db.get_asset(conn, "a1")
-    assert asset["status"] == "posted"
+    assert asset["status"] == "ready"  # 準備状態は変えない。投稿状態は別軸(posts)
+    post = db.get_posts(conn, ["a1"])["a1"]["fanvue"]
+    assert post["status"] == "posted"
+    assert post["url"] == "https://www.fanvue.com/creator"
+    assert post["external_id"] == "media-uuid-1"
     assert asset["fanvue_url"] == "https://www.fanvue.com/creator"
     assert asset["fanvue_uuid"] == "media-uuid-1"
 
@@ -199,7 +203,7 @@ def test_run_fanvue_drop_skips_explicit_content_when_policy_disallows(setup):
     assert asset["status"] == "ready"  # 状態は変更されない
 
 
-def test_run_fanvue_drop_failure_marks_failed_fanvue(setup):
+def test_run_fanvue_drop_failure_records_failed_post(setup):
     config, conn = setup
     _make_ready_asset(config, conn)
     client = _mock_fanvue_client()
@@ -213,7 +217,9 @@ def test_run_fanvue_drop_failure_marks_failed_fanvue(setup):
     assert result.error == "upload failed: 500"
 
     asset = db.get_asset(conn, "a1")
-    assert asset["status"] == "failed_fanvue"
+    assert asset["status"] == "ready"
+    post = db.get_posts(conn, ["a1"])["a1"]["fanvue"]
+    assert post["status"] == "failed" and post["error"] == "upload failed: 500"
 
     events = read_events(config.paths.events_path)
     assert any(e["event"] == "fanvue_failed" and e["asset_id"] == "a1" for e in events)
@@ -320,7 +326,7 @@ def test_run_fanvue_drop_filters_by_kind(setup):
     assert result.asset_id is None
 
 
-def test_run_fanvue_drop_timeout_marks_failed_fanvue(setup):
+def test_run_fanvue_drop_timeout_records_failed_post(setup):
     config, conn = setup
     _make_ready_asset(config, conn)
     client = _mock_fanvue_client()
@@ -331,6 +337,26 @@ def test_run_fanvue_drop_timeout_marks_failed_fanvue(setup):
     )
 
     assert result.executed is False
-    asset = db.get_asset(conn, "a1")
-    assert asset["status"] == "failed_fanvue"
+    assert db.get_posts(conn, ["a1"])["a1"]["fanvue"]["status"] == "failed"
     client.create_post.assert_not_called()
+
+
+def test_posted_or_failed_assets_are_not_picked_again(setup):
+    """投稿済み・失敗済みの作品は次回の対象にならない(自動リトライなし)。"""
+    config, conn = setup
+    _make_ready_asset(config, conn)
+    client = _mock_fanvue_client()
+    client.upload_media.side_effect = RuntimeError("boom")
+    run_fanvue_drop(config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}")
+
+    again = run_fanvue_drop(
+        config, conn, _mock_fanvue_client(), fanvue_handle="c", post_url_template="https://f.com/{handle}"
+    )
+    assert again.executed is False and again.asset_id is None
+
+    db.delete_post(conn, "a1", "fanvue")  # 「再投稿の対象に戻す」
+    retry = run_fanvue_drop(
+        config, conn, _mock_fanvue_client(), fanvue_handle="c", post_url_template="https://f.com/{handle}"
+    )
+    assert retry.executed is True
+    assert db.get_posts(conn, ["a1"])["a1"]["fanvue"]["status"] == "posted"

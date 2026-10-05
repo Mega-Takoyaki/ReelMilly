@@ -25,6 +25,51 @@ CONNECTION_FIELDS = [
     ("OPENAI_API_KEY", "OpenAI APIキー", True),
 ]
 
+# 設定画面の「ⓘ」アイコンに表示する、初見でも分かる項目の説明
+CONNECTION_HELP = {
+    "FANVUE_OAUTH_CLIENT_ID": (
+        "FanvueのDeveloper画面でOAuthアプリを作成すると発行される「Client ID」です。"
+        "このアプリがFanvueへ投稿する許可をもらうための、アプリ側の名前札のようなものです。"
+    ),
+    "FANVUE_OAUTH_CLIENT_SECRET": (
+        "OAuthアプリと一緒に発行される「Client Secret」です。アプリのパスワードにあたるので、他人に見せないでください。"
+        "画面には表示されず、空欄のまま保存すると今の値は変わりません。"
+    ),
+    "FANVUE_OAUTH_REDIRECT_URI": (
+        "Fanvueでログインを許可したあと、このアプリへ戻ってくるアドレスです。"
+        "Fanvue側のOAuthアプリに登録した値と完全に同じである必要があります。"
+        "空欄なら http://127.0.0.1:8420/settings/fanvue/oauth/callback が使われます。通常は変更不要です。"
+    ),
+    "FANVUE_HANDLE": (
+        "Fanvueのプロフィールのアドレス https://www.fanvue.com/○○ の「○○」の部分（アカウント名）です。"
+        "下の「投稿URLテンプレート」の {handle} に入ります。"
+    ),
+    "FANVUE_POST_URL_TEMPLATE": (
+        "投稿後に記録する「公開URL」の組み立て方です（FanvueのAPIは投稿の公開URLを返さないため、自分で組み立てます）。"
+        "{handle} はハンドル、{uuid} は投稿のIDに置き換わります。"
+        "例: https://www.fanvue.com/{handle}（プロフィールへのリンク。迷ったらこのままで大丈夫です）。"
+        "投稿1件ごとのURLにしたい場合は、Fanvueで実際の投稿を開いてURLを確認し、その形に合わせてください。"
+        "今はXへの紹介投稿が未実装のため、このURLは記録されるだけです。"
+    ),
+    "FANVUE_API_BASE_URL": "FanvueのAPIの接続先です。通常は https://api.fanvue.com のままで変更不要です。",
+    "FANVUE_API_VERSION": "Fanvue APIのバージョン指定（X-Fanvue-API-Versionヘッダ）です。通常は既定値のままで変更不要です。",
+    "TELEGRAM_BOT_TOKEN": (
+        "TelegramのBotFatherでBotを作ると発行されるトークンです。Telegram連携は未実装のため、今は保存だけできます。"
+        "秘密の値なので画面には表示されません。"
+    ),
+    "TELEGRAM_ALLOWED_CHAT_ID": (
+        "操作を許可する自分のTelegramチャットIDです。このID以外からの操作は無視する用途です（連携は未実装）。"
+    ),
+    "ANTHROPIC_API_KEY": (
+        "Claude APIを使うためのAPIキーです（AnthropicのConsoleで発行）。従量課金になります。"
+        "画像の説明文生成でClaudeを選んだときに使います。秘密の値なので画面には表示されません。"
+    ),
+    "OPENAI_API_KEY": (
+        "OpenAI APIを使うためのAPIキーです（OpenAIのダッシュボードで発行）。従量課金になります。"
+        "OpenAIを選んだときのみ使います。秘密の値なので画面には表示されません。"
+    ),
+}
+
 CONNECTION_ENV_KEYS = [key for key, _label, _secret in CONNECTION_FIELDS]
 SECRET_ENV_KEYS = {key for key, _label, secret in CONNECTION_FIELDS if secret}
 
@@ -44,6 +89,7 @@ def read_connection_status(env_path: Path) -> dict[str, dict]:
             "secret": is_secret,
             "value": "" if is_secret else raw_value,
             "is_set": bool(raw_value),
+            "help": CONNECTION_HELP.get(key, ""),
         }
     return result
 

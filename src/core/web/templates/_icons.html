@@ -1,0 +1,45 @@
+{# 一覧画面のサムネイルに重ねる小さなアイコン。ai-live.js の renderOverlay と同じ判定にすること。 #}
+{% set STATUS_LABELS = {
+  'analyzing': 'ANALYZING（未処理・分析中）',
+  'pending_approval': 'PENDING_APPROVAL（承認待ち）',
+  'ready': 'READY（承認済み・投稿準備完了）'
+} %}
+
+{% macro type_chip(asset) -%}
+{%- set ext = (asset.file_path.rsplit('.', 1)[-1] | upper) -%}
+<span class="chip chip-type chip-{{ asset.kind }}" data-tip="{{ '動画' if asset.kind == 'video' else '静止画' }}（.{{ ext | lower }}）">{{ ext }}</span>
+{%- endmacro %}
+
+{% macro rating_chip(asset) -%}
+{%- if asset.content_rating_confirmed and asset.content_rating -%}
+  {%- set state = {'sfw': 'ok-sfw', 'suggestive': 'ok-sug', 'explicit': 'ok-nsfw'}.get(asset.content_rating, 'ok-sfw') -%}
+  {%- set letter = 'N' if asset.content_rating == 'explicit' else 'S' -%}
+  {%- set tip = '承認済み: ' ~ asset.content_rating ~ (('（AI判定: ' ~ asset.nsfw_auto_rating ~ '）') if asset.nsfw_auto_rating else '') -%}
+{%- elif asset.nsfw_auto_rating -%}
+  {%- set state = 'auto-nsfw' if asset.nsfw_auto_rating == 'nsfw' else 'auto-sfw' -%}
+  {%- set letter = 'N' if asset.nsfw_auto_rating == 'nsfw' else 'S' -%}
+  {%- set tip = 'AI自動判定: ' ~ asset.nsfw_auto_rating | upper ~ '（確信度 ' ~ ('%.2f' | format(asset.nsfw_auto_confidence or 0)) ~ '）・人の承認はまだです' -%}
+{%- else -%}
+  {%- set state = 'none' -%}
+  {%- set letter = '?' -%}
+  {%- set tip = '未処理（sfw/nsfw判定がまだありません）' -%}
+{%- endif -%}
+<span class="chip chip-rating rating-{{ state }}" data-tip="{{ tip }}">{{ letter }}</span>
+{%- endmacro %}
+
+{# 投稿先ごとのフラグ。投稿済み=投稿先の色の塗り / 失敗=点線の枠。行が無い(未投稿)投稿先は出さない #}
+{% macro post_marks(asset_posts, channels) -%}
+{%- for ch, c in channels.items() if ch in asset_posts -%}
+{%- set p = asset_posts[ch] -%}
+{%- if p.status == 'posted' -%}
+  {%- set tip = c.label ~ ': 投稿済み（' ~ (p.posted_at | localtime) ~ '）' ~ ((' ' ~ p.url) if p.url else '') -%}
+{%- else -%}
+  {%- set tip = c.label ~ ': 投稿に失敗（' ~ (p.error or '理由不明') ~ '）' -%}
+{%- endif -%}
+<span class="chip chip-post post-{{ p.status }}" style="--ch: {{ c.color }}" data-channel="{{ ch }}" data-tip="{{ tip }}">{{ c.letter }}</span>
+{%- endfor -%}
+{%- endmacro %}
+
+{% macro status_dot(asset) -%}
+<span class="status-dot status-{{ asset.status }}" data-tip="{{ STATUS_LABELS.get(asset.status, asset.status | upper) }}" aria-label="{{ asset.status }}"></span>
+{%- endmacro %}

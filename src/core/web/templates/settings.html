@@ -34,8 +34,9 @@
   <div class="banner banner-error">{{ fanvue_error }}</div>
   {% endif %}
 
+  {% macro info(text) %}<button type="button" class="info-icon" data-info="{{ text }}" aria-label="説明を表示" aria-haspopup="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>{% endmacro %}
   {% macro field_input(key, field) %}
-  <label>{{ field.label }}
+  <label>{{ field.label }}{% if field.help %}{{ info(field.help) }}{% endif %}
     {% if field.secret %}
     <input type="password" name="{{ key }}" placeholder="{{ '設定済み（変更する場合のみ入力）' if field.is_set else '未設定' }}" autocomplete="off">
     {% else %}
@@ -56,7 +57,7 @@
   <form method="post" action="{{ url_for('settings_page') }}">
 
   <section class="card settings-tab" id="sec-fanvue">
-    <h2 style="margin-top: 0;">Fanvue</h2>
+    <h2 style="margin-top: 0;">Fanvue{{ info("画像・動画をFanvueへ投稿するための設定です。Fanvueで事前に、クリエイター登録・本人確認(KYC)・Developer領域でのOAuthアプリ作成が必要です。上から順に、Client ID/Secretを保存し、下の「Fanvueと連携する」を押して許可します。") }}</h2>
     <p class="hint">
       Fanvue APIは静的なAPIトークンではなくOAuth 2.0認証専用です（ADR-0021）。
       Client ID・Client Secretを保存したうえで連携してください
@@ -76,7 +77,7 @@
         </div>
       </details>
     </div>
-    <h3 style="margin-top: 1rem;">OAuth連携状態</h3>
+    <h3 style="margin-top: 1rem;">OAuth連携状態{{ info("このアプリがFanvueへ投稿してよいという許可（アクセストークン）を持っているかの状態です。「Fanvueと連携する」を押すとFanvueの許可画面に移り、許可すると連携済みになります。トークンは期限が切れる前に自動で更新されます。連携を解除すると保存したトークンを削除します。") }}</h3>
     {% if fanvue_connected %}
     <p><strong>連携済み</strong>（保存後に操作してください）</p>
     <button type="submit" form="fanvue-disconnect-form" class="btn-ghost-inline">連携を解除する</button>
@@ -87,7 +88,7 @@
   </section>
 
   <section class="card settings-tab" id="sec-telegram">
-    <h2 style="margin-top: 0;">Telegram</h2>
+    <h2 style="margin-top: 0;">Telegram{{ info("スマートフォンのTelegramアプリで通知を受け取ったり、承認・スキップを操作したりするための設定です。連携機能自体はまだ未実装なので、今は値を保存できるだけで、使われません。") }}</h2>
     <p class="hint">Telegram連携は未実装のため、値の保存のみ可能です。</p>
     <div class="settings-form">
       {% for key, field in connections.items() if key.startswith('TELEGRAM_') %}
@@ -97,14 +98,14 @@
   </section>
 
   <section class="card settings-tab" id="sec-ai">
-    <h2 style="margin-top: 0;">生成AI（画像内容説明・Fanvue投稿文、ADR-0015）</h2>
+    <h2 style="margin-top: 0;">生成AI（画像内容説明・Fanvue投稿文、ADR-0015）{{ info("画像の内容説明、タグ候補、Fanvueの投稿文をAIに作らせるための設定です。APIキー（Claude/OpenAI）か、このPC上で動かす自前ホスト型VLMのどちらを使うかを決めます。") }}</h2>
     <p class="hint">実際に接続できるかは<code>reelmilly doctor</code>で確認してください。</p>
     <div class="settings-form">
       {% for key, field in connections.items() if key in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY') %}
       {{ field_input(key, field) }}
       {% endfor %}
 
-      <label>生成AIプロバイダー
+      <label>生成AIプロバイダー{{ info("画像の説明文・投稿文を作るAIの種類です。Claude/OpenAIはAPIキーが必要で、性的に露骨な画像の説明は拒否されやすいです。explicit(露骨)な画像には「自前ホスト型VLM」（このPC上で動くモデル）を選んでください。") }}
         <select name="generation_provider" id="generation-provider">
           <option value="claude" {% if settings.generation_provider == 'claude' %}selected{% endif %}>Claude API</option>
           <option value="openai" {% if settings.generation_provider == 'openai' %}selected{% endif %}>OpenAI API（実API疎通は未検証）</option>
@@ -117,35 +118,35 @@
         自動ダウンロードされ、GPUが無い環境ではCPU推論になります。
       </p>
 
-      <label>モデル
+      <label>モデル{{ info("実際に使うAIモデルです。「接続して利用可能なモデルを取得」を押すと、今使えるモデルの一覧に入れ替わります。自前ホスト型VLMはHugging Faceの画像入力対応モデルから選べ、初回利用時にモデルの重み(数GB)をダウンロードします。") }}
         <select name="generation_model" id="generation-model" data-current="{{ settings.generation_model }}"></select>
       </label>
       <div id="model-refresh-row">
         <input type="text" id="model-query" placeholder="モデル名で検索（例: Qwen2-VL）" hidden>
-        <button type="button" id="model-refresh" class="btn-ghost-inline">接続して利用可能なモデルを取得</button>
+        <button type="button" id="model-refresh" class="btn-ghost-inline">接続して利用可能なモデルを取得</button>{{ info("保存済みのAPIキー(Claude/OpenAI)で実際に接続し、今使えるモデルの一覧を取得して「モデル」の選択肢にします。自前ホスト型VLMのときはHugging Faceから探します。左の検索欄に名前(例: Qwen2-VL)を入れると絞り込めます。先にAPIキーを保存してください。") }}
         <span class="hint" id="model-refresh-status"></span>
       </div>
       <p class="hint">Claude/OpenAIは保存済みのAPIキーで接続して取得した一覧から、自前VLMはHugging Face Hubの画像入力対応モデル（ダウンロード数順）から選べます。</p>
 
-      <label>Fanvue投稿文の生成モード
+      <label>Fanvue投稿文の生成モード{{ info("auto: 投稿文が未設定のとき、生成した文章をそのまま投稿に使います。draft: 生成した文章は下書きとして保存するだけで、人が詳細画面で確認して採用したものだけを使います。最初はdraftがおすすめです。") }}
         <select name="caption_mode">
           <option value="auto" {% if settings.caption_mode == 'auto' %}selected{% endif %}>auto（生成後すぐ投稿に使う）</option>
           <option value="draft" {% if settings.caption_mode == 'draft' %}selected{% endif %}>draft（下書き保存のみ、人が確認して採用）</option>
         </select>
       </label>
 
-      <label>画像内容説明のシステムプロンプト
+      <label>画像内容説明のシステムプロンプト{{ info("画像の説明文とタグ候補を作るときにAIへ渡す基本の指示文です。「説明: ...」「タグ: ...」の2行形式で答えさせる前提なので、書き換えるときはその形式を残してください。タグのカテゴリ設定は、この指示の後ろに自動で追加されます。") }}
         <textarea name="description_system_prompt" rows="4">{{ settings.description_system_prompt }}</textarea>
       </label>
 
-      <label>Fanvue投稿文生成のシステムプロンプト
+      <label>Fanvue投稿文生成のシステムプロンプト{{ info("画像の説明文をもとに、Fanvueの投稿文を作るときにAIへ渡す指示文です。文体・長さ・絵文字の量などをここで調整できます。") }}
         <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
       </label>
     </div>
   </section>
 
   <section class="card settings-tab" id="sec-auto">
-    <h2 style="margin-top: 0;">AI処理の定期実行</h2>
+    <h2 style="margin-top: 0;">AI処理の定期実行{{ info("sfw/nsfw判定と説明文生成を、毎日決まった時刻に自動で始める設定です。画像を取り込むたびに手動で実行する手間を省けます。個別の実行は、一覧の選択メニューや詳細画面からいつでもできます。") }}</h2>
     <p class="hint">
       指定した時刻になると、条件に合う<strong>未処理</strong>のアセット（判定結果・説明がまだ無いもの）を自動でキューに追加します（1日1回）。
       実際の処理は別プロセスのワーカー（<code>reelmilly watch</code>）が行うため、定期実行を使う場合は常駐させておいてください。
@@ -154,29 +155,29 @@
     <div class="settings-form">
       {% for kind, label in schedule_labels.items() %}
       {% set sch = schedules[kind] %}
-      <h3 style="margin-bottom: 0.2rem;">{{ label }}</h3>
+      <h3 style="margin-bottom: 0.2rem;">{{ label }}{{ info("sfw/nsfw判定: 画像・動画がsfw(一般向け)かnsfw(成人向け)かを、確信度付きで自動判定します。" if kind == "nsfw" else "説明文生成・タグ付与: 画像の内容説明を作り、タグ候補を付けます。Fanvueの投稿文の元にもなります。") }}</h3>
       <div class="schedule-grid">
         <label class="checkbox-label">
           <input type="checkbox" name="schedule_{{ kind }}_enabled" {% if sch.enabled %}checked{% endif %}>
-          定期実行する
+          定期実行する{{ info("オンにすると、下で指定した時刻に自動で処理を始めます。オフなら手動で実行したときだけ動きます。") }}
         </label>
-        <label>時刻
+        <label>時刻{{ info("この時刻になると、条件に合う未処理の画像を処理待ちに追加します（1日1回）。実際の処理は reelmilly watch が動いている間に行われます。") }}
           <input type="time" name="schedule_{{ kind }}_time" value="{{ sch.time }}" required>
         </label>
-        <label>対象
+        <label>対象{{ info("すべての未処理画像: 判定結果・説明がまだ無い画像すべて。直近N日以内: 登録から指定した日数以内の未処理画像だけ。古い画像を処理したくないときに使います。") }}
           <select name="schedule_{{ kind }}_scope" data-days-target="days-{{ kind }}">
             <option value="all" {% if sch.scope == 'all' %}selected{% endif %}>すべての未処理画像</option>
             <option value="days" {% if sch.scope == 'days' %}selected{% endif %}>直近N日以内に登録された未処理画像</option>
           </select>
         </label>
-        <label id="days-{{ kind }}">N =
+        <label id="days-{{ kind }}">N ={{ info("「直近N日以内」を選んだときの日数です。登録からN日以内の未処理画像だけを対象にします。") }}
           <input type="number" name="schedule_{{ kind }}_days" min="1" max="3650" value="{{ sch.days }}"> 日
         </label>
       </div>
       {% endfor %}
     </div>
 
-    <h2>タグのカテゴリ</h2>
+    <h2>タグのカテゴリ{{ info("説明文を作るとき、ここで指定したカテゴリごとにタグを1つ付けるようAIへ指示します。例: 服装、性別、背景・ロケーション。「候補」を書くと、その中から選ばせます。判断できないカテゴリにはタグが付きません。") }}</h2>
     <p class="hint">
       説明文生成時に、ここで指定したカテゴリごとにタグを1つ付けるようAIへ指示します。
       「候補」を書くと、その中から選ばせます（省略可。カンマ区切り）。判断できないカテゴリにはタグが付きません。
@@ -199,7 +200,7 @@
     <div class="settings-form">
       <label class="checkbox-label">
         <input type="checkbox" name="auto_ingest" {% if settings.auto_ingest %}checked{% endif %}>
-        inboxフォルダの自動取り込みを有効にする
+        inboxフォルダの自動取り込みを有効にする{{ info("オンにすると、reelmilly watch が動いている間、inboxフォルダの画像・動画を自動で取り込みます。取り込みはコピーではなく移動です。分析(判定・説明生成)は取り込みでは行われないので、「AI自動処理・タグ」の定期実行か手動で実行してください。") }}
       </label>
       <p class="hint">
         オンにすると、<code>reelmilly watch</code>実行中は一定間隔でinboxフォルダを自動的に取り込みます（<code>reelmilly ingest</code>の手動実行が不要になります）。

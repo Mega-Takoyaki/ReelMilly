@@ -144,15 +144,15 @@ reelmilly analyze
 
 `reelmilly watch`実行中は上記の分析が定期的に非同期実行されるため、`status="pending_approval"`のアセットが承認待ちのまま溜まっていきます（[ADR-0018](docs/adr/0018-auto-tagging-and-pending-approval-review.md)）。一覧画面の「ステータス」フィルタで「pending_approval」を選び、「表示中をすべて選択」＋一括承認（`content_rating`確定）を組み合わせることで、後でまとめてレビューできます。承認すると`status="ready"`（文字通り投稿準備完了）に自動的に遷移します（[ADR-0019](docs/adr/0019-status-rename-pending-approval.md)）。また、内容説明の生成時にはAIがタグを2〜3個自動で提案し、NSFW自動仕分けの結果（`sfw`/`nsfw`）もタグとして自動付与されます。
 
-アセットのステータスは次の順に遷移します。
+アセットの**準備状態**（`status`）は次の順に遷移します。
 
 | ステータス | 意味 |
 |---|---|
 | `analyzing` | NSFW自動仕分け・内容説明のいずれかが未完了（分析中） |
 | `pending_approval` | 両方完了、人間の承認待ち |
 | `ready` | 人間が承認済み、投稿準備完了 |
-| `posted` | Fanvueへ投稿済み |
-| `failed_fanvue` | 投稿試行に失敗（自動リトライなし） |
+
+**投稿状態**は準備状態とは別の軸で、作品 × 投稿先（`fanvue`、将来は`x`など）ごとに`posts`テーブルへ記録します。`posted`（投稿済み・URL/日時つき）と`failed`（失敗・理由つき）があり、行が無ければ未投稿です。一覧画面では、投稿を試みた投稿先だけ小さなアイコン（フラグ）がサムネイルの左下に出ます。失敗した投稿は自動リトライされず、詳細画面の「再投稿の対象に戻す」で次回の投稿対象に戻せます。投稿先を増やすときは`src/core/channels.py`に追加します。
 
 ### 6. 本体UIを起動する
 
@@ -182,7 +182,7 @@ reelmilly run drop --count 3               # 1回の実行で最大3件まで投
 reelmilly run drop --kind image --rating sfw  # 種別・content_ratingで絞り込む
 ```
 
-`status="ready"`の対象アセットを最も古いものから（既定1件）Fanvueへ投稿します（`upload → ready待ち → post作成`）。成功すると`status="posted"`になり、失敗すると`status="failed_fanvue"`になります（自動リトライはしません）。同じ日に2回実行すると2回目はスキップされます（`--count`で指定した件数は1回の実行内でまとめて投稿されます）。X（旧Twitter）への紹介投稿は未実装のため、このコマンドはFanvue投稿のみを行います。
+`status="ready"`の対象アセットを最も古いものから（既定1件）Fanvueへ投稿します（`upload → ready待ち → post作成`）。成功すると`posts`に`posted`として、失敗すると`failed`として記録されます（準備状態`ready`は変わらず、失敗は自動リトライしません）。同じ日に2回実行すると2回目はスキップされます（`--count`で指定した件数は1回の実行内でまとめて投稿されます）。X（旧Twitter）への紹介投稿は未実装のため、このコマンドはFanvue投稿のみを行います。
 
 投稿文（`fanvue_text`）が未設定のアセットは、内容説明とシステムプロンプトから自動生成されます。設定画面で生成モードを`draft`にしている場合、生成結果は投稿には使わず下書き（本体UIの詳細画面から確認・採用可能）として保存するだけになります。
 

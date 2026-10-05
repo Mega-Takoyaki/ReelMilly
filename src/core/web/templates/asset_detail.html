@@ -64,6 +64,31 @@
       </dl>
     </div>
 
+    <div class="card" id="live-posts">
+      <h2 style="margin-top: 0;">投稿状態</h2>
+      <table class="post-table">
+        {% for ch, c in post_channels.items() %}
+        {% set p = posts.get(ch) %}
+        <tr>
+          <th><span class="chip chip-post {{ 'post-' ~ p.status if p else '' }}" style="--ch: {{ c.color }}">{{ c.letter }}</span> {{ c.label }}</th>
+          <td>
+            {% if not p %}
+            <span class="hint">未投稿</span>
+            {% elif p.status == 'posted' %}
+            投稿済み（{{ p.posted_at | localtime }}）{% if p.url %} <a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.url }}</a>{% endif %}
+            {% else %}
+            <strong>投稿に失敗</strong>（{{ p.posted_at | localtime }}）<br><span class="hint">{{ p.error or '理由不明' }}</span>
+            <form method="post" action="{{ url_for('retry_post', asset_id=asset.id, channel=ch) }}" class="inline-form">
+              <button type="submit" class="btn-ghost-inline">再投稿の対象に戻す</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      <p class="hint">準備状態（READY等）とは別に、投稿先ごとに記録されます。失敗した作品は自動では再投稿されません。</p>
+    </div>
+
     <div class="card">
       <h2 style="margin-top: 0;">AI処理</h2>
       <div class="ai-actions">

@@ -363,13 +363,112 @@ main {
   accent-color: var(--accent);
 }
 
-.asset-meta {
-  padding: 0.5rem 0.6rem;
+/* サムネイルに重ねる小さなアイコン(種別・sfw/nsfw・ステータス) -----------------*/
+
+.asset-badges {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
   display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  align-items: center;
+  gap: 0.2rem;
+  pointer-events: auto;
 }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.05rem;
+  box-sizing: border-box;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  cursor: default;
+}
+
+/* 種別: 静止画=ティール / 動画=バイオレット(拡張子を表示) */
+.chip-type { padding: 0 0.3rem; color: #fff; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3); }
+.chip-type.chip-image { background: #0f9d8a; }
+.chip-type.chip-video { background: #8b5cf6; }
+
+/* sfw/nsfw: 未処理=灰 / 自動判定=淡い色の枠(未承認) / 承認済み=濃い色の塗り */
+.chip-rating {
+  width: 1.05rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 0.62rem;
+}
+.chip-rating.rating-none { color: #cbd5e1; border-color: #94a3b8; border-style: dashed; }
+.chip-rating.rating-auto-sfw { color: #86efac; border-color: #86efac; }
+.chip-rating.rating-auto-nsfw { color: #fca5a5; border-color: #fca5a5; }
+.chip-rating.rating-ok-sfw { background: #16a34a; border-color: #16a34a; color: #fff; }
+.chip-rating.rating-ok-sug { background: #d97706; border-color: #d97706; color: #fff; }
+.chip-rating.rating-ok-nsfw { background: #dc2626; border-color: #dc2626; color: #fff; }
+
+/* ステータス: 信号色の丸(左下)。文字はマウスオーバーで表示 */
+.status-dot {
+  position: absolute;
+  left: 0.4rem;
+  bottom: 0.4rem;
+  z-index: 2;
+  width: 0.8rem;
+  height: 0.8rem;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+.status-dot.status-analyzing { background: #ef4444; }
+.status-dot.status-pending_approval { background: #f59e0b; }
+.status-dot.status-ready { background: #22c55e; }
+
+/* 投稿先のフラグ(左下、ステータスの丸の右)。投稿済み=投稿先の色の塗り / 失敗=点線の枠 */
+.asset-posts {
+  position: absolute;
+  left: 1.5rem;
+  bottom: 0.32rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.2rem;
+}
+.chip-post {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 4px;
+  font-size: 0.58rem;
+  border: 2px solid var(--ch, #64748b);
+  box-sizing: border-box;
+}
+.chip-post.post-posted { background: var(--ch, #64748b); color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
+.chip-post.post-failed { background: rgba(0, 0, 0, 0.65); color: #f0abfc; border-color: #d946ef; border-style: dashed; }
+
+/* AI処理が待機中/実行中のアイコンは点滅 */
+.is-busy { animation: badge-pulse 1.2s ease-in-out infinite; }
+
+.tip-pop {
+  position: fixed;
+  z-index: 400;
+  max-width: 320px;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: #111827;
+  color: #fff;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+}
+.tip-pop[hidden] { display: none; }
+
+/* 使用法ページの凡例 */
+.legend-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.35rem 0; }
+.legend-row .chip, .legend-row .status-dot { position: static; flex: none; }
 
 .badge {
   font-size: 0.68rem;
@@ -823,3 +922,44 @@ dialog.lightbox::backdrop {
 .help-page .help-note { padding: 0.6rem 0.9rem; border-left: 3px solid var(--accent); background: var(--surface-alt); border-radius: var(--radius-sm); }
 
 [hidden] { display: none !important; }
+
+/* 設定項目の説明アイコン ---------------------------------------------------*/
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+  padding: 0;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: none;
+  cursor: help;
+}
+
+.info-icon:hover, .info-icon:focus-visible, .info-icon.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.info-pop {
+  position: fixed;
+  z-index: 300;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-md);
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.info-pop.pinned { border-color: var(--accent); user-select: text; }
+.info-pop[hidden] { display: none; }

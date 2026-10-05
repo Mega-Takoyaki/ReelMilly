@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- 投稿状態(作品の準備状態assets.statusとは別の軸)。作品 x 投稿先(channel)ごとに1行。
+-- 投稿先が増えても行が増えるだけで済む。行が無い=未投稿
+CREATE TABLE IF NOT EXISTS posts (
+    asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL,       -- 'fanvue' | 'x' | ...
+    status TEXT NOT NULL,        -- 'posted' | 'failed'
+    url TEXT,
+    external_id TEXT,
+    error TEXT,
+    posted_at TEXT NOT NULL,
+    PRIMARY KEY (asset_id, channel)
+);
+CREATE INDEX IF NOT EXISTS idx_posts_channel_status ON posts(channel, status);
+
 -- AI処理(sfw/nsfw判定・説明文/タグ生成)の非同期キュー。ワーカーが順に処理する
 CREATE TABLE IF NOT EXISTS ai_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

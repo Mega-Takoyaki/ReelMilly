@@ -45,3 +45,112 @@ window.confirmDialog = function confirmDialog(message) {
     dialog.showModal();
   });
 };
+
+// 設定項目の「ⓘ」アイコン: ホバー/フォーカスで説明を表示し、クリックで固定する。
+// 固定した説明は、説明欄の外をクリックする(またはEscを押す)まで表示し続ける。
+(function () {
+  const icons = document.querySelectorAll(".info-icon");
+  if (icons.length === 0) return;
+
+  const pop = document.createElement("div");
+  pop.className = "info-pop";
+  pop.setAttribute("role", "tooltip");
+  pop.hidden = true;
+  document.body.appendChild(pop);
+
+  let current = null;
+  let pinned = false;
+
+  function place(icon) {
+    const r = icon.getBoundingClientRect();
+    pop.style.maxWidth = Math.min(340, window.innerWidth - 24) + "px";
+    const pr = pop.getBoundingClientRect();
+    let left = Math.max(12, Math.min(r.left + r.width / 2 - pr.width / 2, window.innerWidth - pr.width - 12));
+    let top = r.bottom + 8;
+    if (top + pr.height > window.innerHeight - 8 && r.top - pr.height - 8 > 8) top = r.top - pr.height - 8;
+    pop.style.left = left + "px";
+    pop.style.top = top + "px";
+  }
+
+  function show(icon) {
+    current = icon;
+    pop.textContent = icon.dataset.info;
+    pop.hidden = false;
+    place(icon);
+  }
+
+  function hide() {
+    pop.hidden = true;
+    pop.classList.remove("pinned");
+    if (current) current.classList.remove("active");
+    current = null;
+    pinned = false;
+  }
+
+  icons.forEach((icon) => {
+    icon.addEventListener("mouseenter", () => { if (!pinned) show(icon); });
+    icon.addEventListener("mouseleave", () => { if (!pinned) hide(); });
+    icon.addEventListener("focus", () => { if (!pinned) show(icon); });
+    icon.addEventListener("blur", () => { if (!pinned) hide(); });
+    icon.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pinned && current === icon) {
+        hide(); // 固定中に同じアイコンをもう一度押すと解除
+        return;
+      }
+      if (current) current.classList.remove("active");
+      show(icon);
+      pinned = true;
+      pop.classList.add("pinned");
+      icon.classList.add("active");
+    });
+  });
+
+  // 固定中は説明欄の中のクリック(文字の選択など)では閉じず、外側のクリックで閉じる
+  document.addEventListener("click", (e) => {
+    if (pinned && !pop.contains(e.target)) hide();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !pop.hidden) hide();
+  });
+  window.addEventListener("resize", () => { if (current) place(current); });
+  window.addEventListener("scroll", () => { if (current) place(current); }, true);
+})();
+
+// data-tip属性を持つ要素(一覧のアイコンなど)に、即時表示のツールチップを出す。
+// 一覧のアイコンはJSで再描画されるため、イベント委譲で扱う。
+(function () {
+  const pop = document.createElement("div");
+  pop.className = "tip-pop";
+  pop.hidden = true;
+  document.body.appendChild(pop);
+  let current = null;
+
+  function place(el) {
+    const r = el.getBoundingClientRect();
+    const pr = pop.getBoundingClientRect();
+    const left = Math.max(6, Math.min(r.left + r.width / 2 - pr.width / 2, window.innerWidth - pr.width - 6));
+    let top = r.top - pr.height - 6;
+    if (top < 6) top = r.bottom + 6;
+    pop.style.left = left + "px";
+    pop.style.top = top + "px";
+  }
+
+  document.addEventListener("mouseover", (e) => {
+    const el = e.target.closest ? e.target.closest("[data-tip]") : null;
+    if (!el || el === current) return;
+    current = el;
+    pop.textContent = el.dataset.tip;
+    pop.hidden = false;
+    place(el);
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (!current) return;
+    const to = e.relatedTarget;
+    if (to && current.contains(to)) return;
+    pop.hidden = true;
+    current = null;
+  });
+  window.addEventListener("scroll", () => { pop.hidden = true; current = null; }, true);
+})();

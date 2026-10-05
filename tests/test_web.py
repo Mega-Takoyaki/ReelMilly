@@ -820,3 +820,36 @@ def test_detail_has_ai_actions_and_esc_script(app_and_conn):
     body = app.test_client().get("/assets/a1").get_data(as_text=True)
     assert 'data-ai-run="nsfw"' in body and 'data-ai-run="describe"' in body
     assert "esc-back.js" in body
+
+
+def test_index_cards_use_compact_overlay_icons(app_and_conn):
+    app, _ = app_and_conn
+    body = app.test_client().get("/").get_data(as_text=True)
+    assert "asset-meta" not in body  # 下部のバッジ領域は廃止し、サムネイル上のアイコンへ
+    assert 'chip chip-type chip-image' in body and ">JPG<" in body  # 拡張子つきの種別アイコン
+    assert "rating-auto-nsfw" in body  # AI判定nsfw(未承認)
+    assert 'data-tip="AI自動判定: NSFW（確信度 0.83）' in body
+    assert 'status-dot status-ready' in body and 'data-tip="READY（承認済み・投稿準備完了）"' in body
+
+
+def test_post_flags_shown_on_card_filter_and_retry(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.set_post(conn, "a1", "fanvue", "posted", url="https://www.fanvue.com/creator")
+
+    body = client.get("/").get_data(as_text=True)
+    assert 'chip chip-post post-posted' in body and 'data-channel="fanvue"' in body
+    assert "Fanvue: 投稿済み（" in body
+
+    assert "chip-post post-" in client.get("/?post=fanvue:posted").get_data(as_text=True)
+    assert 'data-channel="fanvue"' not in client.get("/?post=fanvue:failed").get_data(as_text=True)
+
+    live = client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]
+    assert live["posts"]["fanvue"]["status"] == "posted"
+
+    # 失敗した投稿だけ「再投稿の対象に戻す」でき、行が消えて未投稿に戻る
+    assert client.post("/assets/a1/posts/fanvue/retry").status_code == 400  # posted は不可
+    db.set_post(conn, "a1", "fanvue", "failed", error="boom")
+    assert "再投稿の対象に戻す" in client.get("/assets/a1").get_data(as_text=True)
+    assert client.post("/assets/a1/posts/fanvue/retry").status_code == 302
+    assert db.get_posts(conn, ["a1"]) == {}

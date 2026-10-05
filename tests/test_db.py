@@ -201,3 +201,34 @@ def test_list_settings_returns_all(conn):
     result = db.list_settings(conn)
 
     assert result == {"caption_mode": "draft", "generation_provider": "openai"}
+
+
+def test_legacy_posted_statuses_migrate_to_posts_axis(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    db.insert_asset(conn, _make_asset("p1", status="posted", fanvue_url="https://f/x", fanvue_uuid="u1"))
+    db.insert_asset(conn, _make_asset("f1", status="failed_fanvue"))
+
+    db.init_db(conn)  # 起動時に走る移行(冪等)
+    db.init_db(conn)
+
+    assert db.get_asset(conn, "p1")["status"] == "ready"
+    assert db.get_asset(conn, "f1")["status"] == "ready"
+    posts = db.get_posts(conn, ["p1", "f1"])
+    assert posts["p1"]["fanvue"]["status"] == "posted" and posts["p1"]["fanvue"]["url"] == "https://f/x"
+    assert posts["f1"]["fanvue"]["status"] == "failed"
+
+
+def test_list_assets_filters_by_post_state(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    for i in ("a", "b", "c"):
+        db.insert_asset(conn, _make_asset(i))
+    db.set_post(conn, "a", "fanvue", "posted", url="u")
+    db.set_post(conn, "b", "fanvue", "failed", error="e")
+
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+    assert ids(post_channel="fanvue", post_status="posted") == ["a"]
+    assert ids(post_channel="fanvue", post_status="failed") == ["b"]
+    assert ids(post_channel="fanvue", post_status="none") == ["c"]
+    assert ids(post_channel="x", post_status="none") == ["a", "b", "c"]

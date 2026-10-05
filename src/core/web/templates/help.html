@@ -33,7 +33,7 @@
     <li>画像・動画を<strong>取り込む</strong>（ステータス: <code>analyzing</code>）</li>
     <li><strong>AI処理</strong>でsfw/nsfw判定と説明文・タグ生成を行う（両方そろうと <code>pending_approval</code>）</li>
     <li>人が内容を確認して<strong>区分（sfw / suggestive / explicit）を承認</strong>する（<code>ready</code>）</li>
-    <li>承認済みのものがFanvueへ<strong>投稿</strong>される（<code>posted</code>）。投稿に失敗したものは <code>failed_fanvue</code></li>
+    <li>承認済み（<code>ready</code>）のものがFanvueへ<strong>投稿</strong>される。投稿の結果は、準備状態とは別に、投稿先ごとに「投稿済み」「失敗」として記録される</li>
   </ol>
   <p>AIの判定はあくまで参考値です。<strong>最終判断と承認は必ず人が行います。</strong></p>
 
@@ -50,8 +50,28 @@
     <li><strong>サムネイルサイズ</strong>: 右上のスライダーで変更できます（次回も保持されます）。</li>
     <li><strong>選択</strong>: 各画像左上のチェックで複数選択できます。「表示中をすべて選択」で絞り込んだ結果をまとめて選べます。選ぶと画面下部に<strong>操作メニュー</strong>が出ます（タグ付与・フォルダ追加・区分の一括承認・AI処理の開始）。</li>
     <li><strong>詳細を見る</strong>: 各画像右下の矢印アイコンから詳細画面へ移動します。</li>
-    <li><strong>バッジ</strong>: ステータスと区分を表示します。AI処理が待機中/実行中の画像には「判定中…」「説明生成中…」と表示され、完了すると自動で表示が変わります。</li>
+    <li><strong>アイコン</strong>: サムネイルに小さなアイコンを重ねて表示します（下の「アイコンの見かた」）。マウスを乗せると説明が出ます。AI処理が待機中/実行中の画像は、該当するアイコンが点滅し、完了すると自動で表示が変わります。</li>
   </ul>
+
+  <h3>アイコンの見かた</h3>
+  <p><strong>右上（左から）: 種別・sfw/nsfw</strong></p>
+  <div class="legend-row"><span class="chip chip-type chip-image">JPG</span> 静止画（緑がかった青）。文字はファイルの拡張子です。</div>
+  <div class="legend-row"><span class="chip chip-type chip-video">MP4</span> 動画（紫）。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-none">?</span> 未処理（灰色の点線）。sfw/nsfw判定がまだありません。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-auto-sfw">S</span> AIの自動判定が <strong>SFW</strong>（淡い緑の枠）。人の承認はまだです。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-auto-nsfw">N</span> AIの自動判定が <strong>NSFW</strong>（淡い赤の枠）。人の承認はまだです。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-ok-sfw">S</span> <strong>承認済み</strong>の sfw（濃い緑の塗りつぶし）。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-ok-sug">S</span> <strong>承認済み</strong>の suggestive（濃い橙の塗りつぶし）。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-ok-nsfw">N</span> <strong>承認済み</strong>の explicit（濃い赤の塗りつぶし）。</div>
+  <p><strong>左下: ステータス</strong>（マウスを乗せると文字で表示されます）</p>
+  <div class="legend-row"><span class="status-dot status-analyzing"></span> 赤: ANALYZING（未処理・分析中）</div>
+  <div class="legend-row"><span class="status-dot status-pending_approval"></span> 黄: PENDING_APPROVAL（AI処理が済み、承認待ち）</div>
+  <div class="legend-row"><span class="status-dot status-ready"></span> 緑: READY（承認済み・投稿準備完了）</div>
+  <p><strong>左下、丸の右: 投稿先のフラグ</strong>（投稿を試みた投稿先だけに出ます。未投稿なら何も出ません）</p>
+  <div class="legend-row"><span class="chip chip-post post-posted" style="--ch:#4f6df5">F</span> Fanvue に<strong>投稿済み</strong>（青い塗りつぶし）。マウスを乗せると日時とURLが出ます。</div>
+  <div class="legend-row"><span class="chip chip-post post-posted" style="--ch:#111827">X</span> X に<strong>投稿済み</strong>（黒い塗りつぶし。X への投稿は未実装です）。</div>
+  <div class="legend-row"><span class="chip chip-post post-failed" style="--ch:#4f6df5">F</span> 投稿に<strong>失敗</strong>（点線の紫の枠）。理由はマウスオーバーか詳細画面で確認でき、詳細画面の「再投稿の対象に戻す」で次回の投稿対象に戻せます。</div>
+  <p class="hint">作品の準備状態（丸の色）と、投稿状態（投稿先ごとのフラグ）は別々に管理されます。将来、投稿先が増えたら、フラグも増えます。</p>
 
   <h2 id="preview">5. プレビュー</h2>
   <p>一覧のサムネイルをクリックすると拡大表示されます。</p>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks %}
 <section id="dropzone" class="dropzone">
   <input type="file" id="dropzone-file-input" multiple accept="image/*,video/*" hidden>
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -19,8 +20,18 @@
     <label>ステータス
       <select name="status" onchange="this.form.submit()">
         <option value="">すべて</option>
-        {% for s in ["analyzing", "pending_approval", "ready", "posted", "failed_fanvue"] %}
+        {% for s in ["analyzing", "pending_approval", "ready"] %}
         <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>投稿状態
+      <select name="post" onchange="this.form.submit()">
+        <option value="">すべて</option>
+        {% for ch, c in post_channels.items() %}
+        {% for st, st_label in post_status_labels.items() %}
+        <option value="{{ ch }}:{{ st }}" {% if post_param == ch ~ ':' ~ st %}selected{% endif %}>{{ c.label }} {{ st_label }}</option>
+        {% endfor %}
         {% endfor %}
       </select>
     </label>
@@ -88,6 +99,9 @@
       {% else %}
       <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
       {% endif %}
+      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}</span>
+      {{ status_dot(asset) }}
+      <span class="asset-posts">{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
       <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 3h6v6"></path>
@@ -95,16 +109,6 @@
           <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
         </svg>
       </a>
-    </div>
-    <div class="asset-meta">
-      <span class="badge status-{{ asset.status }}">{{ asset.status }}</span>
-      {% if asset.content_rating %}
-      <span class="badge rating-{{ asset.content_rating }}">{{ asset.content_rating }}</span>
-      {% elif asset.nsfw_auto_rating %}
-      <span class="badge rating-auto">自動判定: {{ asset.nsfw_auto_rating }}（未承認）</span>
-      {% else %}
-      <span class="badge rating-none">未判定</span>
-      {% endif %}
     </div>
   </div>
   {% else %}
@@ -165,6 +169,7 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='upload.js') }}"></script>
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
+<script>window.POST_CHANNELS = {{ post_channels | tojson }};</script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='grid-controls.js') }}"></script>

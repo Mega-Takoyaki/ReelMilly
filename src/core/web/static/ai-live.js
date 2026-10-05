@@ -4,7 +4,6 @@
 // - 完了・失敗をトースト通知する
 (function () {
   const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与" };
-  const BUSY_LABEL = { nsfw: "判定", describe: "説明生成" };
   const POLL_MS = 3000;
 
   const banner = document.getElementById("ai-status");
@@ -27,30 +26,84 @@
 
   // --- 表示更新 -------------------------------------------------------------
 
-  function badge(cls, text) {
-    const span = document.createElement("span");
-    span.className = `badge ${cls}`;
-    span.textContent = text;
-    return span;
+  const STATUS_LABELS = {
+    analyzing: "ANALYZING（未処理・分析中）",
+    pending_approval: "PENDING_APPROVAL（承認待ち）",
+    ready: "READY（承認済み・投稿準備完了）",
+  };
+  const CHANNELS = window.POST_CHANNELS || {};
+
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso || "";
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
-  function renderCardBadges(card, a) {
-    const meta = card.querySelector(".asset-meta");
-    if (!meta) return;
-    meta.innerHTML = "";
-    meta.appendChild(badge(`status-${a.status}`, a.status));
-    if (a.content_rating) {
-      meta.appendChild(badge(`rating-${a.content_rating}`, a.content_rating));
-    } else if (a.nsfw_auto_rating) {
-      meta.appendChild(badge("rating-auto", `自動判定: ${a.nsfw_auto_rating}（未承認）`));
-    } else {
-      meta.appendChild(badge("rating-none", "未判定"));
-    }
-    Object.keys(a.tasks || {}).forEach((kind) => {
-      const t = a.tasks[kind];
-      if (t.status === "running") meta.appendChild(badge("badge-busy", `${BUSY_LABEL[kind]}中…`));
-      else if (t.status === "queued") meta.appendChild(badge("badge-busy", `${BUSY_LABEL[kind]}待機中`));
+  // 投稿先ごとのフラグ(_icons.htmlのpost_marksと同じ表示)。投稿済み=色の塗り / 失敗=点線の枠
+  function renderPosts(card, a) {
+    const box = card.querySelector(".asset-posts");
+    if (!box) return;
+    box.innerHTML = "";
+    Object.keys(CHANNELS).forEach((ch) => {
+      const p = (a.posts || {})[ch];
+      if (!p) return;
+      const span = document.createElement("span");
+      span.className = `chip chip-post post-${p.status}`;
+      span.style.setProperty("--ch", CHANNELS[ch].color);
+      span.dataset.channel = ch;
+      span.dataset.tip = p.status === "posted"
+        ? `${CHANNELS[ch].label}: 投稿済み（${fmtTime(p.posted_at)}）${p.url ? " " + p.url : ""}`
+        : `${CHANNELS[ch].label}: 投稿に失敗（${p.error || "理由不明"}）`;
+      span.textContent = CHANNELS[ch].letter;
+      box.appendChild(span);
     });
+  }
+
+  function activeLabels(a) {
+    const words = { queued: "待機中", running: "実行中" };
+    return Object.keys(a.tasks || {})
+      .filter((k) => isActive(a.tasks[k]))
+      .map((k) => `${LABEL[k]}（${words[a.tasks[k].status]}）`);
+  }
+
+  // 一覧のサムネイルに重ねるアイコン(sfw/nsfw・ステータス)を、_icons.htmlと同じ判定で描き直す
+  function renderOverlay(card, a) {
+    const busy = activeLabels(a);
+    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts]);
+    if (card.dataset.sig === sig) return; // 変化が無ければ触らない(ツールチップのちらつき防止)
+    card.dataset.sig = sig;
+
+    let state, letter, tip;
+    if (a.content_rating_confirmed && a.content_rating) {
+      state = { sfw: "ok-sfw", suggestive: "ok-sug", explicit: "ok-nsfw" }[a.content_rating] || "ok-sfw";
+      letter = a.content_rating === "explicit" ? "N" : "S";
+      tip = "承認済み: " + a.content_rating + (a.nsfw_auto_rating ? `（AI判定: ${a.nsfw_auto_rating}）` : "");
+    } else if (a.nsfw_auto_rating) {
+      state = a.nsfw_auto_rating === "nsfw" ? "auto-nsfw" : "auto-sfw";
+      letter = a.nsfw_auto_rating === "nsfw" ? "N" : "S";
+      tip = `AI自動判定: ${a.nsfw_auto_rating.toUpperCase()}（確信度 ${Number(a.nsfw_auto_confidence || 0).toFixed(2)}）・人の承認はまだです`;
+    } else {
+      state = "none";
+      letter = "?";
+      tip = "未処理（sfw/nsfw判定がまだありません）";
+    }
+    const nsfwBusy = isActive((a.tasks || {}).nsfw);
+    const rating = card.querySelector(".chip-rating");
+    if (rating) {
+      rating.className = `chip chip-rating rating-${state}${nsfwBusy ? " is-busy" : ""}`;
+      rating.textContent = letter;
+      rating.dataset.tip = tip + (nsfwBusy ? "　／判定を実行中です" : "");
+    }
+
+    renderPosts(card, a);
+
+    const dot = card.querySelector(".status-dot");
+    if (dot) {
+      dot.className = `status-dot status-${a.status}${busy.length ? " is-busy" : ""}`;
+      dot.dataset.tip = (STATUS_LABELS[a.status] || a.status.toUpperCase()) + (busy.length ? "　／AI処理: " + busy.join("、") : "");
+      dot.setAttribute("aria-label", a.status);
+    }
   }
 
   function renderDetailTaskState(a) {
@@ -162,7 +215,7 @@
       cards.forEach((el) => {
         const a = data.assets[el.dataset.assetId];
         if (!a) return;
-        if (el.classList.contains("asset-card")) renderCardBadges(el, a);
+        if (el.classList.contains("asset-card")) renderOverlay(el, a);
         else renderDetailTaskState(a);
       });
       const detailRoot = document.getElementById("asset-root");

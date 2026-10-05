@@ -2,9 +2,9 @@
 
 X投稿はADR-0014により開発者アプリ承認待ちで未実装のため、本モジュールは
 現時点でFanvueへの投稿のみを扱う。CLAUDE_HANDOFF.md 4章の部分失敗ルールに
-基づき、Fanvue投稿が成功したら即座に`status="posted"`とする(二重投稿防止)。
-X紹介投稿は`x_ok`フラグで別途管理し、X投稿モジュール実装時にこのフラグを
-見て追加投稿する設計とする。
+基づき、Fanvue投稿が成功したら即座に`posts`テーブルへ`posted`として記録する
+(二重投稿防止)。投稿状態は作品の準備状態(`assets.status`)とは別の軸で、作品x投稿先
+ごとに1行持つ。X紹介投稿もX投稿モジュール実装時に同じ`posts`テーブルへ記録する。
 """
 from __future__ import annotations
 
@@ -88,7 +88,8 @@ def run_fanvue_drop(
     対象アセットが無い場合、またはポリシー(ADR-0006/0008/0009)で自動投稿
     不可と判定された場合は`executed=False`で理由を返し、何も投稿しない。
     投稿を試みた場合、成功/失敗いずれもDBに反映しevents.jsonlに記録する。
-    失敗時は`status="failed_fanvue"`とし、自動リトライは行わない
+    失敗時は`posts`に`failed`として記録し、自動リトライは行わない(失敗した作品は
+    次回以降の対象から外れる。本体UIの詳細画面から再投稿の対象に戻せる)
     （CLAUDE_HANDOFF.md 4章）。
     `kind`/`rating`で対象アセットの種別・レーティングを絞り込める(ADR-0015)。
     `generator`を渡すと、投稿文が未指定の場合に内容説明から自動生成する
@@ -98,6 +99,8 @@ def run_fanvue_drop(
         conn,
         status="ready",
         channel=FANVUE_CHANNEL,
+        post_channel=FANVUE_CHANNEL,
+        post_status="none",  # Fanvueへ未投稿(投稿済み・失敗済みは対象外)
         confirmed_only=True,
         kind=kind,
         content_rating=rating,
@@ -140,10 +143,10 @@ def run_fanvue_drop(
         )
         fanvue_url = build_post_url(post_url_template, fanvue_handle, media_uuid)
 
+        db.set_post(conn, asset_id, FANVUE_CHANNEL, "posted", url=fanvue_url, external_id=media_uuid)
         db.update_asset(
             conn,
             asset_id,
-            status="posted",
             fanvue_url=fanvue_url,
             fanvue_uuid=media_uuid,
             fanvue_text=caption_text,
@@ -160,7 +163,8 @@ def run_fanvue_drop(
         return DropResult(executed=True, asset_id=asset_id, fanvue_url=fanvue_url, fanvue_uuid=media_uuid)
 
     except Exception as exc:  # noqa: BLE001 - 失敗理由をそのままDB/ログに残すのが目的
-        db.update_asset(conn, asset_id, status="failed_fanvue", updated_at=_now())
+        db.set_post(conn, asset_id, FANVUE_CHANNEL, "failed", error=str(exc))
+        db.update_asset(conn, asset_id, updated_at=_now())
         log_event(config.paths.events_path, "fanvue_failed", asset_id=asset_id, error=str(exc))
         return DropResult(executed=False, asset_id=asset_id, error=str(exc))
 
