@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -184,7 +185,7 @@ def test_run_once_skips_when_another_worker_holds_lock(tmp_path):
     config, conn = _setup(tmp_path)
     _insert(conn, tmp_path)
     db.enqueue_ai_task(conn, "a1", "nsfw")
-    other = {"pid": -1, "heartbeat": datetime.now(timezone.utc).isoformat(), "current": "a1", "kind": "nsfw"}
+    other = {"pid": os.getppid(), "heartbeat": datetime.now(timezone.utc).isoformat(), "current": "a1", "kind": "nsfw"}
     db.set_setting(conn, worker.LOCK_KEY, json.dumps(other))
 
     assert _run(config, conn, classifier=MagicMock()) is None
@@ -198,7 +199,7 @@ def test_run_once_takes_over_stale_lock_and_requeues_orphans(tmp_path):
     db.enqueue_ai_task(conn, "a1", "nsfw")
     db.claim_next_ai_task(conn)  # 前のワーカーが実行中のまま死んだ状態
     old = datetime.now(timezone.utc) - worker.STALE_AFTER - timedelta(minutes=1)
-    db.set_setting(conn, worker.LOCK_KEY, json.dumps({"pid": -1, "heartbeat": old.isoformat(), "current": None}))
+    db.set_setting(conn, worker.LOCK_KEY, json.dumps({"pid": os.getppid(), "heartbeat": old.isoformat(), "current": None}))
     classifier = MagicMock()
     classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.1)
 
@@ -267,3 +268,17 @@ def test_schedule_and_categories_settings_roundtrip(tmp_path):
     settings_module.set_tag_categories(conn, [{"name": " 服装 ", "options": "a, b"}, {"name": "", "options": "x"}])
     assert settings_module.get_tag_categories(conn) == [{"name": "服装", "options": "a, b"}]
     assert settings_module.tag_category_instructions(conn).count("- ") == 1
+
+
+def test_lock_of_dead_process_is_taken_over_immediately(tmp_path):
+    """強制終了されたワーカーのロックは、有効期限を待たずに引き継ぐ。"""
+    config, conn = _setup(tmp_path)
+    _insert(conn, tmp_path)
+    db.enqueue_ai_task(conn, "a1", "nsfw")
+    fresh = datetime.now(timezone.utc).isoformat()
+    db.set_setting(conn, worker.LOCK_KEY, json.dumps({"pid": 2**30, "heartbeat": fresh, "current": "a1"}))
+    classifier = MagicMock()
+    classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.1)
+
+    assert worker.get_status(conn)["worker_alive"] is False  # 死んだPIDは「稼働中」と表示しない
+    assert _run(config, conn, classifier=classifier) == (1, 0)

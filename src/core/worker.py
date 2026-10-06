@@ -35,6 +35,36 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _pid_alive(pid: int) -> bool:
+    """プロセスが生きているか。ワーカーが強制終了されたとき、ロックの有効期限(30分)を待たずに
+    引き継げるようにするために使う。Windowsのos.kill(pid, 0)はプロセスを終了させてしまうため使わない。"""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _lock_is_live(lock: dict | None) -> bool:
+    return bool(lock and _now() - lock["heartbeat_dt"] < STALE_AFTER and _pid_alive(lock.get("pid")))
+
+
 def _read_lock(conn: sqlite3.Connection) -> dict | None:
     raw = db.get_setting(conn, LOCK_KEY)
     if not raw:
@@ -51,7 +81,7 @@ def get_status(conn: sqlite3.Connection) -> dict:
     """UI向けのAI処理の状況。"""
     counts = db.ai_task_counts(conn)
     lock = _read_lock(conn)
-    alive = bool(lock and _now() - lock["heartbeat_dt"] < ALIVE_WITHIN)
+    alive = bool(lock and _now() - lock["heartbeat_dt"] < ALIVE_WITHIN and _pid_alive(lock.get("pid")))
     running = db.running_ai_task(conn)
     return {
         "queued": counts["queued"],
@@ -113,7 +143,7 @@ class AnalysisWorker:
         conn.execute("BEGIN IMMEDIATE")
         try:
             lock = _read_lock(conn)
-            if lock and lock.get("pid") != self._pid and _now() - lock["heartbeat_dt"] < STALE_AFTER:
+            if lock and lock.get("pid") != self._pid and _lock_is_live(lock):
                 conn.rollback()
                 return False
             first = not self._holding
