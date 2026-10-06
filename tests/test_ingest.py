@@ -12,6 +12,7 @@ def _mock_generator(description="赤いドレスの女性が微笑んでいる",
     generator.describe_image.return_value = DescriptionResult(
         description=description, suggested_tags=tags or []
     )
+    generator.suggest_tags.return_value = tags or ["屋外"]
     return generator
 
 

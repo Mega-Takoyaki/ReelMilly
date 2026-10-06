@@ -191,6 +191,9 @@ class AnalysisWorker:
                 )
                 for tag in result.suggested_tags:
                     db.add_tag_to_asset(conn, asset["id"], tag)
+                if result.tag_error:
+                    # 説明文は保存済み。タグだけ失敗したことを失敗として通知する
+                    return f"describe(タグ): {result.tag_error}"
         except Exception as exc:  # noqa: BLE001
             return f"{task['kind']}: {exc}"
         return None

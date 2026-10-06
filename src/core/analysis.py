@@ -76,8 +76,11 @@ def run_nsfw(nsfw_classifier, media_path: Path):
 def run_describe(conn: sqlite3.Connection, generator, media_path: Path):
     """説明文生成・タグ提案を実行する。失敗時は例外を送出する。戻り値は`DescriptionResult`。
 
-    動画は代表フレーム1枚を使う。設定画面のタグカテゴリがあれば、システムプロンプトへ
-    カテゴリごとにタグを付けるよう指示を追記する。
+    動画は代表フレーム1枚を使う。タグは説明文とは別の呼び出し(`suggest_tags`)で生成する。
+    小型のローカルモデルは、説明文用のsystemプロンプトに混ぜたタグ指示に従わず、タグを
+    出力しないことが実機で確認されたため。設定画面のタグカテゴリがあれば、カテゴリごとに
+    タグを付けるよう指示する。説明文が得られてタグだけ失敗した場合は、説明文を返し、
+    `tag_error`に理由を入れる(呼び出し元が失敗として通知できるようにする)。
     """
     from core import settings as settings_module
 
@@ -91,8 +94,20 @@ def run_describe(conn: sqlite3.Connection, generator, media_path: Path):
             frame_path = _extract_representative_frame(media_path)
             cleanup_path = frame_path
         system_prompt = settings_module.get_description_system_prompt(conn)
-        system_prompt += settings_module.tag_category_instructions(conn)
-        return generator.describe_image(frame_path, system_prompt)
+        result = generator.describe_image(frame_path, system_prompt)
+
+        categories = settings_module.get_tag_categories(conn)
+        if hasattr(generator, "suggest_tags") and (categories or not result.suggested_tags):
+            try:
+                tags = generator.suggest_tags(frame_path, categories)
+            except Exception as exc:  # noqa: BLE001
+                result.tag_error = str(exc)
+            else:
+                if tags:
+                    result.suggested_tags = tags
+                elif not result.suggested_tags:
+                    result.tag_error = "タグが得られませんでした（モデルの応答からタグを抽出できませんでした）"
+        return result
     finally:
         if cleanup_path is not None:
             cleanup_path.unlink(missing_ok=True)

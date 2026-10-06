@@ -340,3 +340,31 @@ def test_list_available_models_wraps_errors():
 
     with patch("urllib.request.urlopen", boom), pytest.raises(GenerationError):
         list_available_models("claude", "key")
+
+
+def test_parse_tag_response_handles_category_lines_and_lists():
+    text = "- 服装=レッドドレス\n- 性別=女性\n背景・ロケーション：夜の都市\n- 日本人か=不明\n- 胸の大きさ=大きい"
+    assert generation.parse_tag_response(text) == ["レッドドレス", "女性", "夜の都市", "大きい"]
+    assert generation.parse_tag_response("夜, 城市, 紅いドレス, 夜") == ["夜", "城市", "紅いドレス"]
+    assert generation.parse_tag_response("") == []
+
+
+def test_build_tag_prompt_lists_categories_and_options():
+    prompt = generation.build_tag_prompt([{"name": "性別", "options": "女, 男"}, {"name": "服装", "options": ""}])
+    assert "- 性別（候補: 女, 男）" in prompt and "- 服装" in prompt and "カテゴリ名=タグ" in prompt
+    assert "5個" in generation.build_tag_prompt([])
+
+
+def test_local_vlm_suggest_tags_uses_separate_user_prompt(tmp_path):
+    image_path = tmp_path / "look.jpg"
+    image_path.write_bytes(b"x")
+    generator = _make_local_generator()
+    generator._processor.batch_decode.return_value = ["- 服装=水着\n- 性別=女性"]
+
+    with patch("PIL.Image.open") as mock_open:
+        tags = generator.suggest_tags(image_path, [{"name": "服装", "options": ""}])
+
+    assert tags == ["水着", "女性"]
+    messages = generator._processor.apply_chat_template.call_args[0][0]
+    assert len(messages) == 1 and messages[0]["role"] == "user"  # systemを使わない
+    assert "- 服装" in messages[0]["content"][1]["text"]

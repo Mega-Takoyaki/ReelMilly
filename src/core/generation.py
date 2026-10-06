@@ -51,6 +51,8 @@ class DescriptionResult:
 
     description: str
     suggested_tags: list[str] = field(default_factory=list)
+    # タグ生成(別呼び出し)に失敗した、またはタグが得られなかった場合の理由。説明文は有効
+    tag_error: str | None = None
 
 
 def _image_media_type(path: Path) -> str:
@@ -59,6 +61,49 @@ def _image_media_type(path: Path) -> str:
 
 def _encode_image_base64(path: Path) -> str:
     return base64.standard_b64encode(path.read_bytes()).decode("utf-8")
+
+
+def build_tag_prompt(categories: list[dict]) -> str:
+    """タグ生成用のユーザー指示文。小型モデルはsystemの長い指示に従わないことがあるため、
+    説明文生成とは別の呼び出しで、短い指示だけをユーザー発話として渡す(実機で確認済みの形式)。
+    `categories`は[{"name", "options"}]。空なら自由なタグ5個を求める。
+    """
+    if not categories:
+        return (
+            "この画像に当てはまるタグを、日本語の短い単語で5個、カンマ区切りで書いてください。"
+            "タグだけを出力し、説明は書かないでください。\n例: 屋外, 赤いドレス, 笑顔, 街並み, 夜"
+        )
+    lines = []
+    for c in categories:
+        hint = f"（候補: {c['options']}）" if c.get("options") else ""
+        lines.append(f"- {c['name']}{hint}")
+    return (
+        "次のカテゴリごとに、この画像に当てはまる短いタグを答えてください。\n"
+        "形式は「カテゴリ名=タグ」を1行に1つ。判断できないカテゴリは書かないでください。\n" + "\n".join(lines)
+    )
+
+
+_TAG_PREFIX = re.compile(r"^[\s\-\*・•\d.)）]+")
+
+
+def parse_tag_response(text: str) -> list[str]:
+    """タグ生成の応答から、タグ(値)だけを取り出す。
+
+    「カテゴリ名=タグ」(区切りは=,＝,:,：)の行はタグ部分を、区切りの無い行はカンマ区切りの
+    タグ列として扱う。「不明」「なし」などは除き、重複を除いてMAX_SUGGESTED_TAGSまでにする。
+    """
+    tags: list[str] = []
+    for line in text.splitlines():
+        line = _TAG_PREFIX.sub("", line.strip())
+        if not line:
+            continue
+        if re.search(r"[=＝:：]", line):
+            line = re.split(r"[=＝:：]", line, maxsplit=1)[-1]
+        for part in re.split(r"[,、，/／]", line):
+            tag = part.strip().strip("「」『』\"'。.")
+            if tag and tag not in _UNKNOWN_TAG_VALUES and tag not in tags:
+                tags.append(tag)
+    return tags[:MAX_SUGGESTED_TAGS]
 
 
 def _parse_description_response(text: str) -> DescriptionResult:
@@ -123,6 +168,33 @@ class ClaudeGenerator:
             raise GenerationError(str(exc)) from exc
         return _parse_description_response(_extract_text(response))
 
+    def suggest_tags(self, image_path: Path, categories: list[dict]) -> list[str]:
+        image_b64 = _encode_image_base64(image_path)
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=256,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": _image_media_type(image_path),
+                                    "data": image_b64,
+                                },
+                            },
+                            {"type": "text", "text": build_tag_prompt(categories)},
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GenerationError(str(exc)) from exc
+        return parse_tag_response(_extract_text(response))
+
     def generate_caption(self, content_description: str, system_prompt: str) -> str:
         try:
             response = self._client.messages.create(
@@ -183,6 +255,26 @@ class OpenAiGenerator:
             raise GenerationError(str(exc)) from exc
         return _parse_description_response(response.choices[0].message.content or "")
 
+    def suggest_tags(self, image_path: Path, categories: list[dict]) -> list[str]:
+        image_b64 = _encode_image_base64(image_path)
+        media_type = _image_media_type(image_path)
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": build_tag_prompt(categories)},
+                            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}},
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GenerationError(str(exc)) from exc
+        return parse_tag_response(response.choices[0].message.content or "")
+
     def generate_caption(self, content_description: str, system_prompt: str) -> str:
         try:
             response = self._client.chat.completions.create(
@@ -232,7 +324,7 @@ class LocalVlmGenerator:
         self._model = model.to(device=self._device, dtype=self._dtype)
         self._model.eval()
 
-    def _generate(self, messages: list) -> str:
+    def _generate(self, messages: list, max_new_tokens: int = 256) -> str:
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -242,7 +334,7 @@ class LocalVlmGenerator:
         ).to(self._device)
 
         with self._torch.no_grad():
-            output_ids = self._model.generate(**inputs, max_new_tokens=256)
+            output_ids = self._model.generate(**inputs, max_new_tokens=max_new_tokens)
 
         generated_ids = output_ids[:, inputs["input_ids"].shape[-1] :]
         text = self._processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
@@ -270,6 +362,28 @@ class LocalVlmGenerator:
         except Exception as exc:  # noqa: BLE001
             raise GenerationError(str(exc)) from exc
         return _parse_description_response(text)
+
+    def suggest_tags(self, image_path: Path, categories: list[dict]) -> list[str]:
+        """タグを別の呼び出しで生成する。説明文用のsystemプロンプトに混ぜると、小型モデルは
+        「タグ:」行を出力しないことが実機で確認されたため、短い指示だけを単独で渡す。"""
+        from PIL import Image
+
+        image = Image.open(image_path).convert("RGB")
+        image.thumbnail((LOCAL_VLM_MAX_IMAGE_SIDE, LOCAL_VLM_MAX_IMAGE_SIDE))
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": build_tag_prompt(categories)},
+                ],
+            }
+        ]
+        try:
+            text = self._generate(messages, max_new_tokens=96)
+        except Exception as exc:  # noqa: BLE001
+            raise GenerationError(str(exc)) from exc
+        return parse_tag_response(text)
 
     def generate_caption(self, content_description: str, system_prompt: str) -> str:
         messages = [

@@ -129,19 +129,47 @@ def test_failed_task_records_error_and_keeps_other_results(tmp_path):
     assert state["status"] == "failed" and state["error"]
 
 
-def test_describe_uses_tag_category_instructions(tmp_path):
+def test_describe_generates_tags_in_separate_call_with_categories(tmp_path):
+    """タグは説明文とは別の呼び出しで、設定のカテゴリを渡して生成する(小型モデル対策)。"""
     config, conn = _setup(tmp_path)
     _insert(conn, tmp_path)
-    settings_module.set_tag_categories(conn, [{"name": "服装", "options": "水着, 制服"}, {"name": "性別", "options": ""}])
+    cats = [{"name": "服装", "options": "水着, 制服"}, {"name": "性別", "options": ""}]
+    settings_module.set_tag_categories(conn, cats)
     generator = MagicMock()
     generator.describe_image.return_value = DescriptionResult(description="d")
+    generator.suggest_tags.return_value = ["水着", "女性"]
 
     db.enqueue_ai_task(conn, "a1", "describe")
-    _run(config, conn, generator=generator)
+    assert _run(config, conn, generator=generator) == (1, 0)
 
-    system_prompt = generator.describe_image.call_args[0][1]
-    assert "服装（候補: 水着, 制服）" in system_prompt
-    assert "- 性別" in system_prompt
+    assert generator.suggest_tags.call_args[0][1] == cats
+    assert {"水着", "女性"} <= set(db.list_tags_for_asset(conn, "a1"))
+
+
+def test_describe_saves_description_but_reports_failure_when_tags_missing(tmp_path):
+    config, conn = _setup(tmp_path)
+    _insert(conn, tmp_path)
+    generator = MagicMock()
+    generator.describe_image.return_value = DescriptionResult(description="説明")
+    generator.suggest_tags.return_value = []  # モデルがタグを出さなかった
+
+    db.enqueue_ai_task(conn, "a1", "describe")
+    assert _run(config, conn, generator=generator) == (0, 1)
+
+    assert db.get_asset(conn, "a1")["content_description"] == "説明"  # 説明文は残る
+    assert "タグ" in db.ai_task_states(conn, ["a1"])["a1"]["describe"]["error"]
+
+
+def test_describe_tag_exception_is_reported_not_silent(tmp_path):
+    config, conn = _setup(tmp_path)
+    _insert(conn, tmp_path)
+    generator = MagicMock()
+    generator.describe_image.return_value = DescriptionResult(description="説明")
+    generator.suggest_tags.side_effect = RuntimeError("boom")
+
+    db.enqueue_ai_task(conn, "a1", "describe")
+    assert _run(config, conn, generator=generator) == (0, 1)
+    assert "boom" in db.get_asset(conn, "a1")["analysis_error"]
 
 
 def test_status_shows_worker_and_queue(tmp_path):
