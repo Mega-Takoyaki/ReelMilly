@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS assets (
     content_description TEXT,
     fanvue_caption_draft TEXT,
     analysis_error TEXT,
+    deleted_at TEXT,  -- ごみ箱に入れた日時(NULL=通常)。ファイルは移動せず、一覧に出さないだけ
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

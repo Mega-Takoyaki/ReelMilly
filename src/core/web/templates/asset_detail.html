@@ -9,6 +9,15 @@
   一覧に戻る
 </a>
 
+{% if asset.deleted_at %}
+<div class="banner banner-error">
+  この作品は<strong>ごみ箱</strong>に入っています（通常の一覧・投稿・AI処理の対象外）。
+  <form method="post" action="{{ url_for('restore_asset', asset_id=asset.id) }}" class="inline-form">
+    <button type="submit" class="btn-ghost-inline">元に戻す</button>
+  </form>
+</div>
+{% endif %}
+
 <section class="asset-detail" id="asset-root" data-asset-id="{{ asset.id }}">
   <div class="preview">
     {% if asset.kind == 'video' %}
@@ -41,7 +50,7 @@
         {% endif %}
         <dt>ファイルサイズ</dt><dd>{{ properties.file_size_human or '不明' }}</dd>
         <dt>取り込み日時</dt><dd>{{ asset.created_at }}</dd>
-        <dt>投稿先チャンネル</dt><dd>{{ channels | join(', ') if channels else '未設定' }}</dd>
+        <dt>投稿先チャンネル</dt><dd>{{ channels | join(', ') if channels else '投稿予定なし' }}</dd>
         <dt>NSFW自動判定（参考値）</dt>
         <dd>
           {% if asset.nsfw_auto_rating %}
@@ -62,6 +71,23 @@
         <dd>{{ asset.content_description or '未取得' }}
           {% if asset.analysis_error %}<br><span class="hint">分析エラー: {{ asset.analysis_error }}</span>{% endif %}</dd>
       </dl>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0;">投稿先（投稿予定）</h2>
+      <form method="post" action="{{ url_for('update_channels', asset_id=asset.id) }}" class="channels-form">
+        {% for ch, c in post_channels.items() %}
+        <label class="checkbox-label">
+          <input type="checkbox" name="channel" value="{{ ch }}" {% if ch in channels %}checked{% endif %}>
+          {{ c.label }}
+        </label>
+        {% endfor %}
+        <button type="submit">保存する</button>
+      </form>
+      <p class="hint">
+        チェックした投稿先だけが、SNS投稿の対象になります。<strong>すべてオフにすると「投稿予定なし」</strong>になり、
+        どのSNS投稿の対象にもなりません（一覧のサムネイルには斜線の丸が出ます）。
+      </p>
     </div>
 
     <div class="card" id="live-posts">
@@ -135,6 +161,16 @@
       {% endif %}
       <p class="hint">これはAIによる一次判定の補助表示です。最終判断は必ず人が行ってください。</p>
     </div>
+
+    {% if not asset.deleted_at %}
+    <div class="card">
+      <h2 style="margin-top: 0;">ごみ箱</h2>
+      <form method="post" action="{{ url_for('trash_asset', asset_id=asset.id) }}" onsubmit="return confirm('この作品をごみ箱へ移動します。よろしいですか？（ごみ箱から元に戻せます）');">
+        <button type="submit" class="btn-danger-outline">この作品をごみ箱へ移動する</button>
+      </form>
+      <p class="hint">ファイルは削除されません。通常の一覧・投稿・AI処理の対象から外れ、「ごみ箱」から復旧できます。</p>
+    </div>
+    {% endif %}
 
     <div class="card">
       <h2 style="margin-top: 0;">タグ</h2>

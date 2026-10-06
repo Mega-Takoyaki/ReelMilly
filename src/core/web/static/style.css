@@ -1076,3 +1076,46 @@ dialog.lightbox::backdrop {
 }
 .asset-area.dragover .drop-overlay { display: flex; }
 .asset-area.uploading { opacity: 0.75; }
+
+/* 投稿予定なし・ごみ箱 ------------------------------------------------------*/
+
+.chip-noplan {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #cbd5e1;
+  border: 1.5px solid #94a3b8;
+  box-sizing: border-box;
+}
+
+.nav-count {
+  margin-left: 0.3rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.btn-danger-outline {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+.btn-danger-outline:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+.trash-head h1 { margin-bottom: 0.3rem; }
+.trash-date {
+  position: absolute;
+  left: 0.4rem;
+  bottom: 0.4rem;
+  z-index: 2;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.65rem;
+}
+.channels-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.2rem; }

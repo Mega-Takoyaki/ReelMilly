@@ -45,6 +45,13 @@
     const box = card.querySelector(".asset-posts");
     if (!box) return;
     box.innerHTML = "";
+    if (a.no_plan) {
+      const np = document.createElement("span");
+      np.className = "chip chip-noplan";
+      np.dataset.tip = "投稿予定なし（SNS投稿の対象外）";
+      np.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"></line></svg>';
+      box.appendChild(np);
+    }
     Object.keys(CHANNELS).forEach((ch) => {
       const p = (a.posts || {})[ch];
       if (!p) return;
@@ -70,7 +77,7 @@
   // 一覧のサムネイルに重ねるアイコン(sfw/nsfw・ステータス)を、_icons.htmlと同じ判定で描き直す
   function renderOverlay(card, a) {
     const busy = activeLabels(a);
-    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts]);
+    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts, a.no_plan]);
     if (card.dataset.sig === sig) return; // 変化が無ければ触らない(ツールチップのちらつき防止)
     card.dataset.sig = sig;
 

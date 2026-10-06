@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 from core import db, env_settings, generation
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
+from core.ingest import DEFAULT_CHANNELS as DEFAULT_POST_CHANNELS
 from core import settings as settings_module
 from core.config import Config
 from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
@@ -84,8 +85,10 @@ def create_app(config: Config) -> Flask:
     def index():
         conn = get_conn()
         # 絞り込みは項目内で複数選択でき(同じ名前のパラメータを繰り返す)、項目間はAND
-        status_sel = [v for v in request.args.getlist("status") if v in ("analyzing", "pending_approval", "ready")]
-        rating_sel = [v for v in request.args.getlist("content_rating") if v in CONTENT_RATINGS]
+        status_sel = request.args.getlist("status")
+        rating_sel = request.args.getlist("content_rating")
+        auto_sel = request.args.getlist("nsfw_auto")
+        plan_sel = [v for v in request.args.getlist("plan") if v in ("planned", "none")]
         tag_sel = [v for v in request.args.getlist("tag") if v]
         folder_sel = [v for v in request.args.getlist("folder_id", type=int)]
         confirmed_sel = [v for v in request.args.getlist("confirmed") if v in ("0", "1")]
@@ -100,6 +103,8 @@ def create_app(config: Config) -> Flask:
             conn,
             status=status_sel,
             content_rating=rating_sel,
+            nsfw_auto=auto_sel,
+            plan=plan_sel,
             tag=tag_sel,
             folder_id=folder_sel,
             confirmed=[v == "1" for v in confirmed_sel],
@@ -107,18 +112,56 @@ def create_app(config: Config) -> Flask:
             q=q,
             limit=200,
         )
-        posts = db.get_posts(conn, [a["id"] for a in assets])
+        asset_ids = [a["id"] for a in assets]
+        posts = db.get_posts(conn, asset_ids)
+        channels_map = db.get_channels_map(conn, asset_ids)
+        facets = db.facets(conn, list(POST_CHANNELS))
         folders = db.list_folders(conn)
-        tags = db.list_all_tags(conn)
         conn.close()
-        active_filters = bool(status_sel or rating_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q)
+
+        def options(rows, labels=None, selected=()):
+            """実在する値(件数つき)を選択肢にする。選択中の値が0件でも、選べる/外せるよう残す。"""
+            out = [(v, f"{(labels or {}).get(v, v)} ({n})") for v, n in rows]
+            for v in selected:
+                if str(v) not in [str(x[0]) for x in out]:
+                    out.append((v, f"{(labels or {}).get(v, v)} (0)"))
+            return out
+
+        status_labels = {
+            "analyzing": "analyzing（未処理・分析中）",
+            "pending_approval": "pending_approval（承認待ち）",
+            "ready": "ready（承認済み）",
+        }
+        rating_labels = {db.NONE_VALUE: "（未設定・未承認）"}
+        auto_labels = {db.NONE_VALUE: "（未判定）", "sfw": "sfw", "nsfw": "nsfw"}
+        filter_options = {
+            "status": options(facets["status"], status_labels, status_sel),
+            "content_rating": options(facets["content_rating"], rating_labels, rating_sel),
+            "nsfw_auto": options(facets["nsfw_auto"], auto_labels, auto_sel),
+            "plan": options(facets["plan"], {"planned": "投稿予定あり", "none": "投稿予定なし"}, plan_sel),
+            "tag": options(facets["tag"], None, tag_sel),
+            "folder_id": [(fid, f"{name} ({n})") for fid, name, n in facets["folder"]]
+            + [(fid, f["name"] + " (0)") for fid in folder_sel for f in folders if f["id"] == fid and fid not in [x[0] for x in facets["folder"]]],
+            "confirmed": options(facets["confirmed"], {"0": "承認待ち", "1": "承認済み"}, confirmed_sel),
+            "post": [
+                (f"{ch}:{st}", f"{POST_CHANNELS[ch]['label']} {POST_STATUS_LABELS[st]} ({n})")
+                for ch, st, n in facets["post"]
+            ],
+        }
+        known_post = [v for v, _ in filter_options["post"]]
+        filter_options["post"] += [(v, v + " (0)") for v in post_sel if v not in known_post]
+        active_filters = bool(
+            status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
+        )
         return render_template(
             "index.html",
             assets=assets,
             folders=folders,
-            tags=tags,
+            filter_options=filter_options,
             status_sel=status_sel,
             rating_sel=rating_sel,
+            auto_sel=auto_sel,
+            plan_sel=plan_sel,
             tag_sel=tag_sel,
             folder_sel=folder_sel,
             confirmed_sel=confirmed_sel,
@@ -126,13 +169,86 @@ def create_app(config: Config) -> Flask:
             q=q,
             active_filters=active_filters,
             content_ratings=CONTENT_RATINGS,
-            rating_options=[(r, r) for r in CONTENT_RATINGS],
-            tag_options=[(t, t) for t in tags],
-            folder_options=[(f["id"], f["name"]) for f in folders],
             posts=posts,
+            channels_map=channels_map,
             post_channels=POST_CHANNELS,
             post_status_labels=POST_STATUS_LABELS,
         )
+
+    @app.context_processor
+    def inject_trash_count():
+        conn = get_conn()
+        count = db.count_trashed(conn)
+        conn.close()
+        return {"trash_count": count}
+
+    @app.route("/trash")
+    def trash_page():
+        conn = get_conn()
+        assets = db.list_assets(conn, trashed=True, limit=500)
+        conn.close()
+        return render_template("trash.html", assets=assets)
+
+    @app.route("/api/assets/trash", methods=["POST"])
+    def api_trash_assets():
+        ids = (request.get_json(silent=True) or {}).get("asset_ids") or []
+        if not ids:
+            return jsonify({"error": "asset_ids is required"}), 400
+        conn = get_conn()
+        moved = db.trash_assets(conn, ids)
+        conn.close()
+        return jsonify({"moved": moved})
+
+    @app.route("/api/assets/restore", methods=["POST"])
+    def api_restore_assets():
+        ids = (request.get_json(silent=True) or {}).get("asset_ids") or []
+        if not ids:
+            return jsonify({"error": "asset_ids is required"}), 400
+        conn = get_conn()
+        restored = db.restore_assets(conn, ids)
+        conn.close()
+        return jsonify({"restored": restored})
+
+    @app.route("/assets/<asset_id>/trash", methods=["POST"])
+    def trash_asset(asset_id):
+        conn = get_conn()
+        db.trash_assets(conn, [asset_id])
+        conn.close()
+        return redirect(url_for("index"))
+
+    @app.route("/assets/<asset_id>/restore", methods=["POST"])
+    def restore_asset(asset_id):
+        conn = get_conn()
+        db.restore_assets(conn, [asset_id])
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/api/assets/post-plan", methods=["POST"])
+    def api_post_plan():
+        """投稿予定の有無を一括で切り替える。planned=falseで投稿先を空に(=投稿予定なし)、trueで既定の投稿先に戻す。"""
+        payload = request.get_json(silent=True) or {}
+        ids = payload.get("asset_ids") or []
+        if not ids or "planned" not in payload:
+            return jsonify({"error": "asset_ids and planned are required"}), 400
+        targets = list(DEFAULT_POST_CHANNELS) if payload["planned"] else []
+        conn = get_conn()
+        for asset_id in ids:
+            if db.get_asset(conn, asset_id) is not None:
+                db.set_channels(conn, asset_id, targets)
+        conn.close()
+        return jsonify({"updated": len(ids), "planned": bool(payload["planned"])})
+
+    @app.route("/assets/<asset_id>/channels", methods=["POST"])
+    def update_channels(asset_id):
+        """詳細画面から、投稿先(チェックしたSNS)を保存する。すべてオフなら投稿予定なし。"""
+        conn = get_conn()
+        if db.get_asset(conn, asset_id) is None:
+            conn.close()
+            abort(404)
+        chosen = [c for c in request.form.getlist("channel") if c in POST_CHANNELS]
+        db.set_channels(conn, asset_id, chosen)
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
 
     @app.route("/assets/<asset_id>")
     def asset_detail(asset_id):
@@ -208,7 +324,10 @@ def create_app(config: Config) -> Flask:
         if not asset_ids or kinds is None:
             return jsonify({"error": "asset_ids and a valid kind are required"}), 400
         conn = get_conn()
-        known = [a for a in asset_ids if db.get_asset(conn, a) is not None]
+        known = [
+            a for a in asset_ids
+            if (db.get_asset(conn, a) or {}).get("deleted_at", "x") is None  # ごみ箱の作品は対象外
+        ]
         queued = worker_module.enqueue_for_assets(conn, known, kinds)
         status = worker_module.get_status(conn, config.timezone)
         conn.close()
@@ -221,6 +340,7 @@ def create_app(config: Config) -> Flask:
         conn = get_conn()
         states = db.ai_task_states(conn, ids)
         posts = db.get_posts(conn, ids)
+        channels_map = db.get_channels_map(conn, ids)
         assets = {}
         for asset_id in ids:
             asset = db.get_asset(conn, asset_id)
@@ -236,6 +356,7 @@ def create_app(config: Config) -> Flask:
                 "has_description": asset["content_description"] is not None,
                 "tags": tags,
                 "tasks": states.get(asset_id, {}),
+                "no_plan": not channels_map.get(asset_id),
                 "posts": {
                     ch: {k: p[k] for k in ("status", "url", "error", "posted_at")}
                     for ch, p in posts.get(asset_id, {}).items()

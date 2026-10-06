@@ -40,6 +40,13 @@
 {%- endfor -%}
 {%- endmacro %}
 
+{# 投稿先が1つも無い=投稿予定なし。SNS投稿の対象外であることを示す(斜線の丸) #}
+{% macro noplan_chip(channels) -%}
+{%- if not channels -%}
+<span class="chip chip-noplan" data-tip="投稿予定なし（SNS投稿の対象外）"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"></line></svg></span>
+{%- endif -%}
+{%- endmacro %}
+
 {% macro status_dot(asset) -%}
 <span class="status-dot status-{{ asset.status }}" data-tip="{{ STATUS_LABELS.get(asset.status, asset.status | upper) }}" aria-label="{{ asset.status }}"></span>
 {%- endmacro %}

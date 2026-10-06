@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
-{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks %}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip %}
 {# 複数選択できる絞り込み(項目内はOR)。チェックを入れて「絞り込む」で適用する #}
 {% macro multi(name, label, options, selected, hint='') %}
 {% set sel = selected | map('string') | list %}
@@ -44,14 +44,15 @@
     <label class="search-box">検索
       <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグで検索（空白区切りでAND）">
     </label>
-    {{ multi("status", "ステータス", [("analyzing", "analyzing（未処理・分析中）"), ("pending_approval", "pending_approval（承認待ち）"), ("ready", "ready（承認済み）")], status_sel) }}
-    {% set post_options = [] %}
-    {% for ch, c in post_channels.items() %}{% for st, st_label in post_status_labels.items() %}{% set _ = post_options.append((ch ~ ':' ~ st, c.label ~ ' ' ~ st_label)) %}{% endfor %}{% endfor %}
-    {{ multi("post", "投稿状態", post_options, post_sel) }}
-    {{ multi("content_rating", "区分", rating_options, rating_sel) }}
-    {{ multi("tag", "タグ", tag_options, tag_sel, "選んだタグをすべて含む作品に絞り込みます") }}
-    {{ multi("folder_id", "フォルダ", folder_options, folder_sel) }}
-    {{ multi("confirmed", "承認状態", [("0", "承認待ち"), ("1", "承認済み")], confirmed_sel) }}
+    {# 候補は、いま実在する値だけを件数つきで出す(ごみ箱の作品は除く) #}
+    {{ multi("status", "ステータス", filter_options.status, status_sel) }}
+    {{ multi("content_rating", "区分（承認済み）", filter_options.content_rating, rating_sel) }}
+    {{ multi("nsfw_auto", "AI判定", filter_options.nsfw_auto, auto_sel) }}
+    {{ multi("confirmed", "承認状態", filter_options.confirmed, confirmed_sel) }}
+    {{ multi("plan", "投稿予定", filter_options.plan, plan_sel) }}
+    {{ multi("post", "投稿状態", filter_options.post, post_sel) }}
+    {{ multi("tag", "タグ", filter_options.tag, tag_sel, "選んだタグをすべて含む作品に絞り込みます") }}
+    {{ multi("folder_id", "フォルダ", filter_options.folder_id, folder_sel) }}
     <button type="submit" class="btn-primary">絞り込む</button>
     {% if active_filters %}<a href="{{ url_for('index') }}" class="filter-clear">クリア</a>{% endif %}
   </form>
@@ -87,7 +88,7 @@
       {% endif %}
       <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}</span>
       {{ status_dot(asset) }}
-      <span class="asset-posts">{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
+      <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
       <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 3h6v6"></path>
@@ -149,6 +150,13 @@
     <button type="button" id="bulk-ai-nsfw">sfw/nsfw判定</button>
     <button type="button" id="bulk-ai-describe">説明文・タグ生成</button>
   </span>
+
+  <span class="bulk-group">
+    <button type="button" id="bulk-noplan">投稿予定なしにする</button>
+    <button type="button" id="bulk-plan">投稿予定に戻す</button>
+  </span>
+
+  <button type="button" id="bulk-trash" class="btn-danger-outline">ごみ箱へ</button>
 
   <button type="button" id="bulk-clear">選択解除</button>
 </div>

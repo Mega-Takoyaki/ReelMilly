@@ -263,3 +263,65 @@ def test_list_assets_multi_select_filters_and_text_search(tmp_path):
     assert ids(q="ドレス 風景") == []
     assert ids(q="100%") == ["c"]
     assert ids(q="%") == ["c"]
+
+
+def test_trash_hides_assets_everywhere_and_restore_brings_back(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    db.insert_asset(conn, _make_asset("a"))
+    db.insert_asset(conn, _make_asset("b"))
+    db.enqueue_ai_task(conn, "a", "nsfw")
+
+    assert db.trash_assets(conn, ["a", "missing"]) == 1
+    assert db.trash_assets(conn, ["a"]) == 0  # 二重に移さない
+
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+    assert ids() == ["b"]  # 通常の一覧には出ない
+    assert ids(trashed=True) == ["a"]
+    assert db.count_trashed(conn) == 1
+    assert db.ai_task_counts(conn)["queued"] == 0  # 待機中のAI処理は取り消す
+    assert "a" not in db.unprocessed_asset_ids(conn, "nsfw")  # 定期実行の対象外
+    assert db.get_asset(conn, "a") is not None  # 詳細は開ける(ファイルも消えない)
+
+    assert db.restore_assets(conn, ["a"]) == 1
+    assert ids() == ["a", "b"] and db.count_trashed(conn) == 0
+
+
+def test_no_plan_is_channels_empty_and_filterable(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    db.insert_asset(conn, _make_asset("a"))
+    db.insert_asset(conn, _make_asset("b"))
+    db.set_channels(conn, "a", ["fanvue", "x"])
+    db.set_channels(conn, "b", [])  # 投稿予定なし
+
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+    assert ids(plan=["planned"]) == ["a"]
+    assert ids(plan=["none"]) == ["b"]
+    assert ids(channel="fanvue") == ["a"]  # 投稿ジョブ(channel指定)の対象から外れる
+    assert db.get_channels_map(conn, ["a", "b"]) == {"a": ["fanvue", "x"], "b": []}
+
+
+def test_facets_return_only_existing_values_with_counts(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    db.insert_asset(conn, _make_asset("a", status="ready", content_rating="sfw", content_rating_confirmed=True, nsfw_auto_rating="sfw"))
+    db.insert_asset(conn, _make_asset("b", status="analyzing"))
+    db.insert_asset(conn, _make_asset("c", status="analyzing"))
+    db.add_tag_to_asset(conn, "a", "夜")
+    db.add_tag_to_asset(conn, "c", "夜")
+    db.set_channels(conn, "a", ["fanvue"])
+    db.set_post(conn, "a", "fanvue", "posted", url="u")
+    db.trash_assets(conn, ["c"])
+
+    f = db.facets(conn, ["fanvue"])
+    assert f["status"] == [("analyzing", 1), ("ready", 1)]  # ごみ箱のcは数えない
+    assert f["content_rating"] == [("sfw", 1), (db.NONE_VALUE, 1)]  # suggestive/explicitは実在しないので出ない
+    assert f["nsfw_auto"] == [("sfw", 1), (db.NONE_VALUE, 1)]
+    assert f["tag"] == [("夜", 1)]
+    assert f["plan"] == [("planned", 1), ("none", 1)]
+    assert ("fanvue", "posted", 1) in f["post"] and ("fanvue", "none", 1) in f["post"]
+
+    # 「未設定」で絞り込める
+    ids = sorted(x["id"] for x in db.list_assets(conn, content_rating=[db.NONE_VALUE]))
+    assert ids == ["b"]

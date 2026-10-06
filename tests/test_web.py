@@ -886,3 +886,63 @@ def test_index_filters_are_multi_select_and_free_text(app_and_conn):
     assert 'data-asset-id="a2"' in found and 'data-asset-id="a1"' not in found
     assert 'type="checkbox" name="status" value="analyzing" checked' in only  # 選択状態の保持
     assert 'value="女性"' in found  # 検索語の保持
+
+
+def test_trash_flow_in_ui(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    assert 'href="/trash"' in client.get("/").get_data(as_text=True)  # 一覧の右にリンク
+
+    assert client.post("/api/assets/trash", json={"asset_ids": ["a1"]}).get_json() == {"moved": 1}
+    assert 'data-asset-id="a1"' not in client.get("/").get_data(as_text=True)  # 通常の一覧には出ない
+    trash = client.get("/trash").get_data(as_text=True)
+    assert 'data-asset-id="a1"' in trash and "ごみ箱に入れた日時" in trash
+    assert "に入っています（通常の一覧" in client.get("/assets/a1").get_data(as_text=True)
+
+    assert client.post("/api/assets/restore", json={"asset_ids": ["a1"]}).get_json() == {"restored": 1}
+    assert 'data-asset-id="a1"' in client.get("/").get_data(as_text=True)
+    assert client.post("/assets/a1/trash").status_code == 302  # 詳細画面からの移動
+    assert db.count_trashed(conn) == 1
+    assert client.post("/api/assets/trash", json={}).status_code == 400
+
+
+def test_trashed_asset_is_excluded_from_ai_tasks(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    client.post("/api/assets/trash", json={"asset_ids": ["a1"]})
+    res = client.post("/api/ai-tasks", json={"asset_ids": ["a1"], "kind": "nsfw"}).get_json()
+    assert res["queued"] == 0
+
+
+def test_no_plan_flag_via_bulk_and_detail_form(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    assert 'chip chip-noplan' not in client.get("/").get_data(as_text=True)
+
+    client.post("/api/assets/post-plan", json={"asset_ids": ["a1"], "planned": False})
+    assert db.get_channels(conn, "a1") == []
+    page = client.get("/").get_data(as_text=True)
+    assert 'chip chip-noplan' in page and "投稿予定なし（SNS投稿の対象外）" in page
+    assert 'data-asset-id="a1"' in client.get("/?plan=none").get_data(as_text=True)
+    assert 'data-asset-id="a1"' not in client.get("/?plan=planned").get_data(as_text=True)
+    assert client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]["no_plan"] is True
+
+    client.post("/api/assets/post-plan", json={"asset_ids": ["a1"], "planned": True})
+    assert sorted(db.get_channels(conn, "a1")) == ["fanvue", "x"]
+    client.post("/assets/a1/channels", data={"channel": ["x"]})  # 詳細画面: Xだけ
+    assert db.get_channels(conn, "a1") == ["x"]
+    client.post("/assets/a1/channels", data={})  # すべてオフ=投稿予定なし
+    assert db.get_channels(conn, "a1") == []
+
+
+def test_filter_options_are_existing_values_with_counts(app_and_conn):
+    app, conn = app_and_conn
+    body = app.test_client().get("/").get_data(as_text=True)
+    # a1はready・nsfw自動判定・区分未承認(content_rating未設定)。実在しない値は候補に出ない
+    assert 'name="status" value="ready"' in body and 'name="status" value="analyzing"' not in body
+    assert 'name="content_rating" value="__none__"' in body and "（未設定・未承認）" in body
+    assert 'name="content_rating" value="suggestive"' not in body
+    assert 'name="nsfw_auto" value="nsfw"' in body
+    assert "(1)" in body  # 件数つき
+    # 未設定(NULL)でも絞り込める
+    assert 'data-asset-id="a1"' in app.test_client().get("/?content_rating=__none__").get_data(as_text=True)

@@ -58,6 +58,34 @@
     return data;
   }
 
+  [["bulk-noplan", false, "投稿予定なしにしました"], ["bulk-plan", true, "投稿予定に戻しました"]].forEach(([id, planned, message]) => {
+    document.getElementById(id).addEventListener("click", async () => {
+      if (selected.size === 0) return;
+      try {
+        const data = await postJson("/api/assets/post-plan", { asset_ids: Array.from(selected), planned });
+        window.showToast(`${data.updated}件を${message}`, "success");
+        setTimeout(() => window.location.reload(), 600);
+      } catch (err) {
+        window.showToast(`変更に失敗しました: ${err.message}`, "error");
+      }
+    });
+  });
+
+  document.getElementById("bulk-trash").addEventListener("click", async () => {
+    if (selected.size === 0) return;
+    const ok = await window.confirmDialog(
+      `選択した${selected.size}件をごみ箱へ移動します。よろしいですか？（ごみ箱から元に戻せます）`
+    );
+    if (!ok) return;
+    try {
+      const data = await postJson("/api/assets/trash", { asset_ids: Array.from(selected) });
+      window.showToast(`${data.moved}件をごみ箱へ移動しました`, "success");
+      setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      window.showToast(`ごみ箱へ移動できませんでした: ${err.message}`, "error");
+    }
+  });
+
   document.getElementById("bulk-clear").addEventListener("click", () => {
     selected.clear();
     checkboxes.forEach((cb) => (cb.checked = false));

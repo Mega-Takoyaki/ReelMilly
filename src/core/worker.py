@@ -232,6 +232,8 @@ class AnalysisWorker:
         asset = db.get_asset(conn, task["asset_id"])
         if asset is None:
             return "アセットが見つかりません"
+        if asset.get("deleted_at"):
+            return "ごみ箱に入っている作品のため処理しませんでした"
         media_path = Path(asset["file_path"])
         try:
             if task["kind"] == "nsfw":
