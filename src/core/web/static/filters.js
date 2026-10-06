@@ -19,6 +19,10 @@
     new FormData(form).forEach((value, key) => {
       if (String(value).trim() !== "") params.append(key, value);
     });
+    // 条件(すべて/いずれか)が既定のままなら、URLには載せない
+    form.querySelectorAll('input[type="radio"]').forEach((r) => {
+      if (r.checked && r.value === r.dataset.default) params.delete(r.name);
+    });
     return params.toString();
   }
 
@@ -47,7 +51,7 @@
   }
 
   form.addEventListener("change", (e) => {
-    if (e.target.matches('input[type="checkbox"]')) apply();
+    if (e.target.matches('input[type="checkbox"], input[type="radio"]')) apply();
   });
   form.addEventListener("input", (e) => {
     if (e.target.matches('input[type="search"]')) {
@@ -65,6 +69,7 @@
     clearLink.addEventListener("click", (e) => {
       e.preventDefault();
       form.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; cb.indeterminate = false; });
+      form.querySelectorAll('input[type="radio"]').forEach((r) => { r.checked = r.value === r.dataset.default; });
       form.querySelectorAll('input[type="search"]').forEach((i) => (i.value = ""));
       form.querySelectorAll(".ms-count").forEach((c) => { c.textContent = "0"; c.hidden = true; });
       apply();

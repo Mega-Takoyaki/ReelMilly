@@ -350,3 +350,30 @@ def test_file_type_two_level_filter_and_facets(tmp_path):
         ("image", 3, [("jpg", 2), ("png", 1)]),
         ("video", 2, [("mp4", 1), ("webm", 1)]),
     ]
+
+
+def test_tag_and_folder_filters_support_all_and_any_modes(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    for i in ("a", "b", "c"):
+        db.insert_asset(conn, _make_asset(i))
+    db.add_tag_to_asset(conn, "a", "夜")
+    db.add_tag_to_asset(conn, "a", "女性")
+    db.add_tag_to_asset(conn, "b", "夜")
+    db.add_tag_to_asset(conn, "c", "海")
+    f1 = db.create_folder(conn, "f1")
+    f2 = db.create_folder(conn, "f2")
+    db.add_asset_to_folder(conn, "a", f1)
+    db.add_asset_to_folder(conn, "a", f2)
+    db.add_asset_to_folder(conn, "b", f1)
+
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+    # タグ: 既定は「すべて含む」。"any"でいずれか
+    assert ids(tag=["夜", "女性"]) == ["a"]
+    assert ids(tag=["夜", "女性"], tag_mode="all") == ["a"]
+    assert ids(tag=["夜", "海"], tag_mode="any") == ["a", "b", "c"]
+    assert ids(tag=["夜", "海"], tag_mode="all") == []
+    # フォルダ: 既定は「いずれか」。"all"ですべてに入っているもの
+    assert ids(folder_id=[f1, f2]) == ["a", "b"]
+    assert ids(folder_id=[f1, f2], folder_mode="any") == ["a", "b"]
+    assert ids(folder_id=[f1, f2], folder_mode="all") == ["a"]

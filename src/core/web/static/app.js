@@ -184,7 +184,7 @@ window.confirmDialog = function confirmDialog(message) {
     const count = ms.querySelector(".ms-count");
     ms.addEventListener("change", (e) => {
       if (ms.hasAttribute("data-tree")) syncTree(ms, e.target);
-      const selector = ms.hasAttribute("data-tree") ? 'input[name="ext"]:checked' : "input:checked";
+      const selector = ms.hasAttribute("data-tree") ? 'input[name="ext"]:checked' : 'input[type="checkbox"]:checked';
       const n = ms.querySelectorAll(selector).length;
       count.textContent = n;
       count.hidden = n === 0;

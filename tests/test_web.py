@@ -1003,3 +1003,26 @@ def test_favicon_is_linked_and_served(app_and_conn):
     assert client.get("/static/favicon.ico").data[:4] == b"\x00\x00\x01\x00"  # ICOのシグネチャ
     assert client.get("/static/apple-touch-icon.png").data[:4] == b"\x89PNG"
     assert client.get("/favicon.ico").status_code == 302  # 既定の/favicon.icoの要求も受ける
+
+
+def test_tag_and_folder_mode_switches_in_ui(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.insert_asset(conn, {
+        "id": "a2", "status": "ready", "kind": "image", "file_path": "/x/a2/two.jpg",
+        "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00",
+    })
+    db.add_tag_to_asset(conn, "a1", "夜")
+    db.add_tag_to_asset(conn, "a2", "海")
+
+    body = client.get("/").get_data(as_text=True)
+    # 既定: タグ=すべて含む、フォルダ=いずれか。切り替えのラジオが出る
+    assert 'name="tag_mode" value="all" data-default="all" checked' in body
+    assert 'name="folder_mode" value="any" data-default="any" checked' in body
+
+    has = lambda html, aid: f'data-asset-id="{aid}"' in html
+    both_and = client.get("/?tag=夜&tag=海").get_data(as_text=True)
+    assert not has(both_and, "a1") and not has(both_and, "a2")  # すべて含む(AND)
+    both_or = client.get("/?tag=夜&tag=海&tag_mode=any").get_data(as_text=True)
+    assert has(both_or, "a1") and has(both_or, "a2")  # いずれか(OR)
+    assert 'name="tag_mode" value="any" data-default="all" checked' in both_or

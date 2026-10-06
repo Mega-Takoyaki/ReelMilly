@@ -98,6 +98,8 @@ def create_app(config: Config) -> Flask:
             ch, _, st = value.partition(":")
             if ch in POST_CHANNELS and st in POST_STATUS_LABELS:
                 post_sel.append(value)
+        tag_mode = "any" if request.args.get("tag_mode") == "any" else "all"  # 既定: すべて含む
+        folder_mode = "all" if request.args.get("folder_mode") == "all" else "any"  # 既定: いずれか
         kind_sel = [v for v in request.args.getlist("kind") if v in ("image", "video")]
         ext_sel = [v.lower() for v in request.args.getlist("ext") if v.isalnum()]
         q = (request.args.get("q") or "").strip()
@@ -110,6 +112,8 @@ def create_app(config: Config) -> Flask:
             plan=plan_sel,
             kind=kind_sel,
             ext=ext_sel,
+            tag_mode=tag_mode,
+            folder_mode=folder_mode,
             tag=tag_sel,
             folder_id=folder_sel,
             confirmed=[v == "1" for v in confirmed_sel],
@@ -177,6 +181,8 @@ def create_app(config: Config) -> Flask:
             assets=assets,
             folders=folders,
             filter_options=filter_options,
+            tag_mode=tag_mode,
+            folder_mode=folder_mode,
             type_tree=type_tree,
             type_count=len(ext_sel) if ext_sel else len(kind_sel),
             status_sel=status_sel,

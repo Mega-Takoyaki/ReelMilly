@@ -130,6 +130,8 @@ def list_assets(
     q: str | None = None,
     nsfw_auto=None,
     plan=None,
+    tag_mode: str = "all",
+    folder_mode: str = "any",
     trashed: bool = False,
     order: str = "desc",
     limit: int = 50,
@@ -137,8 +139,9 @@ def list_assets(
 ) -> list[dict]:
     """アセット一覧。絞り込みは項目間でAND。
 
-    `status`/`content_rating`/`folder_id`/`confirmed`はリストで複数指定でき、その項目内はOR
-    (例: status=["analyzing", "ready"])。`tag`はリストの場合すべてを含むもの(AND)。
+    `status`/`content_rating`/`confirmed`などはリストで複数指定でき、その項目内はOR
+    (例: status=["analyzing", "ready"])。1つの作品が複数持てる`tag`/`folder_id`だけは、
+    `tag_mode`/`folder_mode`で"all"(選んだものをすべて含む=AND)か"any"(いずれかを含む=OR)を選べる。
     `post_filters`は[(投稿先, "posted"/"failed"/"none")]のいずれかに該当(OR)。
     `q`は空白区切りの語を、AI生成の内容説明またはタグ名に含むもの(語ごとにAND)。
     """
@@ -173,17 +176,34 @@ def list_assets(
         for i, v in enumerate(folder_ids):
             params[f"fold{i}"] = v
             names.append(f":fold{i}")
-        conditions.append(
-            "EXISTS (SELECT 1 FROM asset_folders af WHERE af.asset_id = assets.id "
-            f"AND af.folder_id IN ({', '.join(names)}))"
-        )
+        if folder_mode == "all":
+            for n in names:  # 選んだフォルダのすべてに入っている
+                conditions.append(
+                    f"EXISTS (SELECT 1 FROM asset_folders af WHERE af.asset_id = assets.id AND af.folder_id = {n})"
+                )
+        else:  # いずれかのフォルダに入っている
+            conditions.append(
+                "EXISTS (SELECT 1 FROM asset_folders af WHERE af.asset_id = assets.id "
+                f"AND af.folder_id IN ({', '.join(names)}))"
+            )
 
-    for i, name in enumerate(_as_list(tag)):
-        params[f"tag{i}"] = name
-        conditions.append(
-            "EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
-            f"WHERE at.asset_id = assets.id AND t.name = :tag{i})"
-        )
+    tag_names = _as_list(tag)
+    if tag_names:
+        names = []
+        for i, name in enumerate(tag_names):
+            params[f"tag{i}"] = name
+            names.append(f":tag{i}")
+        if tag_mode == "any":  # いずれかのタグを持つ
+            conditions.append(
+                "EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
+                f"WHERE at.asset_id = assets.id AND t.name IN ({', '.join(names)}))"
+            )
+        else:  # 選んだタグをすべて持つ
+            for n in names:
+                conditions.append(
+                    "EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
+                    f"WHERE at.asset_id = assets.id AND t.name = {n})"
+                )
 
     if channel is not None:
         joins.append("JOIN channels ON channels.asset_id = assets.id")

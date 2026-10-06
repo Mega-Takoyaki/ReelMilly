@@ -3,12 +3,20 @@
 {% block content %}
 {% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip %}
 {# 複数選択できる絞り込み(項目内はOR)。チェックを入れて「絞り込む」で適用する #}
-{% macro multi(name, label, options, selected, hint='') %}
+{% macro multi(name, label, options, selected, hint='', mode_name='', mode_value='', mode_default='', mode_choices=()) %}
 {% set sel = selected | map('string') | list %}
 <div class="ms">
   <details>
     <summary>{{ label }}<span class="ms-count" {% if not sel %}hidden{% endif %}>{{ sel | length }}</span></summary>
     <div class="ms-panel">
+      {% if mode_name %}
+      {# 1つの作品が複数持てる項目(タグ・フォルダ)は、選んだものを「すべて含む」か「いずれか」かを選べる #}
+      <div class="ms-mode" role="radiogroup" aria-label="{{ label }}の条件">
+        {% for value, text in mode_choices %}
+        <label><input type="radio" name="{{ mode_name }}" value="{{ value }}" data-default="{{ mode_default }}" {% if mode_value == value %}checked{% endif %}> {{ text }}</label>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
       {% for value, text in options %}
       <label class="ms-opt"><input type="checkbox" name="{{ name }}" value="{{ value }}" {% if value | string in sel %}checked{% endif %}> {{ text }}</label>
@@ -76,8 +84,10 @@
     {{ multi("confirmed", "承認状態", filter_options.confirmed, confirmed_sel) }}
     {{ multi("plan", "投稿予定", filter_options.plan, plan_sel) }}
     {{ multi("post", "投稿状態", filter_options.post, post_sel) }}
-    {{ multi("tag", "タグ", filter_options.tag, tag_sel, "選んだタグをすべて含む作品に絞り込みます") }}
-    {{ multi("folder_id", "フォルダ", filter_options.folder_id, folder_sel) }}
+    {{ multi("tag", "タグ", filter_options.tag, tag_sel, mode_name="tag_mode", mode_value=tag_mode, mode_default="all",
+             mode_choices=(("all", "すべて含む (AND)"), ("any", "いずれかを含む (OR)"))) }}
+    {{ multi("folder_id", "フォルダ", filter_options.folder_id, folder_sel, mode_name="folder_mode", mode_value=folder_mode, mode_default="any",
+             mode_choices=(("any", "いずれかに入っている (OR)"), ("all", "すべてに入っている (AND)"))) }}
     <button type="submit" class="btn-primary" id="filter-apply">絞り込む</button>
     <a href="{{ url_for('index') }}" class="filter-clear" id="filter-clear" {% if not active_filters %}hidden{% endif %}>クリア</a>
   </form>
