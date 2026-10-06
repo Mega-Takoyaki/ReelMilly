@@ -98,6 +98,8 @@ def create_app(config: Config) -> Flask:
             ch, _, st = value.partition(":")
             if ch in POST_CHANNELS and st in POST_STATUS_LABELS:
                 post_sel.append(value)
+        kind_sel = [v for v in request.args.getlist("kind") if v in ("image", "video")]
+        ext_sel = [v.lower() for v in request.args.getlist("ext") if v.isalnum()]
         q = (request.args.get("q") or "").strip()
 
         assets = db.list_assets(
@@ -106,6 +108,8 @@ def create_app(config: Config) -> Flask:
             content_rating=rating_sel,
             nsfw_auto=auto_sel,
             plan=plan_sel,
+            kind=kind_sel,
+            ext=ext_sel,
             tag=tag_sel,
             folder_id=folder_sel,
             confirmed=[v == "1" for v in confirmed_sel],
@@ -151,14 +155,30 @@ def create_app(config: Config) -> Flask:
         }
         known_post = [v for v, _ in filter_options["post"]]
         filter_options["post"] += [(v, v + " (0)") for v in post_sel if v not in known_post]
+        # ファイルタイプの2階層の選択肢。親(種別)を選ぶと、その配下の拡張子がすべて選ばれた扱いになる
+        type_labels = {"image": "画像", "video": "動画"}
+        type_tree = [
+            {
+                "kind": kind,
+                "label": f"{type_labels.get(kind, kind)} ({count})",
+                "checked": kind in kind_sel,
+                "exts": [
+                    {"ext": e, "label": f".{e or '(なし)'} ({n})", "checked": kind in kind_sel or e in ext_sel}
+                    for e, n in exts
+                ],
+            }
+            for kind, count, exts in facets["type"]
+        ]
         active_filters = bool(
-            status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
+            kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
         )
         return render_template(
             "index.html",
             assets=assets,
             folders=folders,
             filter_options=filter_options,
+            type_tree=type_tree,
+            type_count=len(ext_sel) if ext_sel else len(kind_sel),
             status_sel=status_sel,
             rating_sel=rating_sel,
             auto_sel=auto_sel,
@@ -562,6 +582,10 @@ def create_app(config: Config) -> Flask:
             fanvue_just_connected=request.args.get("fanvue_connected") == "1",
             fanvue_error=request.args.get("fanvue_error"),
         )
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return redirect(url_for("static", filename="favicon.ico"))
 
     @app.route("/help")
     def help_page():

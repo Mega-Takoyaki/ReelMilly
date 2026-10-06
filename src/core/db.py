@@ -121,7 +121,8 @@ def list_assets(
     tag=None,
     channel: str | None = None,
     confirmed_only: bool = False,
-    kind: str | None = None,
+    kind=None,
+    ext=None,
     confirmed=None,
     post_channel: str | None = None,
     post_status: str | None = None,
@@ -215,9 +216,22 @@ def list_assets(
     if len(confirmed_values) == 1:  # 承認待ち・承認済みの両方を選んだ場合は絞り込まない
         conditions.append(f"assets.content_rating_confirmed = {1 if True in confirmed_values else 0}")
 
-    if kind is not None:
-        conditions.append("assets.kind = :kind")
-        params["kind"] = kind
+    # ファイルタイプ(2階層): 種別(image/video)と拡張子。両方指定されたときはどちらかに合えばよい(OR)。
+    # 種別を選ぶ=その種別の全拡張子を選ぶことと同じ。拡張子はfile_pathの末尾で判定する(小文字・ドットなし)
+    kinds = _as_list(kind)
+    exts = [str(e).lower().lstrip(".") for e in _as_list(ext)]
+    type_parts = []
+    if kinds:
+        names = []
+        for i, k in enumerate(kinds):
+            params[f"kind{i}"] = k
+            names.append(f":kind{i}")
+        type_parts.append(f"assets.kind IN ({', '.join(names)})")
+    for i, e in enumerate(exts):
+        params[f"ext{i}"] = f"%.{_like_escape(e)}"
+        type_parts.append(f"lower(assets.file_path) LIKE :ext{i} ESCAPE '\\'")
+    if type_parts:
+        conditions.append("(" + " OR ".join(type_parts) + ")")
 
     # 投稿状態での絞り込み。状態は"posted"/"failed"/"none"(その投稿先へ未投稿)
     pairs = list(post_filters or [])
@@ -400,6 +414,17 @@ def facets(conn: sqlite3.Connection, channels: list[str]) -> dict[str, list[tupl
         f"SELECT COUNT(*) {live} AND EXISTS (SELECT 1 FROM channels c WHERE c.asset_id = assets.id)"
     ).fetchone()[0]
     total = conn.execute(f"SELECT COUNT(*) {live}").fetchone()[0]
+    # ファイルタイプ: 種別ごとに、実在する拡張子と件数を並べる
+    tree: dict[str, dict] = {}
+    for r in conn.execute(f"SELECT kind, file_path {live}"):
+        node = tree.setdefault(r["kind"], {"count": 0, "exts": {}})
+        node["count"] += 1
+        suffix = r["file_path"].rsplit(".", 1)[-1].lower() if "." in r["file_path"] else ""
+        node["exts"][suffix] = node["exts"].get(suffix, 0) + 1
+    result["type"] = [
+        (kind, node["count"], sorted(node["exts"].items(), key=lambda x: (-x[1], x[0])))
+        for kind, node in sorted(tree.items())
+    ]
     result["plan"] = [(k, n) for k, n in (("planned", planned), ("none", total - planned)) if n > 0]
     result["tag"] = [(r["name"], r["n"]) for r in conn.execute(
         "SELECT t.name AS name, COUNT(DISTINCT a.id) AS n FROM tags t "

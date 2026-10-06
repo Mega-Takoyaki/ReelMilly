@@ -971,3 +971,35 @@ def test_index_replaceable_grid_region_and_instant_filter_script(app_and_conn):
     assert body.index('id="grid-region"') > body.index('id="dropzone"')  # ドロップ先の内側で差し替える
     assert 'id="filter-clear"' in body and "hidden" in body.split('id="filter-clear"')[1].split(">")[0]  # 絞り込み無しなら非表示
     assert 'id="filter-form"' in body.split('id="grid-region"')[0]  # フィルタは差し替え領域の外(開いたまま)
+
+
+def test_file_type_two_level_filter_in_ui(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.insert_asset(conn, {
+        "id": "v1", "status": "ready", "kind": "video", "file_path": "/x/v1/clip.mp4",
+        "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00",
+    })
+    body = client.get("/").get_data(as_text=True)
+    # 1階層目=画像/動画(件数つき)、2階層目=実在する拡張子(件数つき)
+    assert 'name="kind" value="image"' in body and 'name="kind" value="video"' in body
+    assert 'name="ext" value="jpg"' in body and 'name="ext" value="mp4"' in body
+    assert 'name="ext" value="png"' not in body  # 実在しない拡張子は出ない
+
+    only_video = client.get("/?kind=video").get_data(as_text=True)
+    assert 'data-asset-id="v1"' in only_video and 'data-asset-id="a1"' not in only_video
+    assert 'name="ext" value="mp4" data-parent-kind="video" checked' in only_video  # 親を選ぶと配下も選択済み表示
+    only_jpg = client.get("/?ext=jpg").get_data(as_text=True)
+    assert 'data-asset-id="a1"' in only_jpg and 'data-asset-id="v1"' not in only_jpg
+
+
+def test_favicon_is_linked_and_served(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    for page in ("/", "/trash", "/settings", "/help", "/assets/a1"):
+        body = client.get(page).get_data(as_text=True)
+        assert 'rel="icon" type="image/svg+xml"' in body and "favicon.ico" in body, page
+    assert client.get("/static/favicon.svg").status_code == 200
+    assert client.get("/static/favicon.ico").data[:4] == b"\x00\x00\x01\x00"  # ICOのシグネチャ
+    assert client.get("/static/apple-touch-icon.png").data[:4] == b"\x89PNG"
+    assert client.get("/favicon.ico").status_code == 302  # 既定の/favicon.icoの要求も受ける

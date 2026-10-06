@@ -325,3 +325,28 @@ def test_facets_return_only_existing_values_with_counts(tmp_path):
     # 「未設定」で絞り込める
     ids = sorted(x["id"] for x in db.list_assets(conn, content_rating=[db.NONE_VALUE]))
     assert ids == ["b"]
+
+
+def test_file_type_two_level_filter_and_facets(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    for asset_id, kind, path in [
+        ("a", "image", "/x/a/one.JPG"), ("b", "image", "/x/b/two.png"), ("c", "image", "/x/c/three.jpg"),
+        ("d", "video", "/x/d/four.mp4"), ("e", "video", "/x/e/five.webm"),
+    ]:
+        db.insert_asset(conn, _make_asset(asset_id, kind=kind, file_path=path))
+
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+    assert ids(kind=["image"]) == ["a", "b", "c"]  # 親(種別)=配下の全拡張子
+    assert ids(kind="video") == ["d", "e"]  # 単一指定(投稿ジョブ等)も従来どおり
+    assert ids(ext=["jpg"]) == ["a", "c"]  # 拡張子は大文字小文字を区別しない
+    assert ids(ext=[".png", "mp4"]) == ["b", "d"]  # 種別をまたいで拡張子だけ選べる
+    assert ids(kind=["video"], ext=["png"]) == ["b", "d", "e"]  # 種別と拡張子はOR
+    assert ids(kind=["image"], status="ready") == ["a", "b", "c"]  # 他の項目とはAND
+    assert ids(kind=["image"], status="analyzing") == []
+
+    tree = db.facets(conn, [])["type"]
+    assert tree == [
+        ("image", 3, [("jpg", 2), ("png", 1)]),
+        ("video", 2, [("mp4", 1), ("webm", 1)]),
+    ]

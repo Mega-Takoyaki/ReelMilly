@@ -64,7 +64,7 @@
   if (clearLink) {
     clearLink.addEventListener("click", (e) => {
       e.preventDefault();
-      form.querySelectorAll('input[type="checkbox"]').forEach((cb) => (cb.checked = false));
+      form.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; cb.indeterminate = false; });
       form.querySelectorAll('input[type="search"]').forEach((i) => (i.value = ""));
       form.querySelectorAll(".ms-count").forEach((c) => { c.textContent = "0"; c.hidden = true; });
       apply();

@@ -20,6 +20,30 @@
 </div>
 {% endmacro %}
 
+{# ファイルタイプの2階層フィルタ: 1階層目=画像/動画、2階層目=拡張子。親を選ぶと配下の拡張子がすべて選ばれる #}
+{% macro type_filter(tree, count) %}
+<div class="ms ms-tree" data-tree>
+  <details>
+    <summary>ファイルタイプ<span class="ms-count" {% if not count %}hidden{% endif %}>{{ count }}</span></summary>
+    <div class="ms-panel">
+      <p class="hint">画像・動画を選ぶと、その拡張子すべてが対象です。拡張子だけを選ぶこともできます。</p>
+      {% for node in tree %}
+      <div class="tree-node">
+        <label class="ms-opt tree-parent"><input type="checkbox" name="kind" value="{{ node.kind }}" {% if node.checked %}checked{% endif %}> {{ node.label }}</label>
+        <div class="tree-children">
+          {% for e in node.exts %}
+          <label class="ms-opt"><input type="checkbox" name="ext" value="{{ e.ext }}" data-parent-kind="{{ node.kind }}" {% if e.checked %}checked{% endif %}> {{ e.label }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <p class="hint">選択肢がありません</p>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+{% endmacro %}
+
 <section class="action-bar">
   <div id="job-status" class="job-status" aria-live="polite"></div>
   <div class="action-buttons">
@@ -45,6 +69,7 @@
       <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグで検索（空白区切りでAND）">
     </label>
     {# 候補は、いま実在する値だけを件数つきで出す(ごみ箱の作品は除く) #}
+    {{ type_filter(type_tree, type_count) }}
     {{ multi("status", "ステータス", filter_options.status, status_sel) }}
     {{ multi("content_rating", "区分（承認済み）", filter_options.content_rating, rating_sel) }}
     {{ multi("nsfw_auto", "AI判定", filter_options.nsfw_auto, auto_sel) }}

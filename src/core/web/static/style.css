@@ -1123,3 +1123,8 @@ dialog.lightbox::backdrop {
 #grid-region { transition: opacity 0.15s; }
 #grid-region.is-loading { opacity: 0.55; }
 .btn-small { padding: 0.25rem 0.7rem; font-size: 0.8rem; }
+
+/* ファイルタイプの2階層フィルタ */
+.tree-node { margin-bottom: 0.2rem; }
+.tree-parent { font-weight: 600; }
+.tree-children { margin-left: 1.4rem; border-left: 2px solid var(--border); padding-left: 0.4rem; }

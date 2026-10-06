@@ -165,11 +165,27 @@ window.confirmDialog = function confirmDialog(message) {
   panels.forEach((d) => d.addEventListener("toggle", () => {
     if (d.open) panels.forEach((o) => { if (o !== d) o.open = false; });
   }));
+  // 2階層(ファイルタイプ): 親(種別)のチェックで配下の拡張子をすべて入り切りし、
+  // 配下がすべて選ばれたら親にもチェックを付ける。一部だけのときは親を「一部選択」表示にする
+  function syncTree(ms, changed) {
+    ms.querySelectorAll(".tree-node").forEach((node) => {
+      const parent = node.querySelector('input[name="kind"]');
+      const children = Array.from(node.querySelectorAll('input[name="ext"]'));
+      if (changed === parent) children.forEach((c) => (c.checked = parent.checked));
+      const checked = children.filter((c) => c.checked).length;
+      parent.checked = children.length > 0 && checked === children.length;
+      parent.indeterminate = checked > 0 && checked < children.length;
+    });
+  }
+  document.querySelectorAll(".ms[data-tree]").forEach((ms) => syncTree(ms, null));
+
   // チェックを入れた数を、絞り込む前でも見出しに反映する
   document.querySelectorAll(".ms").forEach((ms) => {
     const count = ms.querySelector(".ms-count");
-    ms.addEventListener("change", () => {
-      const n = ms.querySelectorAll("input:checked").length;
+    ms.addEventListener("change", (e) => {
+      if (ms.hasAttribute("data-tree")) syncTree(ms, e.target);
+      const selector = ms.hasAttribute("data-tree") ? 'input[name="ext"]:checked' : "input:checked";
+      const n = ms.querySelectorAll(selector).length;
       count.textContent = n;
       count.hidden = n === 0;
     });
