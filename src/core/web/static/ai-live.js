@@ -7,8 +7,15 @@
   const BUSY_SHORT = { nsfw: "判定", describe: "説明生成" };
   const POLL_MS = 3000;
 
-  const cards = Array.from(document.querySelectorAll("[data-asset-id].asset-card, #asset-root[data-asset-id]"));
-  const ids = Array.from(new Set(cards.map((el) => el.dataset.assetId)));
+  let cards = [];
+  let ids = [];
+
+  // 画面にある作品(一覧のカード・詳細画面)を集め直す。絞り込みで一覧が差し替わるたびに呼ぶ
+  function collectCards() {
+    cards = Array.from(document.querySelectorAll("[data-asset-id].asset-card, #asset-root[data-asset-id]"));
+    ids = Array.from(new Set(cards.map((el) => el.dataset.assetId)));
+  }
+  collectCards();
 
   let prev = null; // 直前のポーリング結果(assets)
   let prevBusy = false;
@@ -359,6 +366,13 @@
   }
 
   window.aiLive = { enqueue };
+
+  window.addEventListener("grid-updated", () => {
+    collectCards();
+    prev = null; // 表示する作品が変わったので、完了検知の比較元もリセットする
+    clearTimeout(timer);
+    poll();
+  });
 
   // 詳細画面などの実行ボタン
   document.querySelectorAll("[data-ai-run]").forEach((btn) => {

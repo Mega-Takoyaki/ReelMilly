@@ -11,7 +11,7 @@
 
   const prevButton = dialog ? dialog.querySelector(".lightbox-prev") : null;
   const nextButton = dialog ? dialog.querySelector(".lightbox-next") : null;
-  const items = Array.from(document.querySelectorAll(".asset-media"));
+  let items = [];
   let index = -1;
 
   if (!dialog || !mediaContainer || !closeButton || !zoomBar || !zoomSlider || !prevButton || !nextButton) return;
@@ -79,8 +79,21 @@
     if (dialog.open) dialog.close();
   }
 
-  items.forEach((el, i) => {
-    el.addEventListener("click", () => show(i));
+  // サムネイルのクリックを結び付ける。絞り込みで一覧が差し替わるたびに呼ぶ
+  function bindItems() {
+    items = Array.from(document.querySelectorAll(".asset-media"));
+    items.forEach((el, i) => {
+      el.addEventListener("click", () => show(i));
+    });
+    document.querySelectorAll(".asset-detail-link").forEach((link) => {
+      // 詳細アイコンのクリックはサムネイルのクリック(ライトボックス表示)へ伝播させない
+      link.addEventListener("click", (e) => e.stopPropagation());
+    });
+  }
+  bindItems();
+  window.addEventListener("grid-updated", () => {
+    if (dialog.open) dialog.close();
+    bindItems();
   });
 
   prevButton.addEventListener("click", () => step(-1));
@@ -89,11 +102,6 @@
     if (e.target === zoomSlider) return; // スライダー操作中の左右キーは倍率調整に使う
     if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
     else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
-  });
-
-  document.querySelectorAll(".asset-detail-link").forEach((link) => {
-    // 詳細アイコンのクリックはサムネイルのクリック(ライトボックス表示)へ伝播させない
-    link.addEventListener("click", (e) => e.stopPropagation());
   });
 
   zoomSlider.addEventListener("input", applyZoom);

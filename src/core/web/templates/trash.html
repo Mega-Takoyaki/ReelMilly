@@ -5,7 +5,8 @@
 <section class="trash-head">
   <h1>ごみ箱</h1>
   <p class="hint">
-    ごみ箱に入れた作品です。通常の一覧・SNS投稿・AI処理の対象にはなりません。ファイルは削除されていないので、いつでも元に戻せます。
+    ごみ箱に入れた作品です。通常の一覧・SNS投稿・AI処理の対象にはなりません。ファイルはまだ削除されていないので、元に戻せます。
+    「完全に削除」すると、ファイルと記録（タグ・フォルダ・投稿の記録など）が消え、<strong>元に戻せません</strong>。
   </p>
 </section>
 
@@ -14,6 +15,7 @@
     <p class="hint">{{ assets | length }}件</p>
     {% if assets %}
     <button type="button" id="select-all-toggle" class="btn-ghost-inline">すべて選択</button>
+    <button type="button" id="trash-empty" class="btn-danger-outline btn-small">ごみ箱を空にする</button>
     {% endif %}
   </div>
   <label class="grid-size-control">
@@ -68,6 +70,7 @@
 <div id="trash-toolbar" class="bulk-toolbar" hidden>
   <span id="trash-count" class="bulk-count"></span>
   <button type="button" id="trash-restore" class="btn-primary">選択した作品を元に戻す</button>
+  <button type="button" id="trash-purge" class="btn-danger-outline">選択した作品を完全に削除</button>
   <button type="button" id="trash-clear">選択解除</button>
 </div>
 {% endblock %}

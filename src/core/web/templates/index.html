@@ -53,13 +53,14 @@
     {{ multi("post", "投稿状態", filter_options.post, post_sel) }}
     {{ multi("tag", "タグ", filter_options.tag, tag_sel, "選んだタグをすべて含む作品に絞り込みます") }}
     {{ multi("folder_id", "フォルダ", filter_options.folder_id, folder_sel) }}
-    <button type="submit" class="btn-primary">絞り込む</button>
-    {% if active_filters %}<a href="{{ url_for('index') }}" class="filter-clear">クリア</a>{% endif %}
+    <button type="submit" class="btn-primary" id="filter-apply">絞り込む</button>
+    <a href="{{ url_for('index') }}" class="filter-clear" id="filter-clear" {% if not active_filters %}hidden{% endif %}>クリア</a>
   </form>
 </section>
 
 <div id="dropzone" class="asset-area">
 <div class="drop-overlay">ここにドロップして画像・動画をアップロード</div>
+<div id="grid-region">
 
 <div class="grid-toolbar">
   <div class="grid-toolbar-left">
@@ -105,6 +106,7 @@
   </div>
   {% endfor %}
 </section>
+</div>
 </div>
 
 <dialog id="lightbox" class="lightbox">
@@ -163,6 +165,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='upload.js') }}"></script>
+<script src="{{ url_for('static', filename='filters.js') }}"></script>
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
 <script>window.POST_CHANNELS = {{ post_channels | tojson }};</script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>

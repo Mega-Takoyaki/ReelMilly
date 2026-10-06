@@ -1119,3 +1119,7 @@ dialog.lightbox::backdrop {
   font-size: 0.65rem;
 }
 .channels-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.2rem; }
+
+#grid-region { transition: opacity 0.15s; }
+#grid-region.is-loading { opacity: 0.55; }
+.btn-small { padding: 0.25rem 0.7rem; font-size: 0.8rem; }

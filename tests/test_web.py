@@ -946,3 +946,28 @@ def test_filter_options_are_existing_values_with_counts(app_and_conn):
     assert "(1)" in body  # 件数つき
     # 未設定(NULL)でも絞り込める
     assert 'data-asset-id="a1"' in app.test_client().get("/?content_rating=__none__").get_data(as_text=True)
+
+
+def test_purge_api_and_trash_page_controls(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    assert client.post("/api/assets/purge", json={}).status_code == 400
+
+    # 通常の作品は完全削除できない(ごみ箱に入れていないものは対象外)
+    assert client.post("/api/assets/purge", json={"asset_ids": ["a1"]}).get_json()["deleted"] == 0
+    assert db.get_asset(conn, "a1") is not None
+
+    client.post("/api/assets/trash", json={"asset_ids": ["a1"]})
+    page = client.get("/trash").get_data(as_text=True)
+    assert 'id="trash-purge"' in page and 'id="trash-empty"' in page and "元に戻せません" in page
+    assert client.post("/api/assets/purge", json={"all": True}).get_json() == {"deleted": 1, "errors": []}
+    assert db.get_asset(conn, "a1") is None
+
+
+def test_index_replaceable_grid_region_and_instant_filter_script(app_and_conn):
+    app, _ = app_and_conn
+    body = app.test_client().get("/").get_data(as_text=True)
+    assert 'id="grid-region"' in body and "filters.js" in body
+    assert body.index('id="grid-region"') > body.index('id="dropzone"')  # ドロップ先の内側で差し替える
+    assert 'id="filter-clear"' in body and "hidden" in body.split('id="filter-clear"')[1].split(">")[0]  # 絞り込み無しなら非表示
+    assert 'id="filter-form"' in body.split('id="grid-region"')[0]  # フィルタは差し替え領域の外(開いたまま)

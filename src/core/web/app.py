@@ -19,6 +19,7 @@ from core.channels import POST_CHANNELS, POST_STATUS_LABELS
 from core.ingest import DEFAULT_CHANNELS as DEFAULT_POST_CHANNELS
 from core import settings as settings_module
 from core.config import Config
+from core.purge import purge_assets
 from core.ingest import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ingest_inbox
 from core.media import get_media_properties
 from core.nsfw import try_create_classifier
@@ -208,6 +209,18 @@ def create_app(config: Config) -> Flask:
         restored = db.restore_assets(conn, ids)
         conn.close()
         return jsonify({"restored": restored})
+
+    @app.route("/api/assets/purge", methods=["POST"])
+    def api_purge_assets():
+        """ごみ箱の作品を完全に削除する(元に戻せない)。asset_ids指定、またはall=trueでごみ箱を空にする。"""
+        payload = request.get_json(silent=True) or {}
+        ids = payload.get("asset_ids")
+        if not payload.get("all") and not ids:
+            return jsonify({"error": "asset_ids or all is required"}), 400
+        conn = get_conn()
+        result = purge_assets(config, conn, None if payload.get("all") else ids)
+        conn.close()
+        return jsonify({"deleted": result.deleted, "errors": result.errors})
 
     @app.route("/assets/<asset_id>/trash", methods=["POST"])
     def trash_asset(asset_id):
