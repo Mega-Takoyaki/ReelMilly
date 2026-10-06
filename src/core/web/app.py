@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import secrets
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 from werkzeug.utils import secure_filename
 
 from core import db, env_settings, generation
+from core import watermark
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
 from core.ingest import DEFAULT_CHANNELS as DEFAULT_POST_CHANNELS
@@ -203,11 +205,22 @@ def create_app(config: Config) -> Flask:
         )
 
     @app.context_processor
-    def inject_trash_count():
+    def inject_common():
         conn = get_conn()
         count = db.count_trashed(conn)
+        raw = db.get_setting(conn, "watermark_defaults")  # 前回使った透かしの設定を初期値にする
         conn.close()
-        return {"trash_count": count}
+        wm_defaults = dict(watermark.DEFAULTS)
+        try:
+            wm_defaults.update(json.loads(raw or "{}"))
+        except ValueError:
+            pass
+        return {
+            "trash_count": count,
+            "wm_defaults": wm_defaults,
+            "wm_positions": watermark.POSITIONS,
+            "wm_ranges": {"opacity": watermark.OPACITY_RANGE, "size": watermark.SIZE_RANGE},
+        }
 
     @app.route("/trash")
     def trash_page():
@@ -396,11 +409,12 @@ def create_app(config: Config) -> Flask:
                 "tags": tags,
                 "tasks": states.get(asset_id, {}),
                 "no_plan": not channels_map.get(asset_id),
+                "wm": {"text": asset["wm_text"], "position": asset["wm_position"]} if asset.get("wm_path") else None,
                 "posts": {
                     ch: {k: p[k] for k in ("status", "url", "error", "posted_at")}
                     for ch, p in posts.get(asset_id, {}).items()
                 },
-                "rev": f"{asset['updated_at']}|{len(tags)}|"
+                "rev": f"{asset['updated_at']}|{len(tags)}|{asset.get('wm_path') or ''}|"
                 + ",".join(f"{c}:{p['status']}" for c, p in sorted(posts.get(asset_id, {}).items())),
             }
         status = worker_module.get_status(conn, config.timezone)
@@ -414,7 +428,78 @@ def create_app(config: Config) -> Flask:
         conn.close()
         if asset is None:
             abort(404)
+        if request.args.get("variant") == "wm" and asset.get("wm_path") and Path(asset["wm_path"]).exists():
+            return send_file(asset["wm_path"])  # 透かし入り(確認用)
         return send_file(asset["file_path"])
+
+    # --- 透かし(ウォーターマーク) ---
+
+    @app.route("/api/watermark", methods=["POST"])
+    def api_watermark():
+        """透かしの挿入を非同期ジョブとして積む。文字・位置・濃さ・大きさを実行前に指定する。"""
+        payload = request.get_json(silent=True) or {}
+        ids = payload.get("asset_ids") or []
+        if not ids:
+            return jsonify({"error": "asset_ids is required"}), 400
+        try:
+            params = watermark.clean_params(
+                payload.get("text"), payload.get("position"),
+                payload.get("opacity", watermark.DEFAULTS["opacity"]), payload.get("size", watermark.DEFAULTS["size"]),
+            )
+        except watermark.WatermarkError as exc:
+            return jsonify({"error": str(exc)}), 400
+        conn = get_conn()
+        queued = skipped_video = 0
+        for asset_id in ids:
+            asset = db.get_asset(conn, asset_id)
+            if asset is None or asset.get("deleted_at"):
+                continue
+            if asset["kind"] != "image":
+                skipped_video += 1
+                continue
+            if db.enqueue_ai_task(conn, asset_id, "watermark", params):
+                queued += 1
+        db.set_setting(conn, "watermark_defaults", json.dumps(params, ensure_ascii=False))  # 次回の初期値
+        status = worker_module.get_status(conn, config.timezone)
+        conn.close()
+        return jsonify({"queued": queued, "skipped_video": skipped_video, "status": status})
+
+    @app.route("/api/watermark/clear", methods=["POST"])
+    def api_watermark_clear():
+        """透かしを外す(透かし入りファイルを削除し、元のファイルに戻す)。"""
+        ids = (request.get_json(silent=True) or {}).get("asset_ids") or []
+        if not ids:
+            return jsonify({"error": "asset_ids is required"}), 400
+        conn = get_conn()
+        cleared = 0
+        for asset_id in ids:
+            asset = db.get_asset(conn, asset_id)
+            if asset and asset.get("wm_path"):
+                Path(asset["wm_path"]).unlink(missing_ok=True)
+                db.update_asset(conn, asset_id, wm_path=None, wm_text=None, wm_position=None, updated_at=_now())
+                cleared += 1
+        conn.close()
+        return jsonify({"cleared": cleared})
+
+    @app.route("/assets/<asset_id>/watermark-preview")
+    def watermark_preview(asset_id):
+        """設定の確認用プレビュー(保存しない)。実際の薄さのまま縮小して返す。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        conn.close()
+        if asset is None or asset["kind"] != "image":
+            abort(404)
+        try:
+            params = watermark.clean_params(
+                request.args.get("text"), request.args.get("position"),
+                request.args.get("opacity", watermark.DEFAULTS["opacity"]), request.args.get("size", watermark.DEFAULTS["size"]),
+            )
+            data = watermark.preview_jpeg(
+                Path(asset["file_path"]), params["text"], params["position"], params["opacity"], params["size"]
+            )
+        except watermark.WatermarkError as exc:
+            return str(exc), 400
+        return app.response_class(data, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
 
     @app.route("/assets/<asset_id>/confirm", methods=["POST"])
     def confirm_rating(asset_id):

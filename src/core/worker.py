@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from core import analysis, db, generation
+from core import analysis, db, generation, watermark
 from core import settings as settings_module
 from core.config import Config
 from core.events import log_event
@@ -236,6 +236,18 @@ class AnalysisWorker:
             return "ごみ箱に入っている作品のため処理しませんでした"
         media_path = Path(asset["file_path"])
         try:
+            if task["kind"] == "watermark":
+                params = json.loads(task.get("params") or "{}")
+                if asset["kind"] != "image":
+                    return "watermark: 動画は透かしの挿入に未対応です"
+                out = watermark.apply_to_file(
+                    media_path, params["text"], params["position"], params["opacity"], params["size"]
+                )
+                db.update_asset(
+                    conn, asset["id"], wm_path=str(out), wm_text=params["text"],
+                    wm_position=params["position"], updated_at=_now().isoformat(),
+                )
+                return None
             if task["kind"] == "nsfw":
                 result = analysis.run_nsfw(self._get_classifier(), media_path)
                 db.update_asset(

@@ -82,6 +82,34 @@
     });
   });
 
+  // 透かし: 設定ダイアログを開く(プレビューには、選択した画像のうち最初の1枚を使う)
+  document.getElementById("bulk-wm").addEventListener("click", () => {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    const firstImage = ids.find((id) => {
+      const card = document.querySelector(`.asset-card[data-asset-id="${id}"] .asset-media`);
+      return card && card.dataset.kind === "image";
+    });
+    if (!firstImage) {
+      window.showToast("透かしを入れられるのは画像だけです（動画は未対応です）", "error");
+      return;
+    }
+    window.openWatermarkDialog(ids, firstImage);
+  });
+
+  document.getElementById("bulk-wm-clear").addEventListener("click", async () => {
+    if (selected.size === 0) return;
+    const ok = await window.confirmDialog(`選択した${selected.size}件の透かしを外します（元のファイルに戻ります）。よろしいですか？`);
+    if (!ok) return;
+    try {
+      const data = await postJson("/api/watermark/clear", { asset_ids: Array.from(selected) });
+      window.showToast(`${data.cleared}件の透かしを外しました`, "success");
+      setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      window.showToast(`透かしを外せませんでした: ${err.message}`, "error");
+    }
+  });
+
   document.getElementById("bulk-trash").addEventListener("click", async () => {
     if (selected.size === 0) return;
     const ok = await window.confirmDialog(

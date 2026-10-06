@@ -128,7 +128,9 @@ def run_fanvue_drop(
         return draft_result
 
     try:
-        file_path = Path(asset["file_path"])
+        # 透かしを入れた作品は、透かし入りのファイルを投稿する(元のファイルは変えない)
+        wm = asset.get("wm_path")
+        file_path = Path(wm) if wm and Path(wm).exists() else Path(asset["file_path"])
         media_uuid = fanvue_client.upload_media(file_path, media_type=asset["kind"])
 
         ready = fanvue_client.wait_for_media_ready(media_uuid)

@@ -1026,3 +1026,54 @@ def test_tag_and_folder_mode_switches_in_ui(app_and_conn):
     both_or = client.get("/?tag=夜&tag=海&tag_mode=any").get_data(as_text=True)
     assert has(both_or, "a1") and has(both_or, "a2")  # いずれか(OR)
     assert 'name="tag_mode" value="any" data-default="all" checked' in both_or
+
+
+def test_watermark_api_dialog_preview_and_clear(app_and_conn):
+    import json
+
+    from PIL import Image
+
+    app, conn = app_and_conn
+    client = app.test_client()
+    asset = db.get_asset(conn, "a1")
+    Image.new("RGB", (400, 300), (40, 40, 120)).save(asset["file_path"], format="JPEG")
+
+    page = client.get("/").get_data(as_text=True)
+    assert 'id="wm-dialog"' in page and 'id="bulk-wm"' in page and "挿入位置" in page
+    assert 'id="wm-open"' in client.get("/assets/a1").get_data(as_text=True)
+
+    # 実行前のプレビュー(保存しない)
+    res = client.get("/assets/a1/watermark-preview?text=@ai_hiyo&position=center&opacity=16&size=3")
+    assert res.status_code == 200 and res.mimetype == "image/jpeg"
+    assert client.get("/assets/a1/watermark-preview?text=&position=center").status_code == 400
+    assert db.get_asset(conn, "a1")["wm_path"] is None
+
+    # 非同期ジョブとして積む(文字・位置・濃さ・大きさを指定)
+    bad = client.post("/api/watermark", json={"asset_ids": ["a1"], "text": "", "position": "center"})
+    assert bad.status_code == 400
+    ok = client.post(
+        "/api/watermark",
+        json={"asset_ids": ["a1", "none"], "text": "@ai_hiyo", "position": "bottom-right", "opacity": 16, "size": 3},
+    )
+    assert ok.get_json()["queued"] == 1
+    task = conn.execute("SELECT kind, params FROM ai_tasks").fetchone()
+    assert task["kind"] == "watermark" and json.loads(task["params"])["text"] == "@ai_hiyo"
+    assert json.loads(db.get_setting(conn, "watermark_defaults"))["position"] == "bottom-right"  # 次回の初期値
+
+    # 透かし入りができた後: サムネイルのチップ・API・外す操作
+    out = asset["file_path"].replace("look-a.jpg", "watermarked.jpg")
+    Image.new("RGB", (400, 300)).save(out, format="JPEG")
+    db.update_asset(conn, "a1", wm_path=out, wm_text="@ai_hiyo", wm_position="bottom-right")
+    assert "chip chip-wm" in client.get("/").get_data(as_text=True)
+    assert client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]["wm"]["text"] == "@ai_hiyo"
+    assert client.get("/assets/a1/media?variant=wm").status_code == 200
+    assert client.post("/api/watermark/clear", json={"asset_ids": ["a1"]}).get_json() == {"cleared": 1}
+    assert db.get_asset(conn, "a1")["wm_path"] is None
+
+
+def test_live_script_does_not_hardcode_task_kinds(app_and_conn):
+    """処理の種類を足したとき(透かし挿入など)、完了検知の入れ物が足りず更新が止まる不具合の再発防止。"""
+    app, _ = app_and_conn
+    js = app.test_client().get("/static/ai-live.js").get_data(as_text=True)
+    assert "nsfw: [], describe: []" not in js
+    assert "Object.keys(LABEL).map" in js and "watermark" in js

@@ -90,6 +90,26 @@
       </p>
     </div>
 
+    {% if asset.kind == 'image' %}
+    <div class="card" id="live-wm">
+      <h2 style="margin-top: 0;">透かし</h2>
+      {% if asset.wm_path %}
+      <p>
+        透かし入りのファイルがあります:「<strong>{{ asset.wm_text }}</strong>」（{{ wm_positions.get(asset.wm_position, asset.wm_position) }}）
+        <a href="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}" target="_blank" rel="noopener">透かし入りを見る</a>
+      </p>
+      {% else %}
+      <p class="hint">透かしは入っていません。</p>
+      {% endif %}
+      <div class="ai-actions">
+        <button type="button" id="wm-open">透かしを入れる…</button>
+        {% if asset.wm_path %}<button type="button" id="wm-clear" class="btn-ghost-inline">透かしを外す</button>{% endif %}
+      </div>
+      <p class="hint">元のファイルは変わらず、透かし入りの別ファイルを作ります。投稿（Fanvue）は、透かし入りがあればそれを使います。処理は非同期で、完了するとお知らせします。</p>
+    </div>
+    {% include "_watermark_dialog.html" %}
+    {% endif %}
+
     <div class="card" id="live-posts">
       <h2 style="margin-top: 0;">投稿状態</h2>
       <table class="post-table">
@@ -214,6 +234,8 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='detail.js') }}"></script>
+<script>window.WM_POSITIONS = {{ wm_positions | tojson }};</script>
+<script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='esc-back.js') }}"></script>
 {% endblock %}

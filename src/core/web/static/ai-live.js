@@ -3,8 +3,8 @@
 // - 定期ポーリングで進捗を取得し、完了したものから順に画面表示を更新する
 // - 完了・失敗をトースト通知する
 (function () {
-  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与" };
-  const BUSY_SHORT = { nsfw: "判定", describe: "説明生成" };
+  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入" };
+  const BUSY_SHORT = { nsfw: "判定", describe: "説明生成", watermark: "透かし" };
   const POLL_MS = 3000;
 
   let cards = [];
@@ -82,9 +82,29 @@
   }
 
   // 一覧のサムネイルに重ねるアイコン(sfw/nsfw・ステータス)を、_icons.htmlと同じ判定で描き直す
+  const WM_POSITIONS = window.WM_POSITIONS || {};
+
+  // 透かし入りのファイルがある作品に「透」チップを出す(_icons.htmlのwm_chipと同じ表示)
+  function renderWatermark(card, a) {
+    const box = card.querySelector(".asset-badges");
+    if (!box) return;
+    let chip = box.querySelector(".chip-wm");
+    if (!a.wm) {
+      if (chip) chip.remove();
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement("span");
+      chip.className = "chip chip-wm";
+      chip.textContent = "透";
+      box.appendChild(chip);
+    }
+    chip.dataset.tip = `透かし入り: 「${a.wm.text}」（${WM_POSITIONS[a.wm.position] || a.wm.position}）。投稿は透かし入りのファイルを使います`;
+  }
+
   function renderOverlay(card, a) {
     const busy = activeLabels(a);
-    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts, a.no_plan]);
+    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts, a.no_plan, a.wm]);
     if (card.dataset.sig === sig) return; // 変化が無ければ触らない(ツールチップのちらつき防止)
     card.dataset.sig = sig;
 
@@ -111,6 +131,7 @@
     }
 
     renderPosts(card, a);
+    renderWatermark(card, a);
 
     const dot = card.querySelector(".status-dot");
     if (dot) {
@@ -141,7 +162,7 @@
     try {
       const res = await fetch(window.location.href, { headers: { "X-Requested-With": "XMLHttpRequest" } });
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-      ["live-props", "live-status"].forEach((id) => {
+      ["live-props", "live-status", "live-posts", "live-wm"].forEach((id) => {
         const fresh = doc.getElementById(id);
         const cur = document.getElementById(id);
         if (fresh && cur) cur.innerHTML = fresh.innerHTML;
@@ -247,8 +268,9 @@
   // --- 完了検知・通知 -------------------------------------------------------
 
   function detectTransitions(assets) {
-    const completed = { nsfw: [], describe: [] };
-    const failed = { nsfw: [], describe: [] };
+    // 処理の種類(LABELのキー)ごとに入れ物を用意する。種類を足しても、ここは直さなくてよい
+    const completed = Object.fromEntries(Object.keys(LABEL).map((k) => [k, []]));
+    const failed = Object.fromEntries(Object.keys(LABEL).map((k) => [k, []]));
     const changed = [];
     Object.keys(assets).forEach((id) => {
       const cur = assets[id];
@@ -292,7 +314,10 @@
     });
   }
 
+  let pollGen = 0; // poll()が重なって呼ばれても、ポーリングのループは1本だけにする
+
   async function poll() {
+    const myGen = ++pollGen;
     try {
       const res = await fetch(`/api/ai-live?ids=${encodeURIComponent(ids.join(","))}`);
       if (!res.ok) return;
@@ -322,9 +347,10 @@
       renderJobStatus(data.status);
       prev = data.assets;
     } catch (e) {
-      /* 通信失敗時は次回に任せる */
+      console.error("ai-live: 状況の更新に失敗しました", e); // 通信失敗・表示更新の例外は次回に任せる
     } finally {
-      timer = setTimeout(poll, POLL_MS);
+      clearTimeout(timer);
+      if (myGen === pollGen) timer = setTimeout(poll, POLL_MS);
     }
   }
 
@@ -351,7 +377,12 @@
     if (!data.status.worker_alive) {
       window.showToast("ワーカーが停止中です。別のターミナルで reelmilly watch を起動してください", "error");
     }
-    // 完了検知のため、積んだ直後の状態を手元の前回結果へ反映しておく
+    track(assetIds, kinds);
+    return data;
+  }
+
+  // 完了検知のため、積んだ直後の状態を手元の前回結果へ反映し、すぐに状況を取り直す
+  function track(assetIds, kinds) {
     if (prev) {
       assetIds.forEach((id) => {
         if (!prev[id]) return;
@@ -362,10 +393,9 @@
     }
     clearTimeout(timer);
     poll();
-    return data;
   }
 
-  window.aiLive = { enqueue };
+  window.aiLive = { enqueue, track };
 
   window.addEventListener("grid-updated", () => {
     collectCards();

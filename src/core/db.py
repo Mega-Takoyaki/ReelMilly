@@ -1,6 +1,7 @@
 """SQLiteアクセス層。ADR-0011に基づき、メタデータ・タグ・フォルダの正はSQLiteとする。"""
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -29,6 +30,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")
     if "deleted_at" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN deleted_at TEXT")
+    for column in ("wm_path", "wm_text", "wm_position"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE assets ADD COLUMN {column} TEXT")
+    task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ai_tasks)")}
+    if "params" not in task_columns:
+        conn.execute("ALTER TABLE ai_tasks ADD COLUMN params TEXT")
 
     # 投稿状態は作品の準備状態(assets.status)から分離した(postsテーブル)。
     # 旧ステータスposted/failed_fanvueの作品は、準備状態をreadyへ戻し投稿状態へ移す
@@ -617,8 +624,11 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str) -> bool:
-    """AI処理をキューに積む。同じアセット・種別が待機中/実行中ならFalse(二重登録しない)。"""
+def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str, params: dict | None = None) -> bool:
+    """処理(AI・透かし)をキューに積む。同じアセット・種別が待機中/実行中ならFalse(二重登録しない)。
+
+    `params`はタスクごとの設定(透かしの文字・位置など)。JSONで保存する。
+    """
     active = conn.execute(
         "SELECT 1 FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('queued', 'running')",
         (asset_id, kind),
@@ -631,8 +641,8 @@ def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str) -> bool:
         (asset_id, kind),
     )
     conn.execute(
-        "INSERT INTO ai_tasks (asset_id, kind, status, created_at) VALUES (?, ?, 'queued', ?)",
-        (asset_id, kind, _now_iso()),
+        "INSERT INTO ai_tasks (asset_id, kind, status, params, created_at) VALUES (?, ?, 'queued', ?, ?)",
+        (asset_id, kind, json.dumps(params, ensure_ascii=False) if params else None, _now_iso()),
     )
     conn.commit()
     return True

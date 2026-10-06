@@ -10,6 +10,13 @@
 <span class="chip chip-type chip-{{ asset.kind }}" data-tip="{{ '動画' if asset.kind == 'video' else '静止画' }}（.{{ ext | lower }}）">{{ ext }}</span>
 {%- endmacro %}
 
+{# 透かし入りのファイルがある作品に付く小さなチップ(ai-live.jsのrenderOverlayと同じ表示) #}
+{% macro wm_chip(asset, positions) -%}
+{%- if asset.wm_path -%}
+<span class="chip chip-wm" data-tip="透かし入り: 「{{ asset.wm_text }}」（{{ positions.get(asset.wm_position, asset.wm_position) }}）。投稿は透かし入りのファイルを使います">透</span>
+{%- endif -%}
+{%- endmacro %}
+
 {% macro rating_chip(asset) -%}
 {%- if asset.content_rating_confirmed and asset.content_rating -%}
   {%- set state = {'sfw': 'ok-sfw', 'suggestive': 'ok-sug', 'explicit': 'ok-nsfw'}.get(asset.content_rating, 'ok-sfw') -%}

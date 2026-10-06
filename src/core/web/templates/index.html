@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
-{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip %}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip %}
 {# 複数選択できる絞り込み(項目内はOR)。チェックを入れて「絞り込む」で適用する #}
 {% macro multi(name, label, options, selected, hint='', mode_name='', mode_value='', mode_default='', mode_choices=()) %}
 {% set sel = selected | map('string') | list %}
@@ -122,7 +122,7 @@
       {% else %}
       <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
       {% endif %}
-      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}</span>
+      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset, wm_positions) }}</span>
       {{ status_dot(asset) }}
       <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
       <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
@@ -155,6 +155,8 @@
     <output>100%</output>
   </div>
 </dialog>
+
+{% include "_watermark_dialog.html" %}
 
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
   <span id="bulk-count" class="bulk-count"></span>
@@ -193,16 +195,22 @@
     <button type="button" id="bulk-plan">投稿予定に戻す</button>
   </span>
 
+  <span class="bulk-group">
+    <button type="button" id="bulk-wm">透かしを入れる…</button>
+    <button type="button" id="bulk-wm-clear" class="btn-ghost-inline">透かしを外す</button>
+  </span>
+
   <button type="button" id="bulk-trash" class="btn-danger-outline">ごみ箱へ</button>
 
   <button type="button" id="bulk-clear">選択解除</button>
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='upload.js') }}"></script>
 <script src="{{ url_for('static', filename='filters.js') }}"></script>
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
-<script>window.POST_CHANNELS = {{ post_channels | tojson }};</script>
+<script>window.POST_CHANNELS = {{ post_channels | tojson }}; window.WM_POSITIONS = {{ wm_positions | tojson }};</script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='grid-controls.js') }}"></script>

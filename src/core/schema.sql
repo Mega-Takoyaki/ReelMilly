@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS assets (
     content_description TEXT,
     fanvue_caption_draft TEXT,
     analysis_error TEXT,
+    wm_path TEXT,      -- 透かし入りファイルのパス(NULL=透かし無し)。元のfile_pathは変えない
+    wm_text TEXT,
+    wm_position TEXT,
     deleted_at TEXT,  -- ごみ箱に入れた日時(NULL=通常)。ファイルは移動せず、一覧に出さないだけ
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -91,6 +94,7 @@ CREATE TABLE IF NOT EXISTS ai_tasks (
     kind TEXT NOT NULL,      -- 'nsfw' | 'describe'
     status TEXT NOT NULL,    -- 'queued' | 'running' | 'done' | 'failed'
     error TEXT,
+    params TEXT,             -- タスクの設定(JSON)。透かしの文字・位置など
     created_at TEXT NOT NULL,
     finished_at TEXT
 );
