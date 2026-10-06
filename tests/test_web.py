@@ -752,7 +752,9 @@ def test_upload_defers_analysis_and_returns_quickly(app_and_conn):
 def test_analysis_status_endpoint(app_and_conn):
     app = app_and_conn[0]
     data = app.test_client().get("/api/ai-live?ids=a1").get_json()
-    assert set(data["status"]) == {"queued", "running", "failed", "worker_alive", "current"}
+    assert set(data["status"]) == {
+        "queued", "running", "failed", "worker_alive", "current", "upcoming", "next_schedule",
+    }
     assert data["assets"]["a1"]["nsfw_auto_rating"] == "nsfw"
 
 
@@ -788,12 +790,12 @@ def test_settings_saves_schedule_and_tag_categories(app_and_conn):
     client.post(
         "/settings",
         data={
-            "schedule_nsfw_enabled": "on",
-            "schedule_nsfw_time": "04:30",
-            "schedule_nsfw_scope": "days",
-            "schedule_nsfw_days": "3",
-            "schedule_describe_time": "05:00",
-            "schedule_describe_scope": "all",
+            "sched_id": ["s1", "", "s3"],
+            "sched_kind": ["nsfw", "nsfw", "describe"],
+            "sched_enabled": ["1", "1", "0"],
+            "sched_time": ["04:30", "12:00", "05:00"],
+            "sched_scope": ["days", "all", "all"],
+            "sched_days": ["3", "7", "7"],
             "tag_category_name": ["服装", "", "性別"],
             "tag_category_options": ["水着", "x", ""],
         },
@@ -801,8 +803,11 @@ def test_settings_saves_schedule_and_tag_categories(app_and_conn):
 
     from core import settings as settings_module
 
-    assert settings_module.get_ai_schedule(conn, "nsfw") == {"enabled": True, "time": "04:30", "scope": "days", "days": 3}
-    assert settings_module.get_ai_schedule(conn, "describe")["enabled"] is False
+    schedules = settings_module.get_ai_schedules(conn)
+    assert len(schedules) == 3  # 同じ処理を別の時刻に複数登録できる
+    assert schedules[0] == {"id": "s1", "kind": "nsfw", "enabled": True, "time": "04:30", "scope": "days", "days": 3}
+    assert schedules[1]["time"] == "12:00" and schedules[1]["id"]  # idは自動採番
+    assert schedules[2]["enabled"] is False
     assert [c["name"] for c in settings_module.get_tag_categories(conn)] == ["服装", "性別"]
     page = client.get("/settings").get_data(as_text=True)
     assert 'value="04:30"' in page and "服装" in page
@@ -853,3 +858,31 @@ def test_post_flags_shown_on_card_filter_and_retry(app_and_conn):
     assert "再投稿の対象に戻す" in client.get("/assets/a1").get_data(as_text=True)
     assert client.post("/assets/a1/posts/fanvue/retry").status_code == 302
     assert db.get_posts(conn, ["a1"]) == {}
+
+
+def test_index_layout_action_bar_dropzone_and_no_old_dropzone(app_and_conn):
+    app, _ = app_and_conn
+    body = app.test_client().get("/").get_data(as_text=True)
+    assert 'id="upload-button"' in body and "画像アップロード" in body and "フォルダ作成" in body
+    assert 'class="action-bar"' in body and body.index("action-bar") < body.index('class="filters"')  # フィルタの上
+    assert 'id="dropzone" class="asset-area"' in body and 'class="asset-grid"' in body
+    assert "ここに画像・動画をドラッグ&ドロップ、またはクリックして選択" not in body  # 旧ドロップ領域は廃止
+    assert 'id="job-status"' in body
+
+
+def test_index_filters_are_multi_select_and_free_text(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.insert_asset(conn, {
+        "id": "a2", "status": "analyzing", "kind": "image", "file_path": "/x/a2.jpg",
+        "content_description": "夜の街を歩く女性",
+        "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00",
+    })
+    both = client.get("/?status=ready&status=analyzing").get_data(as_text=True)
+    assert 'data-asset-id="a1"' in both and 'data-asset-id="a2"' in both
+    only = client.get("/?status=analyzing").get_data(as_text=True)
+    assert 'data-asset-id="a2"' in only and 'data-asset-id="a1"' not in only
+    found = client.get("/?q=女性").get_data(as_text=True)
+    assert 'data-asset-id="a2"' in found and 'data-asset-id="a1"' not in found
+    assert 'type="checkbox" name="status" value="analyzing" checked' in only  # 選択状態の保持
+    assert 'value="女性"' in found  # 検索語の保持

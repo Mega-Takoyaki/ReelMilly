@@ -149,37 +149,62 @@ AI_KIND_LABELS = {"nsfw": "sfw/nsfw判定", "describe": "説明文生成・タ�
 DEFAULT_SCHEDULE = {"enabled": False, "time": "03:00", "scope": "all", "days": 7}
 
 
-def get_ai_schedule(conn: sqlite3.Connection, kind: str) -> dict:
-    """定期実行の設定。scopeは"all"(全未処理)または"days"(直近`days`日以内に登録された未処理)。"""
-    import json
-
-    schedule = dict(DEFAULT_SCHEDULE)
-    raw = db.get_setting(conn, f"schedule_{kind}")
-    if raw:
-        try:
-            schedule.update(json.loads(raw))
-        except ValueError:
-            pass
-    return schedule
-
-
-def set_ai_schedule(conn: sqlite3.Connection, kind: str, enabled: bool, time: str, scope: str, days) -> None:
-    import json
+def _clean_schedule(entry: dict) -> dict | None:
     import re
+    import secrets
 
-    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", time or ""):
+    kind = entry.get("kind")
+    if kind not in AI_SCHEDULE_KINDS:
+        return None
+    time = entry.get("time") or ""
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", time):
         time = DEFAULT_SCHEDULE["time"]
-    if scope not in ("all", "days"):
-        scope = "all"
+    scope = entry.get("scope") if entry.get("scope") in ("all", "days") else "all"
     try:
-        days = max(1, int(days))
+        days = max(1, int(entry.get("days")))
     except (TypeError, ValueError):
         days = DEFAULT_SCHEDULE["days"]
-    db.set_setting(
-        conn,
-        f"schedule_{kind}",
-        json.dumps({"enabled": bool(enabled), "time": time, "scope": scope, "days": days}),
-    )
+    return {
+        "id": str(entry.get("id") or secrets.token_hex(4)),
+        "kind": kind,
+        "enabled": bool(entry.get("enabled")),
+        "time": time,
+        "scope": scope,
+        "days": days,
+    }
+
+
+def get_ai_schedules(conn: sqlite3.Connection) -> list[dict]:
+    """AI処理の定期実行スケジュール(複数登録できる)。
+
+    各要素は{"id", "kind"("nsfw"/"describe"), "enabled", "time"("HH:MM"),
+    "scope"("all"=全未処理 / "days"=直近`days`日以内に登録された未処理), "days"}。
+    旧形式(種別ごとに1つ)の設定が残っていれば、初回に一覧形式へ引き継ぐ。
+    """
+    import json
+
+    raw = db.get_setting(conn, "schedules")
+    if raw is not None:
+        try:
+            return [e for e in (_clean_schedule(x) for x in json.loads(raw)) if e]
+        except (ValueError, TypeError, AttributeError):
+            return []
+    legacy = []
+    for kind in AI_SCHEDULE_KINDS:
+        old = db.get_setting(conn, f"schedule_{kind}")
+        if old:
+            try:
+                legacy.append(_clean_schedule({**json.loads(old), "kind": kind, "id": f"legacy-{kind}"}))
+            except ValueError:
+                pass
+    return [e for e in legacy if e]
+
+
+def set_ai_schedules(conn: sqlite3.Connection, entries: list[dict]) -> None:
+    import json
+
+    cleaned = [e for e in (_clean_schedule(x) for x in entries) if e]
+    db.set_setting(conn, "schedules", json.dumps(cleaned))
 
 
 def get_tag_categories(conn: sqlite3.Connection) -> list[dict]:

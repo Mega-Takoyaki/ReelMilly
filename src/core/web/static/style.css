@@ -167,45 +167,6 @@ main {
   color: var(--fg);
 }
 
-/* Dropzone ------------------------------------------------------------*/
-
-.dropzone {
-  border: 2px dashed var(--border);
-  border-radius: var(--radius-lg);
-  padding: 2rem 1.75rem;
-  text-align: center;
-  color: var(--fg-muted);
-  margin-bottom: 1.5rem;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
-  background: var(--surface);
-}
-
-.dropzone svg { color: var(--fg-muted); margin-bottom: 0.5rem; }
-
-.dropzone:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
-}
-
-.dropzone.dragover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  transform: scale(1.005);
-}
-
-.dropzone.uploading {
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.dropzone-status {
-  font-size: 0.85rem;
-  color: var(--accent);
-  min-height: 1.2em;
-  margin: 0.4rem 0 0;
-}
-
 /* Filters ---------------------------------------------------------------*/
 
 .filters {
@@ -963,3 +924,155 @@ dialog.lightbox::backdrop {
 
 .info-pop.pinned { border-color: var(--accent); user-select: text; }
 .info-pop[hidden] { display: none; }
+
+.schedule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 1rem;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+}
+.schedule-row label { margin: 0; }
+.schedule-row input[type="time"], .schedule-row input[type="number"], .schedule-row select { width: auto; }
+.schedule-row input[type="number"] { width: 5rem; }
+
+/* 一覧: 上部アクション(ジョブ状況 + フォルダ作成/アップロード) ---------------------*/
+
+.action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.action-buttons .new-folder { align-items: center; }
+.action-buttons input[type="text"] { width: 11rem; }
+.btn-primary { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+/* ジョブ状況 */
+.job-status { display: flex; flex-direction: column; gap: 0.35rem; min-width: 16rem; flex: 1 1 22rem; }
+.job-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem; font-size: 0.8rem; }
+.job-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.job-chip .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: currentColor; }
+.job-chip.worker-on { color: #16a34a; border-color: color-mix(in srgb, #16a34a 45%, var(--border)); }
+.job-chip.worker-off { color: #dc2626; border-color: color-mix(in srgb, #dc2626 45%, var(--border)); }
+.job-chip.running { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.job-chip.running .dot { animation: badge-pulse 1s ease-in-out infinite; }
+.job-chip.queued { color: #d97706; border-color: color-mix(in srgb, #d97706 45%, var(--border)); }
+.job-chip.failed { color: #c026d3; border-color: color-mix(in srgb, #c026d3 45%, var(--border)); }
+.job-chip.upload { color: #0f9d8a; border-color: color-mix(in srgb, #0f9d8a 45%, var(--border)); }
+.job-next { color: var(--fg-muted); font-size: 0.76rem; }
+.job-progress { display: flex; flex-direction: column; gap: 0.25rem; }
+.job-bar { height: 0.45rem; border-radius: 999px; background: var(--surface-alt); overflow: hidden; }
+.job-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.4s; }
+.job-bar.indeterminate > span { width: 35%; animation: job-slide 1.2s ease-in-out infinite; }
+@keyframes job-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+.job-detail { font-size: 0.76rem; color: var(--fg-muted); overflow-wrap: anywhere; }
+
+/* 絞り込み: 複数選択 */
+.filters form { width: 100%; }
+.filters .search-box { flex: 1 1 14rem; min-width: 12rem; }
+.filters .search-box input { width: 100%; }
+.ms { position: relative; }
+.ms details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  color: var(--fg);
+  font-size: 0.85rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.ms details > summary::-webkit-details-marker { display: none; }
+.ms details > summary::after { content: "▾"; color: var(--fg-muted); font-size: 0.7rem; }
+.ms details[open] > summary { border-color: var(--accent); }
+.ms-count {
+  min-width: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+}
+.ms-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  min-width: 14rem;
+  max-width: 22rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.ms-panel .hint { margin: 0 0 0.4rem; font-size: 0.75rem; }
+.ms-opt {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem !important;
+  color: var(--fg) !important;
+  cursor: pointer;
+}
+.ms-opt:hover { background: var(--surface-hover); }
+.ms-opt input { width: auto; }
+.filter-clear { align-self: center; font-size: 0.85rem; }
+
+/* サムネイル表示エリア全体をドロップ先にする */
+.asset-area { position: relative; min-height: 14rem; border-radius: var(--radius-lg); }
+.drop-overlay {
+  position: absolute;
+  inset: -0.4rem;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 3px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg, #0b0d12) 86%);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+.asset-area.dragover .drop-overlay { display: flex; }
+.asset-area.uploading { opacity: 0.75; }

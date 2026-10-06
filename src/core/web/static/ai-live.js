@@ -4,9 +4,9 @@
 // - 完了・失敗をトースト通知する
 (function () {
   const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与" };
+  const BUSY_SHORT = { nsfw: "判定", describe: "説明生成" };
   const POLL_MS = 3000;
 
-  const banner = document.getElementById("ai-status");
   const cards = Array.from(document.querySelectorAll("[data-asset-id].asset-card, #asset-root[data-asset-id]"));
   const ids = Array.from(new Set(cards.map((el) => el.dataset.assetId)));
 
@@ -138,21 +138,96 @@
     }
   }
 
-  function renderBanner(status) {
-    if (!banner) return;
+  // --- ジョブ状況(一覧上部) -------------------------------------------------
+
+  const jobBox = document.getElementById("job-status");
+  let upload = { active: false };
+  let batchTotal = 0; // 待機・実行中が増えたときの最大件数(進捗バーの分母)
+  let lastStatus = null;
+
+  window.addEventListener("upload-progress", (e) => {
+    upload = e.detail;
+    if (lastStatus) renderJobStatus(lastStatus);
+  });
+
+  function chip(cls, text, tip) {
+    const span = document.createElement("span");
+    span.className = `job-chip ${cls}`;
+    if (cls !== "upload" && cls !== "failed") {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      span.appendChild(dot);
+    }
+    span.appendChild(document.createTextNode(text));
+    if (tip) span.dataset.tip = tip;
+    return span;
+  }
+
+  function renderJobStatus(status) {
+    lastStatus = status;
+    if (!jobBox) return;
     const active = status.queued + status.running;
-    if (active === 0) {
-      banner.hidden = true;
-      return;
+    if (active === 0) batchTotal = 0;
+    batchTotal = Math.max(batchTotal, active);
+
+    const line = document.createElement("div");
+    line.className = "job-line";
+    line.appendChild(
+      status.worker_alive
+        ? chip("worker-on", "ワーカー稼働中", "AI処理・定期実行を行うワーカー(reelmilly watch)が動いています")
+        : chip("worker-off", "ワーカー停止中", "別のターミナルで reelmilly watch を起動すると、待機中の処理が進みます")
+    );
+    line.appendChild(chip("running", `実行中 ${status.running}`, "いま処理しているAI処理の件数"));
+    line.appendChild(chip("queued", `待機 ${status.queued}`, "順番待ちのAI処理の件数"));
+    if (status.failed > 0) {
+      line.appendChild(chip("failed", `失敗 ${status.failed}`, "失敗したAI処理(詳細画面に理由を表示)。再実行すると上書きされます"));
     }
-    banner.hidden = false;
-    const parts = [`AI処理: 実行中 ${status.running}件 / 待機 ${status.queued}件`];
-    if (status.worker_alive) {
-      if (status.current) parts.push(`処理中: ${short(status.current.asset_id)}（${LABEL[status.current.kind]}）`);
-    } else {
-      parts.push("ワーカー停止中（別のターミナルで reelmilly watch を起動すると処理が進みます）");
+    if (upload.active) {
+      line.appendChild(chip("upload", `アップロード中 ${upload.count}件 ${upload.percent}%`, "画像・動画をアップロードしています"));
     }
-    banner.textContent = parts.join(" / ");
+    const next = status.next_schedule;
+    if (next) {
+      const span = document.createElement("span");
+      span.className = "job-next";
+      span.textContent = `次の定期実行: ${next.day} ${next.time}（${next.labels.join("・")}）`;
+      line.appendChild(span);
+    }
+
+    const parts = [line];
+    if (active > 0 || upload.active) {
+      const progress = document.createElement("div");
+      progress.className = "job-progress";
+      const bar = document.createElement("div");
+      const fill = document.createElement("span");
+      if (upload.active && active === 0) {
+        fill.style.width = `${upload.percent}%`;
+        bar.className = "job-bar";
+      } else if (status.worker_alive && batchTotal > 0) {
+        fill.style.width = `${Math.round(((batchTotal - active) / batchTotal) * 100)}%`;
+        bar.className = "job-bar";
+      } else {
+        bar.className = "job-bar indeterminate";
+      }
+      bar.appendChild(fill);
+      progress.appendChild(bar);
+
+      const detail = document.createElement("div");
+      detail.className = "job-detail";
+      const texts = [];
+      if (status.current) texts.push(`処理中: ${short(status.current.asset_id)}（${LABEL[status.current.kind]}）`);
+      if ((status.upcoming || []).length > 0) {
+        const more = status.queued - status.upcoming.length;
+        texts.push(
+          "次: " + status.upcoming.map((t) => `${short(t.asset_id)}（${BUSY_SHORT[t.kind]}）`).join("、") +
+            (more > 0 ? ` ほか${more}件` : "")
+        );
+      }
+      if (batchTotal > 0 && active > 0) texts.push(`${batchTotal - active}/${batchTotal}件完了`);
+      detail.textContent = texts.join("　／　");
+      progress.appendChild(detail);
+      parts.push(progress);
+    }
+    jobBox.replaceChildren(...parts);
   }
 
   // --- 完了検知・通知 -------------------------------------------------------
@@ -230,7 +305,7 @@
       }
       if (!busy) doneSinceBusy = 0;
       prevBusy = busy;
-      renderBanner(data.status);
+      renderJobStatus(data.status);
       prev = data.assets;
     } catch (e) {
       /* 通信失敗時は次回に任せる */

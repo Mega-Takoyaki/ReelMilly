@@ -232,3 +232,34 @@ def test_list_assets_filters_by_post_state(tmp_path):
     assert ids(post_channel="fanvue", post_status="failed") == ["b"]
     assert ids(post_channel="fanvue", post_status="none") == ["c"]
     assert ids(post_channel="x", post_status="none") == ["a", "b", "c"]
+
+
+def test_list_assets_multi_select_filters_and_text_search(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    db.insert_asset(conn, _make_asset("a", status="analyzing", content_description="赤いドレスの女性"))
+    db.insert_asset(conn, _make_asset("b", status="ready", content_rating="sfw", content_rating_confirmed=True))
+    db.insert_asset(conn, _make_asset("c", status="pending_approval", content_description="海辺の風景 100%"))
+    db.add_tag_to_asset(conn, "a", "夜")
+    db.add_tag_to_asset(conn, "a", "女性")
+    db.add_tag_to_asset(conn, "b", "夜")
+    f1 = db.create_folder(conn, "f1")
+    db.add_asset_to_folder(conn, "a", f1)
+
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+    assert ids(status=["analyzing", "ready"]) == ["a", "b"]  # 項目内はOR
+    assert ids(status=["analyzing"], tag=["夜"]) == ["a"]  # 項目間はAND
+    assert ids(tag=["夜", "女性"]) == ["a"]  # タグを複数選ぶとすべてを含むもの
+    assert ids(folder_id=[f1]) == ["a"]
+    assert ids(confirmed=[True]) == ["b"]
+    assert ids(confirmed=[True, False]) == ["a", "b", "c"]  # 両方選ぶと絞り込まない
+    assert ids(post_filters=[("fanvue", "none")]) == ["a", "b", "c"]
+    assert ids(status="ready") == ["b"]  # 従来の単一指定も使える
+
+    # フリーテキスト: AI生成の説明文またはタグ名。空白区切りはAND。%や_はそのまま扱う
+    assert ids(q="ドレス") == ["a"]
+    assert ids(q="夜") == ["a", "b"]
+    assert ids(q="ドレス 女性") == ["a"]
+    assert ids(q="ドレス 風景") == []
+    assert ids(q="100%") == ["c"]
+    assert ids(q="%") == ["c"]

@@ -83,48 +83,53 @@ def create_app(config: Config) -> Flask:
     @app.route("/")
     def index():
         conn = get_conn()
-        status_filter = request.args.get("status") or None
-        rating_filter = request.args.get("content_rating") or None
-        tag_filter = request.args.get("tag") or None
-        folder_id = request.args.get("folder_id", type=int)
-        confirmed_param = request.args.get("confirmed") or None
-        confirmed_filter = {"0": False, "1": True}.get(confirmed_param)
-        # 投稿状態の絞り込み("fanvue:posted"のように「投稿先:状態」)
-        post_param = request.args.get("post") or None
-        post_channel = post_status = None
-        if post_param and ":" in post_param:
-            ch, st = post_param.split(":", 1)
+        # 絞り込みは項目内で複数選択でき(同じ名前のパラメータを繰り返す)、項目間はAND
+        status_sel = [v for v in request.args.getlist("status") if v in ("analyzing", "pending_approval", "ready")]
+        rating_sel = [v for v in request.args.getlist("content_rating") if v in CONTENT_RATINGS]
+        tag_sel = [v for v in request.args.getlist("tag") if v]
+        folder_sel = [v for v in request.args.getlist("folder_id", type=int)]
+        confirmed_sel = [v for v in request.args.getlist("confirmed") if v in ("0", "1")]
+        post_sel = []
+        for value in request.args.getlist("post"):  # "fanvue:posted"のように「投稿先:状態」
+            ch, _, st = value.partition(":")
             if ch in POST_CHANNELS and st in POST_STATUS_LABELS:
-                post_channel, post_status = ch, st
+                post_sel.append(value)
+        q = (request.args.get("q") or "").strip()
 
         assets = db.list_assets(
             conn,
-            status=status_filter,
-            content_rating=rating_filter,
-            tag=tag_filter,
-            folder_id=folder_id,
-            confirmed=confirmed_filter,
-            post_channel=post_channel,
-            post_status=post_status,
+            status=status_sel,
+            content_rating=rating_sel,
+            tag=tag_sel,
+            folder_id=folder_sel,
+            confirmed=[v == "1" for v in confirmed_sel],
+            post_filters=[tuple(v.split(":", 1)) for v in post_sel],
+            q=q,
             limit=200,
         )
         posts = db.get_posts(conn, [a["id"] for a in assets])
         folders = db.list_folders(conn)
         tags = db.list_all_tags(conn)
         conn.close()
+        active_filters = bool(status_sel or rating_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q)
         return render_template(
             "index.html",
             assets=assets,
             folders=folders,
             tags=tags,
-            status_filter=status_filter,
-            rating_filter=rating_filter,
-            tag_filter=tag_filter,
-            folder_id=folder_id,
-            confirmed_param=confirmed_param,
+            status_sel=status_sel,
+            rating_sel=rating_sel,
+            tag_sel=tag_sel,
+            folder_sel=folder_sel,
+            confirmed_sel=confirmed_sel,
+            post_sel=post_sel,
+            q=q,
+            active_filters=active_filters,
             content_ratings=CONTENT_RATINGS,
+            rating_options=[(r, r) for r in CONTENT_RATINGS],
+            tag_options=[(t, t) for t in tags],
+            folder_options=[(f["id"], f["name"]) for f in folders],
             posts=posts,
-            post_param=post_param if post_channel else None,
             post_channels=POST_CHANNELS,
             post_status_labels=POST_STATUS_LABELS,
         )
@@ -205,7 +210,7 @@ def create_app(config: Config) -> Flask:
         conn = get_conn()
         known = [a for a in asset_ids if db.get_asset(conn, a) is not None]
         queued = worker_module.enqueue_for_assets(conn, known, kinds)
-        status = worker_module.get_status(conn)
+        status = worker_module.get_status(conn, config.timezone)
         conn.close()
         return jsonify({"queued": queued, "skipped": len(known) * len(kinds) - queued, "status": status})
 
@@ -238,7 +243,7 @@ def create_app(config: Config) -> Flask:
                 "rev": f"{asset['updated_at']}|{len(tags)}|"
                 + ",".join(f"{c}:{p['status']}" for c, p in sorted(posts.get(asset_id, {}).items())),
             }
-        status = worker_module.get_status(conn)
+        status = worker_module.get_status(conn, config.timezone)
         conn.close()
         return jsonify({"status": status, "assets": assets})
 
@@ -371,15 +376,20 @@ def create_app(config: Config) -> Flask:
                 caption_mode=request.form.get("caption_mode"),
             )
             settings_module.set_auto_ingest(conn, bool(request.form.get("auto_ingest")))
-            for kind in settings_module.AI_SCHEDULE_KINDS:
-                settings_module.set_ai_schedule(
-                    conn,
-                    kind,
-                    enabled=bool(request.form.get(f"schedule_{kind}_enabled")),
-                    time=request.form.get(f"schedule_{kind}_time", ""),
-                    scope=request.form.get(f"schedule_{kind}_scope", "all"),
-                    days=request.form.get(f"schedule_{kind}_days"),
-                )
+            settings_module.set_ai_schedules(
+                conn,
+                [
+                    {"id": sid, "kind": kind, "enabled": enabled == "1", "time": time, "scope": scope, "days": days}
+                    for sid, kind, enabled, time, scope, days in zip(
+                        request.form.getlist("sched_id"),
+                        request.form.getlist("sched_kind"),
+                        request.form.getlist("sched_enabled"),
+                        request.form.getlist("sched_time"),
+                        request.form.getlist("sched_scope"),
+                        request.form.getlist("sched_days"),
+                    )
+                ],
+            )
             settings_module.set_tag_categories(
                 conn,
                 [
@@ -397,7 +407,7 @@ def create_app(config: Config) -> Flask:
         current_settings = settings_module.get_all_settings(conn)
         connections = env_settings.read_connection_status(config.env_path)
         model_choices = settings_module.get_model_choices(conn)
-        schedules = {k: settings_module.get_ai_schedule(conn, k) for k in settings_module.AI_SCHEDULE_KINDS}
+        schedules = settings_module.get_ai_schedules(conn)
         tag_categories = settings_module.get_tag_categories(conn)
         conn.close()
 

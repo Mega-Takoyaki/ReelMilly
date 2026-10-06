@@ -152,30 +152,45 @@
       実際の処理は別プロセスのワーカー（<code>reelmilly watch</code>）が行うため、定期実行を使う場合は常駐させておいてください。
       個別の実行は、一覧の選択メニューや詳細画面からいつでも手動で開始できます。
     </p>
-    <div class="settings-form">
-      {% for kind, label in schedule_labels.items() %}
-      {% set sch = schedules[kind] %}
-      <h3 style="margin-bottom: 0.2rem;">{{ label }}{{ info("sfw/nsfw判定: 画像・動画がsfw(一般向け)かnsfw(成人向け)かを、確信度付きで自動判定します。" if kind == "nsfw" else "説明文生成・タグ付与: 画像の内容説明を作り、タグ候補を付けます。Fanvueの投稿文の元にもなります。") }}</h3>
-      <div class="schedule-grid">
-        <label class="checkbox-label">
-          <input type="checkbox" name="schedule_{{ kind }}_enabled" {% if sch.enabled %}checked{% endif %}>
-          定期実行する{{ info("オンにすると、下で指定した時刻に自動で処理を始めます。オフなら手動で実行したときだけ動きます。") }}
-        </label>
-        <label>時刻{{ info("この時刻になると、条件に合う未処理の画像を処理待ちに追加します（1日1回）。実際の処理は reelmilly watch が動いている間に行われます。") }}
-          <input type="time" name="schedule_{{ kind }}_time" value="{{ sch.time }}" required>
-        </label>
-        <label>対象{{ info("すべての未処理画像: 判定結果・説明がまだ無い画像すべて。直近N日以内: 登録から指定した日数以内の未処理画像だけ。古い画像を処理したくないときに使います。") }}
-          <select name="schedule_{{ kind }}_scope" data-days-target="days-{{ kind }}">
-            <option value="all" {% if sch.scope == 'all' %}selected{% endif %}>すべての未処理画像</option>
-            <option value="days" {% if sch.scope == 'days' %}selected{% endif %}>直近N日以内に登録された未処理画像</option>
-          </select>
-        </label>
-        <label id="days-{{ kind }}">N ={{ info("「直近N日以内」を選んだときの日数です。登録からN日以内の未処理画像だけを対象にします。") }}
-          <input type="number" name="schedule_{{ kind }}_days" min="1" max="3650" value="{{ sch.days }}"> 日
-        </label>
-      </div>
-      {% endfor %}
+    {% macro sched_row(sch) %}
+    <div class="schedule-row">
+      <input type="hidden" name="sched_id" value="{{ sch.id }}">
+      <label>処理{{ info("どの処理を定期実行するかです。sfw/nsfw判定: 画像・動画がsfw(一般向け)かnsfw(成人向け)かを自動判定します。説明文生成・タグ付与: 内容説明を作り、タグ候補を付けます。") }}
+        <select name="sched_kind">
+          {% for kind, label in schedule_labels.items() %}
+          <option value="{{ kind }}" {% if sch.kind == kind %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>時刻{{ info("この時刻になると、条件に合う未処理の画像を処理待ちに追加します（1日1回）。実際の処理は reelmilly watch が動いている間に行われます。") }}
+        <input type="time" name="sched_time" value="{{ sch.time }}" required>
+      </label>
+      <label>対象{{ info("すべての未処理画像: 判定結果・説明がまだ無い画像すべて。直近N日以内: 登録から指定した日数以内の未処理画像だけ。古い画像を処理したくないときに使います。") }}
+        <select name="sched_scope">
+          <option value="all" {% if sch.scope == 'all' %}selected{% endif %}>すべての未処理画像</option>
+          <option value="days" {% if sch.scope == 'days' %}selected{% endif %}>直近N日以内の未処理画像</option>
+        </select>
+      </label>
+      <label class="sched-days">N ={{ info("「直近N日以内」を選んだときの日数です。登録からN日以内の未処理画像だけを対象にします。") }}
+        <input type="number" name="sched_days" min="1" max="3650" value="{{ sch.days }}"> 日
+      </label>
+      <label>状態{{ info("無効にすると、削除せずに一時的に止められます。") }}
+        <select name="sched_enabled">
+          <option value="1" {% if sch.enabled %}selected{% endif %}>有効</option>
+          <option value="0" {% if not sch.enabled %}selected{% endif %}>無効</option>
+        </select>
+      </label>
+      <button type="button" class="btn-ghost-inline sched-remove">削除</button>
     </div>
+    {% endmacro %}
+
+    <div id="schedule-list" class="settings-form">
+      {% for sch in schedules %}{{ sched_row(sch) }}{% endfor %}
+      <p class="hint" id="schedule-empty" {% if schedules %}hidden{% endif %}>スケジュールはまだありません。「＋スケジュールを追加」で登録できます。</p>
+    </div>
+    <template id="sched-template">{{ sched_row({'id': '', 'kind': 'nsfw', 'time': '03:00', 'scope': 'all', 'days': 7, 'enabled': True}) }}</template>
+    <button type="button" id="schedule-add" class="btn-ghost-inline">＋ スケジュールを追加</button>
+    <p class="hint">同じ処理を別の時刻に何度でも登録できます（例: 毎日 03:00 に全未処理、12:00 に直近1日分だけ）。</p>
 
     <h2>タグのカテゴリ{{ info("説明文を作るとき、ここで指定したカテゴリごとにタグを1つ付けるようAIへ指示します。例: 服装、性別、背景・ロケーション。「候補」を書くと、その中から選ばせます。判断できないカテゴリにはタグが付きません。") }}</h2>
     <p class="hint">
@@ -280,12 +295,31 @@
     if (e.target.classList.contains("category-remove")) e.target.closest(".category-row").remove();
   });
 
-  // 定期実行の対象が「直近N日」のときだけ日数を表示
-  document.querySelectorAll("[data-days-target]").forEach((sel) => {
-    const target = document.getElementById(sel.dataset.daysTarget);
-    const sync = () => { target.hidden = sel.value !== "days"; };
-    sel.addEventListener("change", sync);
-    sync();
+  // 定期実行スケジュールの追加・削除。対象が「直近N日」のときだけ日数を表示
+  const scheduleList = document.getElementById("schedule-list");
+  const scheduleEmpty = document.getElementById("schedule-empty");
+  function syncScheduleRow(row) {
+    row.querySelector(".sched-days").hidden = row.querySelector('[name="sched_scope"]').value !== "days";
+  }
+  function syncScheduleEmpty() {
+    scheduleEmpty.hidden = scheduleList.querySelector(".schedule-row") !== null;
+  }
+  scheduleList.querySelectorAll(".schedule-row").forEach(syncScheduleRow);
+  scheduleList.addEventListener("change", (e) => {
+    if (e.target.name === "sched_scope") syncScheduleRow(e.target.closest(".schedule-row"));
+  });
+  scheduleList.addEventListener("click", (e) => {
+    if (e.target.classList.contains("sched-remove")) {
+      e.target.closest(".schedule-row").remove();
+      syncScheduleEmpty();
+    }
+  });
+  document.getElementById("schedule-add").addEventListener("click", () => {
+    const fragment = document.getElementById("sched-template").content.cloneNode(true);
+    scheduleList.insertBefore(fragment, scheduleEmpty);
+    const row = scheduleList.querySelectorAll(".schedule-row");
+    syncScheduleRow(row[row.length - 1]);
+    syncScheduleEmpty();
   });
 
   // タブ切り替え(全セクションは同一フォーム内にあり、非表示でも保存時に送信される)

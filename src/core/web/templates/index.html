@@ -2,77 +2,63 @@
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
 {% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks %}
-<section id="dropzone" class="dropzone">
-  <input type="file" id="dropzone-file-input" multiple accept="image/*,video/*" hidden>
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-    <polyline points="17 8 12 3 7 8"></polyline>
-    <line x1="12" y1="3" x2="12" y2="15"></line>
-  </svg>
-  <p>ここに画像・動画をドラッグ&ドロップ、またはクリックして選択</p>
-  <p id="dropzone-status" class="dropzone-status"></p>
-</section>
+{# 複数選択できる絞り込み(項目内はOR)。チェックを入れて「絞り込む」で適用する #}
+{% macro multi(name, label, options, selected, hint='') %}
+{% set sel = selected | map('string') | list %}
+<div class="ms">
+  <details>
+    <summary>{{ label }}<span class="ms-count" {% if not sel %}hidden{% endif %}>{{ sel | length }}</span></summary>
+    <div class="ms-panel">
+      {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+      {% for value, text in options %}
+      <label class="ms-opt"><input type="checkbox" name="{{ name }}" value="{{ value }}" {% if value | string in sel %}checked{% endif %}> {{ text }}</label>
+      {% else %}
+      <p class="hint">選択肢がありません</p>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+{% endmacro %}
 
-<div id="ai-status" class="banner" hidden></div>
+<section class="action-bar">
+  <div id="job-status" class="job-status" aria-live="polite"></div>
+  <div class="action-buttons">
+    <form method="post" action="{{ url_for('create_folder') }}" class="new-folder">
+      <input type="text" name="name" placeholder="新規フォルダ名" required>
+      <button type="submit">フォルダ作成</button>
+    </form>
+    <input type="file" id="upload-input" multiple accept="image/*,video/*" hidden>
+    <button type="button" id="upload-button" class="btn-primary">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      画像アップロード
+    </button>
+  </div>
+</section>
 
 <section class="filters">
-  <form method="get">
-    <label>ステータス
-      <select name="status" onchange="this.form.submit()">
-        <option value="">すべて</option>
-        {% for s in ["analyzing", "pending_approval", "ready"] %}
-        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
+  <form method="get" id="filter-form">
+    <label class="search-box">検索
+      <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグで検索（空白区切りでAND）">
     </label>
-    <label>投稿状態
-      <select name="post" onchange="this.form.submit()">
-        <option value="">すべて</option>
-        {% for ch, c in post_channels.items() %}
-        {% for st, st_label in post_status_labels.items() %}
-        <option value="{{ ch }}:{{ st }}" {% if post_param == ch ~ ':' ~ st %}selected{% endif %}>{{ c.label }} {{ st_label }}</option>
-        {% endfor %}
-        {% endfor %}
-      </select>
-    </label>
-    <label>区分
-      <select name="content_rating" onchange="this.form.submit()">
-        <option value="">すべて</option>
-        {% for r in content_ratings %}
-        <option value="{{ r }}" {% if rating_filter == r %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>タグ
-      <select name="tag" onchange="this.form.submit()">
-        <option value="">すべて</option>
-        {% for t in tags %}
-        <option value="{{ t }}" {% if tag_filter == t %}selected{% endif %}>{{ t }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>フォルダ
-      <select name="folder_id" onchange="this.form.submit()">
-        <option value="">すべて</option>
-        {% for f in folders %}
-        <option value="{{ f.id }}" {% if folder_id == f.id %}selected{% endif %}>{{ f.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>承認状態
-      <select name="confirmed" onchange="this.form.submit()">
-        <option value="">すべて</option>
-        <option value="0" {% if confirmed_param == '0' %}selected{% endif %}>承認待ち</option>
-        <option value="1" {% if confirmed_param == '1' %}selected{% endif %}>承認済み</option>
-      </select>
-    </label>
-  </form>
-
-  <form method="post" action="{{ url_for('create_folder') }}" class="new-folder">
-    <input type="text" name="name" placeholder="新規フォルダ名" required>
-    <button type="submit">フォルダ作成</button>
+    {{ multi("status", "ステータス", [("analyzing", "analyzing（未処理・分析中）"), ("pending_approval", "pending_approval（承認待ち）"), ("ready", "ready（承認済み）")], status_sel) }}
+    {% set post_options = [] %}
+    {% for ch, c in post_channels.items() %}{% for st, st_label in post_status_labels.items() %}{% set _ = post_options.append((ch ~ ':' ~ st, c.label ~ ' ' ~ st_label)) %}{% endfor %}{% endfor %}
+    {{ multi("post", "投稿状態", post_options, post_sel) }}
+    {{ multi("content_rating", "区分", rating_options, rating_sel) }}
+    {{ multi("tag", "タグ", tag_options, tag_sel, "選んだタグをすべて含む作品に絞り込みます") }}
+    {{ multi("folder_id", "フォルダ", folder_options, folder_sel) }}
+    {{ multi("confirmed", "承認状態", [("0", "承認待ち"), ("1", "承認済み")], confirmed_sel) }}
+    <button type="submit" class="btn-primary">絞り込む</button>
+    {% if active_filters %}<a href="{{ url_for('index') }}" class="filter-clear">クリア</a>{% endif %}
   </form>
 </section>
+
+<div id="dropzone" class="asset-area">
+<div class="drop-overlay">ここにドロップして画像・動画をアップロード</div>
 
 <div class="grid-toolbar">
   <div class="grid-toolbar-left">
@@ -118,6 +104,7 @@
   </div>
   {% endfor %}
 </section>
+</div>
 
 <dialog id="lightbox" class="lightbox">
   <button type="button" class="lightbox-close" aria-label="閉じる">&times;</button>

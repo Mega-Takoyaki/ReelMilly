@@ -154,3 +154,24 @@ window.confirmDialog = function confirmDialog(message) {
   });
   window.addEventListener("scroll", () => { pop.hidden = true; current = null; }, true);
 })();
+
+// 一覧の複数選択フィルタ: 外側をクリックするか、別のフィルタを開いたら閉じる(項目内はチェックだけで適用はしない)
+(function () {
+  const panels = Array.from(document.querySelectorAll(".ms details"));
+  if (panels.length === 0) return;
+  document.addEventListener("click", (e) => {
+    panels.forEach((d) => { if (d.open && !d.contains(e.target)) d.open = false; });
+  });
+  panels.forEach((d) => d.addEventListener("toggle", () => {
+    if (d.open) panels.forEach((o) => { if (o !== d) o.open = false; });
+  }));
+  // チェックを入れた数を、絞り込む前でも見出しに反映する
+  document.querySelectorAll(".ms").forEach((ms) => {
+    const count = ms.querySelector(".ms-count");
+    ms.addEventListener("change", () => {
+      const n = ms.querySelectorAll("input:checked").length;
+      count.textContent = n;
+      count.hidden = n === 0;
+    });
+  });
+})();

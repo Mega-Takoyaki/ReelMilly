@@ -95,76 +95,124 @@ def get_asset(conn: sqlite3.Connection, asset_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def _as_list(value) -> list:
+    """単一値・リスト・Noneを、空要素を除いたリストにそろえる。"""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [v for v in value if v is not None and v != ""]
+    return [value] if value != "" else []
+
+
+def _like_escape(word: str) -> str:
+    return word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def list_assets(
     conn: sqlite3.Connection,
-    status: str | None = None,
-    content_rating: str | None = None,
-    folder_id: int | None = None,
-    tag: str | None = None,
+    status=None,
+    content_rating=None,
+    folder_id=None,
+    tag=None,
     channel: str | None = None,
     confirmed_only: bool = False,
     kind: str | None = None,
-    confirmed: bool | None = None,
+    confirmed=None,
     post_channel: str | None = None,
     post_status: str | None = None,
+    post_filters: list[tuple[str, str]] | None = None,
+    q: str | None = None,
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict]:
+    """アセット一覧。絞り込みは項目間でAND。
+
+    `status`/`content_rating`/`folder_id`/`confirmed`はリストで複数指定でき、その項目内はOR
+    (例: status=["analyzing", "ready"])。`tag`はリストの場合すべてを含むもの(AND)。
+    `post_filters`は[(投稿先, "posted"/"failed"/"none")]のいずれかに該当(OR)。
+    `q`は空白区切りの語を、AI生成の内容説明またはタグ名に含むもの(語ごとにAND)。
+    """
     query = "SELECT DISTINCT assets.* FROM assets"
     joins = []
     conditions = []
     params: dict = {}
 
-    if folder_id is not None:
-        joins.append("JOIN asset_folders ON asset_folders.asset_id = assets.id")
-        conditions.append("asset_folders.folder_id = :folder_id")
-        params["folder_id"] = folder_id
+    def in_clause(column: str, values: list, prefix: str) -> None:
+        names = []
+        for i, v in enumerate(values):
+            params[f"{prefix}{i}"] = v
+            names.append(f":{prefix}{i}")
+        conditions.append(f"{column} IN ({', '.join(names)})")
 
-    if tag is not None:
-        joins.append("JOIN asset_tags ON asset_tags.asset_id = assets.id")
-        joins.append("JOIN tags ON tags.id = asset_tags.tag_id")
-        conditions.append("tags.name = :tag")
-        params["tag"] = tag
+    folder_ids = _as_list(folder_id)
+    if folder_ids:
+        names = []
+        for i, v in enumerate(folder_ids):
+            params[f"fold{i}"] = v
+            names.append(f":fold{i}")
+        conditions.append(
+            "EXISTS (SELECT 1 FROM asset_folders af WHERE af.asset_id = assets.id "
+            f"AND af.folder_id IN ({', '.join(names)}))"
+        )
+
+    for i, name in enumerate(_as_list(tag)):
+        params[f"tag{i}"] = name
+        conditions.append(
+            "EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
+            f"WHERE at.asset_id = assets.id AND t.name = :tag{i})"
+        )
 
     if channel is not None:
         joins.append("JOIN channels ON channels.asset_id = assets.id")
         conditions.append("channels.channel = :channel")
         params["channel"] = channel
 
-    if status is not None:
-        conditions.append("assets.status = :status")
-        params["status"] = status
+    statuses = _as_list(status)
+    if statuses:
+        in_clause("assets.status", statuses, "st")
 
-    if content_rating is not None:
-        conditions.append("assets.content_rating = :content_rating")
-        params["content_rating"] = content_rating
+    ratings = _as_list(content_rating)
+    if ratings:
+        in_clause("assets.content_rating", ratings, "rt")
 
     if confirmed_only:
         conditions.append("assets.content_rating_confirmed = 1")
 
-    if confirmed is True:
-        conditions.append("assets.content_rating_confirmed = 1")
-    elif confirmed is False:
-        conditions.append("assets.content_rating_confirmed = 0")
+    confirmed_values = {bool(v) for v in _as_list(confirmed)}
+    if len(confirmed_values) == 1:  # 承認待ち・承認済みの両方を選んだ場合は絞り込まない
+        conditions.append(f"assets.content_rating_confirmed = {1 if True in confirmed_values else 0}")
 
     if kind is not None:
         conditions.append("assets.kind = :kind")
         params["kind"] = kind
 
-    # 投稿状態での絞り込み。post_statusは"posted"/"failed"/"none"(その投稿先へ未投稿)
+    # 投稿状態での絞り込み。状態は"posted"/"failed"/"none"(その投稿先へ未投稿)
+    pairs = list(post_filters or [])
     if post_channel is not None and post_status is not None:
-        params["post_channel"] = post_channel
-        if post_status == "none":
-            conditions.append(
-                "NOT EXISTS (SELECT 1 FROM posts p WHERE p.asset_id = assets.id AND p.channel = :post_channel)"
-            )
-        else:
-            conditions.append(
-                "EXISTS (SELECT 1 FROM posts p WHERE p.asset_id = assets.id "
-                "AND p.channel = :post_channel AND p.status = :post_status)"
-            )
-            params["post_status"] = post_status
+        pairs.append((post_channel, post_status))
+    if pairs:
+        ors = []
+        for i, (ch, st) in enumerate(pairs):
+            params[f"pc{i}"] = ch
+            if st == "none":
+                ors.append(f"NOT EXISTS (SELECT 1 FROM posts p WHERE p.asset_id = assets.id AND p.channel = :pc{i})")
+            else:
+                params[f"ps{i}"] = st
+                ors.append(
+                    "EXISTS (SELECT 1 FROM posts p WHERE p.asset_id = assets.id "
+                    f"AND p.channel = :pc{i} AND p.status = :ps{i})"
+                )
+        conditions.append("(" + " OR ".join(ors) + ")")
+
+    # フリーテキスト検索: AI生成の内容説明、またはタグ名に含まれる語(語ごとにAND)
+    for i, word in enumerate((q or "").split()):
+        params[f"q{i}"] = f"%{_like_escape(word)}%"
+        conditions.append(
+            f"(assets.content_description LIKE :q{i} ESCAPE '\\' OR EXISTS ("
+            "SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
+            f"WHERE at.asset_id = assets.id AND t.name LIKE :q{i} ESCAPE '\\'))"
+        )
 
     if joins:
         query += " " + " ".join(joins)
@@ -442,6 +490,13 @@ def requeue_running_ai_tasks(conn: sqlite3.Connection) -> None:
     """ワーカーが異常終了して実行中のまま残ったタスクを待機中へ戻す。"""
     conn.execute("UPDATE ai_tasks SET status = 'queued' WHERE status = 'running'")
     conn.commit()
+
+
+def list_ai_tasks(conn: sqlite3.Connection, status: str, limit: int = 5) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM ai_tasks WHERE status = ? ORDER BY id LIMIT ?", (status, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def ai_task_counts(conn: sqlite3.Connection) -> dict:

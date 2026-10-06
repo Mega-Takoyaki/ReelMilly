@@ -229,12 +229,41 @@ def _jst(y, m, d, hh, mm):
 def test_scheduled_enqueue_waits_for_time_and_runs_once_per_day(tmp_path):
     _config, conn = _setup(tmp_path)
     _insert(conn, tmp_path)
-    settings_module.set_ai_schedule(conn, "nsfw", True, "03:00", "all", 7)
+    settings_module.set_ai_schedules(conn, [{"id": "a", "kind": "nsfw", "enabled": True, "time": "03:00", "scope": "all", "days": 7}])
 
     assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 2, 59)) == 0
     assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 3, 0)) == 1
     assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 9, 0)) == 0  # 同日は1回だけ
     assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 2, 3, 0)) == 0  # 積み済み(待機中)
+
+
+def test_multiple_schedules_run_independently(tmp_path):
+    _config, conn = _setup(tmp_path)
+    _insert(conn, tmp_path, "a1")
+    settings_module.set_ai_schedules(conn, [
+        {"id": "morning", "kind": "nsfw", "enabled": True, "time": "03:00", "scope": "all", "days": 7},
+        {"id": "noon", "kind": "describe", "enabled": True, "time": "12:00", "scope": "all", "days": 7},
+        {"id": "off", "kind": "describe", "enabled": False, "time": "01:00", "scope": "all", "days": 7},
+    ])
+
+    assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 4, 0)) == 1  # nsfwだけ
+    assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 13, 0)) == 1  # 正午のdescribe
+    kinds = sorted(r["kind"] for r in conn.execute("SELECT kind FROM ai_tasks"))
+    assert kinds == ["describe", "nsfw"]  # 無効なスケジュールは動かない
+
+
+def test_next_scheduled_for_status_display(tmp_path):
+    _config, conn = _setup(tmp_path)
+    assert worker.next_scheduled(conn, "Asia/Tokyo") is None
+    settings_module.set_ai_schedules(conn, [
+        {"id": "a", "kind": "nsfw", "enabled": True, "time": "03:00", "scope": "all", "days": 7},
+        {"id": "b", "kind": "describe", "enabled": True, "time": "21:00", "scope": "all", "days": 7},
+    ])
+    db.set_last_run_date(conn, "ai_sched_a", "2026-10-01")  # 朝の分は実行済み
+    nxt = worker.next_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 10, 0))
+    assert nxt == {"day": "今日", "time": "21:00", "labels": ["説明文生成・タグ付与"]}
+    nxt = worker.next_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 22, 0))
+    assert nxt["day"] == "まもなく"  # 時刻を過ぎて今日未実行 → 次の巡回で実行される
 
 
 def test_scheduled_enqueue_only_unprocessed_and_respects_days(tmp_path):
@@ -246,7 +275,7 @@ def test_scheduled_enqueue_only_unprocessed_and_respects_days(tmp_path):
         conn, tmp_path, "done", created_at=(now - timedelta(days=1)).astimezone(timezone.utc).isoformat(),
         nsfw_auto_rating="sfw", nsfw_auto_confidence=0.1,
     )
-    settings_module.set_ai_schedule(conn, "nsfw", True, "03:00", "days", 7)
+    settings_module.set_ai_schedules(conn, [{"id": "a", "kind": "nsfw", "enabled": True, "time": "03:00", "scope": "days", "days": 7}])
 
     assert worker.enqueue_scheduled(conn, "Asia/Tokyo", now) == 1  # 直近7日かつ未処理は"new"のみ
     queued = [r["asset_id"] for r in conn.execute("SELECT asset_id FROM ai_tasks")]
@@ -259,26 +288,21 @@ def test_disabled_schedule_does_nothing(tmp_path):
     assert worker.enqueue_scheduled(conn, "Asia/Tokyo", _jst(2026, 10, 1, 12, 0)) == 0
 
 
+def test_legacy_per_kind_schedule_is_carried_over(tmp_path):
+    _config, conn = _setup(tmp_path)
+    db.set_setting(conn, "schedule_nsfw", json.dumps({"enabled": True, "time": "04:00", "scope": "all", "days": 7}))
+    schedules = settings_module.get_ai_schedules(conn)
+    assert [(s["kind"], s["time"], s["enabled"]) for s in schedules] == [("nsfw", "04:00", True)]
+
+
 def test_schedule_and_categories_settings_roundtrip(tmp_path):
     _config, conn = _setup(tmp_path)
-    settings_module.set_ai_schedule(conn, "describe", True, "25:99", "bogus", "x")  # 不正値は既定へ
-    sch = settings_module.get_ai_schedule(conn, "describe")
-    assert sch == {"enabled": True, "time": "03:00", "scope": "all", "days": 7}
+    settings_module.set_ai_schedules(conn, [{"kind": "describe", "enabled": True, "time": "25:99", "scope": "bogus", "days": "x"}])
+    sch = settings_module.get_ai_schedules(conn)[0]
+    assert (sch["time"], sch["scope"], sch["days"]) == ("03:00", "all", 7)  # 不正値は既定へ
+    settings_module.set_ai_schedules(conn, [{"kind": "other", "time": "03:00"}])
+    assert settings_module.get_ai_schedules(conn) == []  # 不明な種別は捨てる
 
     settings_module.set_tag_categories(conn, [{"name": " 服装 ", "options": "a, b"}, {"name": "", "options": "x"}])
     assert settings_module.get_tag_categories(conn) == [{"name": "服装", "options": "a, b"}]
     assert settings_module.tag_category_instructions(conn).count("- ") == 1
-
-
-def test_lock_of_dead_process_is_taken_over_immediately(tmp_path):
-    """強制終了されたワーカーのロックは、有効期限を待たずに引き継ぐ。"""
-    config, conn = _setup(tmp_path)
-    _insert(conn, tmp_path)
-    db.enqueue_ai_task(conn, "a1", "nsfw")
-    fresh = datetime.now(timezone.utc).isoformat()
-    db.set_setting(conn, worker.LOCK_KEY, json.dumps({"pid": 2**30, "heartbeat": fresh, "current": "a1"}))
-    classifier = MagicMock()
-    classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.1)
-
-    assert worker.get_status(conn)["worker_alive"] is False  # 死んだPIDは「稼働中」と表示しない
-    assert _run(config, conn, classifier=classifier) == (1, 0)

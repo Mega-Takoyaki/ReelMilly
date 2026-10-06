@@ -77,18 +77,51 @@ def _read_lock(conn: sqlite3.Connection) -> dict | None:
         return None
 
 
-def get_status(conn: sqlite3.Connection) -> dict:
+def next_scheduled(conn: sqlite3.Connection, timezone_name: str, now: datetime | None = None) -> dict | None:
+    """次に実行される定期実行(今日これから、または明日)。画面の状況表示用。"""
+    local_now = (now or _now()).astimezone(ZoneInfo(timezone_name))
+    today = local_now.strftime("%Y-%m-%d")
+    hhmm = local_now.strftime("%H:%M")
+    upcoming = []
+    for sch in settings_module.get_ai_schedules(conn):
+        if not sch["enabled"]:
+            continue
+        done_today = db.get_last_run_date(conn, f"ai_sched_{sch['id']}") == today
+        day = "今日" if (sch["time"] > hhmm and not done_today) else "明日"
+        # 時刻を過ぎていても今日未実行なら、次回のワーカー巡回で実行される(=まもなく)
+        if sch["time"] <= hhmm and not done_today:
+            day = "まもなく"
+        upcoming.append((0 if day == "まもなく" else (1 if day == "今日" else 2), sch["time"], day, sch))
+    if not upcoming:
+        return None
+    upcoming.sort(key=lambda x: (x[0], x[1]))
+    _, time, day, _sch = upcoming[0]
+    same = [x for x in upcoming if x[2] == day and x[1] == time]
+    return {
+        "day": day,
+        "time": time,
+        "labels": [settings_module.AI_KIND_LABELS[x[3]["kind"]] for x in same],
+    }
+
+
+def get_status(conn: sqlite3.Connection, timezone_name: str | None = None) -> dict:
     """UI向けのAI処理の状況。"""
     counts = db.ai_task_counts(conn)
     lock = _read_lock(conn)
     alive = bool(lock and _now() - lock["heartbeat_dt"] < ALIVE_WITHIN and _pid_alive(lock.get("pid")))
     running = db.running_ai_task(conn)
+    upcoming = [
+        {"asset_id": t["asset_id"], "kind": t["kind"]}
+        for t in db.list_ai_tasks(conn, "queued", limit=5)
+    ]
     return {
         "queued": counts["queued"],
         "running": counts["running"],
         "failed": counts["failed"],
         "worker_alive": alive,
         "current": {"asset_id": running["asset_id"], "kind": running["kind"]} if running and alive else None,
+        "upcoming": upcoming,
+        "next_schedule": next_scheduled(conn, timezone_name) if timezone_name else None,
     }
 
 
@@ -107,11 +140,11 @@ def enqueue_scheduled(conn: sqlite3.Connection, timezone_name: str, now: datetim
     local_now = (now or _now()).astimezone(ZoneInfo(timezone_name))
     today = local_now.strftime("%Y-%m-%d")
     queued = 0
-    for kind in settings_module.AI_SCHEDULE_KINDS:
-        schedule = settings_module.get_ai_schedule(conn, kind)
+    for schedule in settings_module.get_ai_schedules(conn):
+        kind = schedule["kind"]
         if not schedule["enabled"]:
             continue
-        job_name = f"ai_{kind}"
+        job_name = f"ai_sched_{schedule['id']}"
         if db.get_last_run_date(conn, job_name) == today:
             continue
         if local_now.strftime("%H:%M") < schedule["time"]:
