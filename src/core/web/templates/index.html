@@ -74,7 +74,7 @@
 <section class="filters">
   <form method="get" id="filter-form">
     <label class="search-box">検索
-      <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグで検索（空白区切りでAND）">
+      <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグ・元のファイル名で検索（空白区切りでAND）">
     </label>
     {# 候補は、いま実在する値だけを件数つきで出す(ごみ箱の作品は除く) #}
     {{ type_filter(type_tree, type_count) }}

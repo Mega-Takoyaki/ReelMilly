@@ -36,6 +36,12 @@
     <div class="card">
       <dl id="live-props">
         <dt>種別</dt><dd>{{ asset.kind }}</dd>
+        <dt>元のファイル名</dt>
+        <dd>
+          {{ asset.original_name or '不明' }}
+          <a href="{{ url_for('asset_download', asset_id=asset.id) }}" class="btn-download" download>ダウンロード</a>
+          {% if asset.wm_path %}<a href="{{ url_for('asset_download', asset_id=asset.id, variant='wm') }}" class="btn-download" download>透かし入りをダウンロード</a>{% endif %}
+        </dd>
         <dt>解像度</dt>
         <dd>
           {% if properties.width and properties.height %}

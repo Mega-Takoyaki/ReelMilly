@@ -304,8 +304,24 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
     return 0
 
 
+def cmd_migrate_filenames(config: Config) -> int:
+    """既存の作品のファイル名を作品ID(`<ID>.<拡張子>`)へそろえ、元の名前を記録する。何度実行しても安全。"""
+    from core.filenames import normalize_asset_files
+
+    conn = get_connection(config.paths.db_path)
+    init_db(conn)
+    result = normalize_asset_files(config, conn)
+    conn.close()
+    print(f"[migrate-filenames] {result.renamed}件のファイル名を作品IDに改名しました")
+    for message in result.skipped:
+        print(f"[migrate-filenames] スキップ: {message}")
+    return 0
+
+
 def cmd_web(config: Config) -> int:
     from core.web.app import create_app
+
+    cmd_migrate_filenames(config)  # 旧バージョンで取り込んだ作品のファイル名も、起動時にそろえる
 
     app = create_app(config)
     print(f"[web] starting on http://{config.web.host}:{config.web.port} (Ctrl+Cで終了)")
@@ -318,6 +334,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("doctor", help="ディレクトリ・DB疎通を確認する")
     subparsers.add_parser("init", help="ディレクトリとDBを初期化する")
+    subparsers.add_parser(
+        "migrate-filenames", help="既存の作品のファイル名を作品IDへそろえ、元のファイル名を記録する"
+    )
     subparsers.add_parser("ingest", help="inboxのメディアを取り込む")
     subparsers.add_parser(
         "analyze", help="analyzing状態のアセットにNSFW自動仕分け・内容説明取得を再試行する"
@@ -350,6 +369,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_doctor(config)
     if args.command == "init":
         return cmd_init(config)
+    if args.command == "migrate-filenames":
+        return cmd_migrate_filenames(config)
     if args.command == "ingest":
         return cmd_ingest(config)
     if args.command == "analyze":

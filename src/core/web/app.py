@@ -452,6 +452,25 @@ def create_app(config: Config) -> Flask:
             return send_file(asset["wm_path"])  # 透かし入り(確認用)
         return send_file(asset["file_path"])
 
+    @app.route("/assets/<asset_id>/download")
+    def asset_download(asset_id):
+        """元のファイル名で保存できるようにダウンロードする。variant=wmで透かし入り。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        conn.close()
+        if asset is None:
+            abort(404)
+        original = asset.get("original_name") or Path(asset["file_path"]).name
+        if request.args.get("variant") == "wm" and asset.get("wm_path") and Path(asset["wm_path"]).exists():
+            path = Path(asset["wm_path"])
+            stem = Path(original).stem
+            name = f"{stem}_watermarked{path.suffix}"
+        else:
+            path, name = Path(asset["file_path"]), original
+        if not path.exists():
+            abort(404)
+        return send_file(path, as_attachment=True, download_name=name)
+
     # --- 透かし(ウォーターマーク) ---
 
     @app.route("/api/watermark", methods=["POST"])

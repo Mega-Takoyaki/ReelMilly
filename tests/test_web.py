@@ -415,9 +415,11 @@ def test_upload_avoids_filename_collision(app_and_conn):
         )
         assert response.get_json()["uploaded"] == 1
 
+    # 同じ名前を2回アップロードしても、別々の作品になる。ディスク上はID名、元の名前は記録される
     all_assets = db.list_assets(conn, limit=100)
-    dup_named = [a for a in all_assets if "dup" in a["file_path"]]
+    dup_named = [a for a in all_assets if a["original_name"] == "dup.jpg"]
     assert len(dup_named) == 2
+    assert all(a["file_path"].endswith(f"{a['id']}.jpg") for a in dup_named)
 
 
 def test_update_caption_sets_fanvue_text(app_and_conn):
@@ -1105,4 +1107,34 @@ def test_upload_accepts_japanese_file_names(app_and_conn):
     ).get_json()
     assert res["ingested"] == 1 and res["rejected"] == ["メモ.txt"]  # 画像は取り込まれ、非対応形式だけが除かれる
     asset = db.get_asset(conn, res["asset_ids"][0])
-    assert asset["file_path"].endswith("展示会ブースの笑顔の案内スタッフ.png") and asset["kind"] == "image"
+    assert asset["original_name"] == "展示会ブースの笑顔の案内スタッフ.png"  # 元の名前は記録される
+    assert asset["file_path"].endswith(f"{asset['id']}.png") and asset["kind"] == "image"  # ディスク上はID名
+
+
+def test_download_uses_original_name_and_search_finds_it(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.update_asset(conn, "a1", original_name="展示会ブースの笑顔.jpg")
+
+    res = client.get("/assets/a1/download")
+    assert res.status_code == 200
+    disposition = res.headers["Content-Disposition"]
+    assert "attachment" in disposition and "filename*=UTF-8''" in disposition  # 日本語の元の名前で保存される
+    assert "%E5%B1%95%E7%A4%BA%E4%BC%9A" in disposition
+
+    page = client.get("/assets/a1").get_data(as_text=True)
+    assert "展示会ブースの笑顔.jpg" in page and "ダウンロード" in page
+
+    # 元のファイル名でも検索できる
+    assert 'data-asset-id="a1"' in client.get("/?q=展示会").get_data(as_text=True)
+    assert 'data-asset-id="a1"' not in client.get("/?q=存在しない名前").get_data(as_text=True)
+
+
+def test_download_watermarked_variant_name(app_and_conn, tmp_path):
+    app, conn = app_and_conn
+    client = app.test_client()
+    wm = tmp_path / "watermarked.jpg"
+    wm.write_bytes(b"x")
+    db.update_asset(conn, "a1", original_name="元の名前.jpg", wm_path=str(wm), wm_text="@x", wm_position="center")
+    disposition = client.get("/assets/a1/download?variant=wm").headers["Content-Disposition"]
+    assert "_watermarked.jpg" in disposition

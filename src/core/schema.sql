@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS assets (
     content_description TEXT,
     fanvue_caption_draft TEXT,
     analysis_error TEXT,
+    original_name TEXT,  -- 取り込み時の元のファイル名(表示・検索・ダウンロード用)。ディスク上は<ID>.<拡張子>
     wm_path TEXT,      -- 透かし入りファイルのパス(NULL=透かし無し)。元のfile_pathは変えない
     wm_text TEXT,
     wm_position TEXT,

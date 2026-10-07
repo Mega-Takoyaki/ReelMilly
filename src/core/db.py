@@ -30,6 +30,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")
     if "deleted_at" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN deleted_at TEXT")
+    if "original_name" not in columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN original_name TEXT")
+    # 既存の作品は、いまのファイル名を元の名前として記録する(ファイルは動かさない)
+    for row in conn.execute("SELECT id, file_path FROM assets WHERE original_name IS NULL").fetchall():
+        conn.execute("UPDATE assets SET original_name = ? WHERE id = ?", (Path(row["file_path"]).name, row["id"]))
     for column in ("wm_path", "wm_text", "wm_position"):
         if column not in columns:
             conn.execute(f"ALTER TABLE assets ADD COLUMN {column} TEXT")
@@ -61,13 +66,13 @@ def insert_asset(conn: sqlite3.Connection, asset: dict) -> None:
         """
         INSERT INTO assets (
             id, status, kind, file_path, caption, x_caption, fanvue_text,
-            audience, price_cents, fanvue_url, fanvue_uuid, x_ok,
+            audience, price_cents, fanvue_url, fanvue_uuid, x_ok, original_name,
             content_rating, content_rating_confirmed, nsfw_auto_rating,
             nsfw_auto_confidence, content_description, fanvue_caption_draft,
             created_at, updated_at
         ) VALUES (
             :id, :status, :kind, :file_path, :caption, :x_caption, :fanvue_text,
-            :audience, :price_cents, :fanvue_url, :fanvue_uuid, :x_ok,
+            :audience, :price_cents, :fanvue_url, :fanvue_uuid, :x_ok, :original_name,
             :content_rating, :content_rating_confirmed, :nsfw_auto_rating,
             :nsfw_auto_confidence, :content_description, :fanvue_caption_draft,
             :created_at, :updated_at
@@ -86,6 +91,7 @@ def insert_asset(conn: sqlite3.Connection, asset: dict) -> None:
             "fanvue_url": asset.get("fanvue_url"),
             "fanvue_uuid": asset.get("fanvue_uuid"),
             "x_ok": int(asset.get("x_ok", False)),
+            "original_name": asset.get("original_name"),
             "content_rating": asset.get("content_rating"),
             "content_rating_confirmed": int(asset.get("content_rating_confirmed", False)),
             "nsfw_auto_rating": asset.get("nsfw_auto_rating"),
@@ -150,7 +156,7 @@ def list_assets(
     (例: status=["analyzing", "ready"])。1つの作品が複数持てる`tag`/`folder_id`だけは、
     `tag_mode`/`folder_mode`で"all"(選んだものをすべて含む=AND)か"any"(いずれかを含む=OR)を選べる。
     `post_filters`は[(投稿先, "posted"/"failed"/"none")]のいずれかに該当(OR)。
-    `q`は空白区切りの語を、AI生成の内容説明またはタグ名に含むもの(語ごとにAND)。
+    `q`は空白区切りの語を、AI生成の内容説明・タグ名・元のファイル名に含むもの(語ごとにAND)。
     """
     query = "SELECT DISTINCT assets.* FROM assets"
     joins = []
@@ -282,7 +288,7 @@ def list_assets(
     for i, word in enumerate((q or "").split()):
         params[f"q{i}"] = f"%{_like_escape(word)}%"
         conditions.append(
-            f"(assets.content_description LIKE :q{i} ESCAPE '\\' OR EXISTS ("
+            f"(assets.content_description LIKE :q{i} ESCAPE '\\' OR assets.original_name LIKE :q{i} ESCAPE '\\' OR EXISTS ("
             "SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
             f"WHERE at.asset_id = assets.id AND t.name LIKE :q{i} ESCAPE '\\'))"
         )

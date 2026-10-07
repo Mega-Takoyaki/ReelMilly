@@ -15,6 +15,7 @@ from core import db
 from core.analysis import AnalysisResult, analyze_asset, apply_auto_tags
 from core.config import Config
 from core.events import log_event
+from core.filenames import id_filename
 from core.nsfw import NsfwClassifier
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
@@ -103,7 +104,7 @@ def ingest_inbox(
         asset_id = _generate_asset_id()
         dest_dir = config.paths.ready / asset_id
         dest_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = dest_dir / media_path.name
+        dest_path = dest_dir / id_filename(asset_id, media_path)  # ディスク上は<ID>.<拡張子>
         shutil.move(str(media_path), str(dest_path))
 
         if sidecar_path:
@@ -120,6 +121,7 @@ def ingest_inbox(
             "status": "pending_approval" if analysis.success else "analyzing",
             "kind": kind,
             "file_path": str(dest_path),
+            "original_name": media_path.name,  # 元のファイル名は作品の情報として残す
             "caption": sidecar_data.get("caption"),
             "x_caption": sidecar_data.get("x_caption"),
             "fanvue_text": sidecar_data.get("fanvue_text"),

@@ -1173,3 +1173,5 @@ dialog.wm-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .wm-sliders input[type="range"] { width: 100%; }
 .wm-preview { text-align: center; margin-bottom: 0.8rem; }
 .wm-preview img { max-width: 100%; max-height: 22rem; border-radius: var(--radius-md); border: 1px solid var(--border); }
+
+.btn-download { margin-left: 0.6rem; font-size: 0.8rem; white-space: nowrap; }
