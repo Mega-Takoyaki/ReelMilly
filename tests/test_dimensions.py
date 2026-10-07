@@ -76,7 +76,7 @@ def test_full_mode_toggle_and_aspect_ratio_in_page(tmp_path):
 
     client = create_app(config).test_client()
     body = client.get("/").get_data(as_text=True)
-    assert 'style="--ar: 300 / 600"' in body  # 縦横比が、カードに渡される(読み込み前から枠を確保)
+    assert 'style="--ar: 300 / 600; --arn: 0.5"' in body  # 縦横比が、カードに渡される(読み込み前から枠を確保)
     assert 'id="thumb-full-toggle"' in body and "コンパクト" in body and "フル" in body  # スライダーの右のトグル
     assert body.index('id="thumb-size-slider"') < body.index('id="thumb-full-toggle"')
     assert (db.get_asset(conn, asset_id)["width"], db.get_asset(conn, asset_id)["height"]) == (300, 600)  # 補った値は保存される
