@@ -1280,3 +1280,15 @@ def test_channels_saved_via_ajax_from_detail(app_and_conn):
     assert db.get_channels(conn, "a1") == ["x"]
     res = client.post("/assets/a1/channels", data={}, headers={"X-Requested-With": "XMLHttpRequest"})
     assert res.get_json()["no_plan"] is True and db.get_channels(conn, "a1") == []
+
+
+def test_drag_select_script_loaded_and_internal_drags_are_not_uploads(app_and_conn):
+    app, _ = app_and_conn
+    client = app.test_client()
+    for page in ("/", "/trash"):
+        assert "drag-select.js" in client.get(page).get_data(as_text=True)
+    js = client.get("/static/drag-select.js").get_data(as_text=True)
+    assert "checkbox.checked" not in js and ".asset-checkbox" in js and 'new Event("change"' in js  # 一括操作へはchangeで伝える
+    upload = client.get("/static/upload.js").get_data(as_text=True)
+    # ページ内のサムネイルのドラッグを、アップロードとして扱わない(以前は、サムネイルをドラッグすると重複アップロードされた)
+    assert "internalDrag" in upload and 'closest(".asset-card")' in upload

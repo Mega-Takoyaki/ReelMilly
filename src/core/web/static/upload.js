@@ -64,9 +64,21 @@
     fileInput.value = "";
   });
 
+  // ページ内の要素(サムネイルの画像など)をドラッグしたものは、アップロードのドロップとして扱わない。
+  // ブラウザは、ページ内の画像のドラッグにも「Files」を含めるため、ドラッグの出どころで見分ける
+  let internalDrag = false;
+  document.addEventListener("dragstart", (e) => {
+    if (e.target.closest && e.target.closest(".asset-card")) {
+      e.preventDefault(); // サムネイルは、ドラッグ自体をさせない(取り消したドラッグは、dragendが来ないので、印も付けない)
+      return;
+    }
+    internalDrag = true;
+  }, true);
+  ["dragend", "drop", "mouseup"].forEach((name) => document.addEventListener(name, () => setTimeout(() => { internalDrag = false; }, 0), true));
+
   // サムネイル表示エリア全体がドロップ先。子要素をまたぐdragenter/leaveのちらつきを数で吸収する
   function hasFiles(e) {
-    return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+    return !internalDrag && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
   }
   let depth = 0;
   area.addEventListener("dragenter", (e) => {
