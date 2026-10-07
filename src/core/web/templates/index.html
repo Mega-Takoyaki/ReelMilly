@@ -90,7 +90,7 @@
 <section class="filters">
   <form method="get" id="filter-form">
     <label class="search-box">検索
-      <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグ・元のファイル名で検索（空白区切りでAND）">
+      <input type="search" name="q" value="{{ q }}" placeholder="説明文・タグ・ファイル名を検索">
     </label>
     {# 候補は、いま実在する値だけを件数つきで出す(ごみ箱の作品は除く) #}
     {{ type_filter(type_tree, type_count) }}
@@ -144,7 +144,7 @@
   </div>
   <label class="grid-size-control">
     サムネイルサイズ
-    <input type="range" id="thumb-size-slider" min="120" max="320" step="10" value="190">
+    <input type="range" id="thumb-size-slider" min="64" max="320" step="10" value="190">
   </label>
 </div>
 
@@ -188,6 +188,7 @@
 
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
   <span id="bulk-count" class="bulk-count"></span>
+  <button type="button" id="bulk-toggle" class="bulk-toggle" aria-expanded="false">操作 ▾</button>
 
   <span class="bulk-group">
     <input type="text" id="bulk-tag-input" placeholder="タグ名">

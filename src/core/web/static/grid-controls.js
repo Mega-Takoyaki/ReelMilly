@@ -18,6 +18,8 @@
   }
   if (saved) {
     slider.value = saved;
+  } else if (window.matchMedia("(max-width: 640px)").matches) {
+    slider.value = 104; // スマホの初期値: 3列くらいになる大きさ(スライダーで変えられる)
   }
   applySize(slider.value);
 

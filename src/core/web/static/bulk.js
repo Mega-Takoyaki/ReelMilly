@@ -49,6 +49,16 @@
     }
   }
 
+  // スマホでは、一括操作のバーを「件数 + 操作▾」だけに畳んでおき、必要なときに開く
+  const bulkToggle = document.getElementById("bulk-toggle");
+  if (bulkToggle) {
+    bulkToggle.addEventListener("click", () => {
+      const open = toolbar.classList.toggle("open");
+      bulkToggle.textContent = open ? "操作 ▴" : "操作 ▾";
+      bulkToggle.setAttribute("aria-expanded", String(open));
+    });
+  }
+
   bindGrid();
   window.addEventListener("grid-updated", () => {
     selected.clear(); // 表示する作品が変わるので、選択はリセットする

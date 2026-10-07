@@ -1232,3 +1232,99 @@ dialog.wm-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .wm-picker-actions .wm-tile { margin: 0 !important; flex-direction: row !important; }
 .range-row { display: flex; align-items: center; gap: 0.6rem; }
 .range-row input[type="range"] { flex: 1; }
+
+/* スマホ向けの調整 -------------------------------------------------------------*/
+
+/* 小さいサムネイルでは、補助的なチップを隠して、重なりを避ける(コンテナクエリ: iOS 16+) */
+.asset-card { container-type: inline-size; }
+@container (max-width: 150px) {
+  .chip { height: 0.9rem; font-size: 0.55rem; }
+  .chip-rating { width: 0.9rem; }
+  .asset-badges { top: 0.2rem; right: 0.2rem; gap: 0.12rem; }
+  .status-dot { left: 0.25rem; bottom: 0.25rem; width: 0.7rem; height: 0.7rem; }
+  .asset-posts { left: 1.15rem; bottom: 0.2rem; }
+  .chip-post { width: 0.85rem; height: 0.85rem; }
+  .asset-detail-link { width: 1.45rem; height: 1.45rem; right: 0.25rem; bottom: 0.25rem; }
+}
+@container (max-width: 118px) {
+  .chip-type, .chip-wm, .chip-noplan { display: none; }  /* 拡張子・透かし・投稿予定なしは、詳細画面で確認できる */
+}
+
+@media (max-width: 640px) {
+  main { padding: 0.7rem; }
+  .topbar { padding: 0.5rem 0.75rem; }
+  .brand { font-size: 1rem; }
+  .topnav { gap: 0.7rem; font-size: 0.85rem; }
+  .topnav a { white-space: nowrap; }
+  .topnav a.topnav-help { font-size: 0; gap: 0; }  /* 「使用法」は、アイコンだけにする */
+  .nav-count { margin-left: 0.2rem; }
+
+  /* iOSは、文字サイズ16px未満の入力欄をタップすると、画面が勝手に拡大されてしまう */
+  input, select, textarea { font-size: 16px; }
+
+  /* 上部のアクション: ジョブ状況の下に、フォルダ作成とアップロードを横幅いっぱいで並べる */
+  .action-bar { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+  .job-status { min-width: 0; flex: 0 0 auto; }
+  .action-buttons { margin-left: 0; width: 100%; justify-content: stretch; gap: 0.5rem; }
+  .action-buttons .new-folder { flex: 1 1 100%; }
+  .action-buttons input[type="text"] { flex: 1; width: auto; min-width: 0; }
+  .action-buttons #upload-button { flex: 1 1 100%; justify-content: center; padding: 0.6rem; }
+
+  /* フィルタ: 検索欄は1行を使い、選択パネルは画面下からせり上がる形にして、右にはみ出さないようにする */
+  .filters { padding: 0.7rem; margin-bottom: 0.9rem; }
+  .filters form { gap: 0.45rem; }
+  .filters .search-box { flex: 1 1 100%; min-width: 0; }
+  .ms { position: static; }
+  .ms details > summary { padding: 0.45rem 0.7rem; font-size: 0.82rem; }
+  .ms-panel, .ms-wide {
+    position: fixed;
+    left: 0.5rem;
+    right: 0.5rem;
+    top: auto;
+    bottom: 0.5rem;
+    min-width: 0;
+    max-width: none;
+    max-height: 68vh;
+    z-index: 200;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+  }
+  .ms-opt { padding: 0.55rem 0.5rem; }            /* タップしやすい大きさ */
+  .ms-opt input { width: 1.1rem; height: 1.1rem; }
+  .filter-chips { margin-top: 0.6rem; }
+
+  /* 一覧 */
+  .grid-toolbar { gap: 0.5rem; margin-bottom: 0.7rem; }
+  .grid-size-control { width: 100%; }
+  .grid-size-control input { flex: 1; }
+  .asset-grid { gap: 0.4rem; }
+  .asset-select { top: 0.2rem; left: 0.2rem; padding: 0.3rem; }
+  .asset-select input { width: 1.2rem; height: 1.2rem; }
+
+  /* 一括操作のバー: 画面の下に張り付き、ボタンは折り返して並べる */
+  .bulk-toolbar { bottom: 0.4rem; padding: 0.55rem; gap: 0.4rem 0.5rem; border-radius: var(--radius-md); max-height: 45vh; overflow: auto; }
+  .bulk-toolbar button { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+  .bulk-group { flex-wrap: wrap; gap: 0.3rem; }
+  .bulk-group input[type="text"], .bulk-group select { flex: 1 1 8rem; min-width: 0; }
+
+  /* ダイアログ類 */
+  dialog.wm-dialog { padding: 1rem; }
+  .lightbox-nav { width: 2.4rem; height: 3rem; }
+  .settings-nav { gap: 0.35rem; }
+  .settings-nav button { padding: 0.35rem 0.65rem; font-size: 0.8rem; }
+}
+
+/* 一括操作バーの開閉(スマホのみ。PCでは常に全部表示) */
+.bulk-toggle { display: none; }
+@media (max-width: 640px) {
+  .bulk-toggle { display: inline-flex; }
+  .bulk-toolbar:not(.open) > :not(.bulk-count):not(.bulk-toggle):not(#bulk-clear) { display: none; }
+  .bulk-toolbar { align-items: center; }
+}
+
+/* 詳細画面などで、長い文字列・大きい画像が横幅を押し広げないようにする */
+.asset-detail, .asset-detail > * { min-width: 0; }
+.asset-detail dd, .asset-detail .hint, .card { overflow-wrap: anywhere; }
+.preview img, .preview video { max-width: 100%; height: auto; }
+@media (max-width: 760px) {
+  .asset-detail { grid-template-columns: minmax(0, 1fr); }
+}
