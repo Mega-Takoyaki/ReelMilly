@@ -712,7 +712,12 @@ dialog.confirm-dialog::backdrop {
 /* Lightbox --------------------------------------------------------------*/
 
 dialog.lightbox {
-  position: relative;
+  /* 画面に固定して中央に出す(position: relativeだと、ページの途中に出てしまい、スクロールした先では見えない) */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
   border: none;
   border-radius: var(--radius-lg);
   background: transparent;
