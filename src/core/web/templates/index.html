@@ -142,6 +142,20 @@
     {% endif %}
   </div>
   <div class="grid-view-options">
+    {# 並び順とフォルダ/フラットは、フォームの一部(form属性)として、絞り込みと同じように即時に反映される #}
+    <label class="sort-control">並び順
+      <select name="sort" form="filter-form" data-default="created_desc" aria-label="並び順">
+        {% for value, text in sort_options %}
+        <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full-toggle" title="オフ: フォルダ表示（フォルダを最上部に並べ、フォルダに入っていない作品を出します）／ オン: フラット表示（フォルダの中身も、すべて並べます）。検索・絞り込み中は、どちらも該当する作品をそのまま出します">
+      <span class="ft-label ft-compact">フォルダ</span>
+      <input type="checkbox" name="flat" value="1" form="filter-form" {% if flat %}checked{% endif %} role="switch" aria-label="フラット表示（フォルダの中身もすべて並べる）">
+      <span class="switch" aria-hidden="true"></span>
+      <span class="ft-label ft-full">フラット</span>
+    </label>
     <label class="grid-size-control">
       サムネイルサイズ
       <input type="range" id="thumb-size-slider" min="60" max="320" step="10" value="190">
@@ -162,6 +176,23 @@
 <div class="drop-overlay">ここにドロップして画像・動画をアップロード</div>
 <div id="grid-region">
 
+{% if open_folders %}
+<p class="folder-open-note">フォルダ「{{ open_folders | map(attribute='name') | join('」「') }}」の中身を表示中 <a href="{{ url_for('index', sort=(sort if sort != 'created_desc' else none)) }}">← フォルダの一覧へ戻る</a></p>
+{% endif %}
+{% if folder_cards %}
+<section class="folder-strip" aria-label="フォルダ">
+  {% for f in folder_cards %}
+  <a class="folder-card" href="{{ url_for('index', folder_id=f.id, sort=(sort if sort != 'created_desc' else none)) }}" title="{{ f.name }}（{{ f.count }}件）">
+    <span class="folder-thumb">
+      {% if f.cover and f.cover.kind == 'image' %}<img src="{{ url_for('asset_media', asset_id=f.cover.id) }}" alt="" loading="lazy">
+      {% else %}<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>{% endif %}
+    </span>
+    <span class="folder-name">{{ f.name }}</span>
+    <span class="folder-count">{{ f.count }}件</span>
+  </a>
+  {% endfor %}
+</section>
+{% endif %}
 <section class="asset-grid">
   {% include "_cards.html" %}
   {% if not assets %}

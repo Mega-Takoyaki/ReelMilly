@@ -93,6 +93,8 @@
     form.querySelectorAll('input[type="radio"]').forEach((r) => {
       if (r.checked && r.value === r.dataset.default) params.delete(r.name);
     });
+    const sortSelect = document.querySelector('select[name="sort"][form="filter-form"]');
+    if (sortSelect && sortSelect.value === sortSelect.dataset.default) params.delete("sort");
     return params.toString();
   }
 
@@ -127,6 +129,10 @@
 
   form.addEventListener("change", (e) => {
     if (e.target.matches('input[type="checkbox"], input[type="radio"]')) apply();
+  });
+  // 一覧の上のバー(並び順・フォルダ/フラット)は、form属性でこのフォームに属している(フォームの外にあるので、documentで受ける)
+  document.addEventListener("change", (e) => {
+    if (e.target.matches('[form="filter-form"]')) apply();
   });
   form.addEventListener("input", (e) => {
     if (e.target.matches('input[type="search"]')) {

@@ -28,6 +28,15 @@ from core.media import get_media_properties
 from core.nsfw import try_create_classifier
 
 CONTENT_RATINGS = ("sfw", "suggestive", "explicit")
+SORT_LABELS = [
+    ("created_desc", "登録日時（新しい順）"),
+    ("created_asc", "登録日時（古い順）"),
+    ("updated_desc", "更新日時（新しい順）"),
+    ("name_asc", "ファイル名（A→Z）"),
+    ("name_desc", "ファイル名（Z→A）"),
+    ("pixels_desc", "画像サイズ（大きい順）"),
+    ("pixels_asc", "画像サイズ（小さい順）"),
+]
 GRID_PAGE_SIZE = 200  # 一覧・ごみ箱で、1回に読み込む件数(下へスクロールすると続きを読み込む)
 ALLOWED_UPLOAD_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
@@ -149,8 +158,18 @@ def create_app(config: Config) -> Flask:
         ext_sel = [v.lower() for v in request.args.getlist("ext") if v.isalnum()]
         broken_mode = request.args.get("broken") if request.args.get("broken") in ("show", "only") else "hide"
         q = (request.args.get("q") or "").strip()
+        sort = request.args.get("sort") if request.args.get("sort") in db.SORTS else "created_desc"
+        flat = request.args.get("flat") == "1"  # フラット表示(フォルダの中身も、すべて並べる)
+        active_filters = bool(
+            broken_mode != "hide" or kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
+        )
+        # フォルダ表示(既定): 何も絞り込んでいないときは、最上部にフォルダを並べ、フォルダに入っていない作品だけを出す。
+        # 絞り込み・検索中や、フォルダを開いているときは、該当する作品をそのまま出す
+        folder_top = not flat and not active_filters
 
         list_args = dict(
+            sort=sort,
+            no_folder=folder_top,
             status=status_sel,
             content_rating=rating_sel,
             nsfw_auto=auto_sel,
@@ -189,6 +208,7 @@ def create_app(config: Config) -> Flask:
             "SELECT COUNT(*) FROM assets WHERE is_broken = 1 AND deleted_at IS NULL"
         ).fetchone()[0]
         folders = db.list_folders(conn)
+        folder_cards = db.folder_summaries(conn, broken_mode) if folder_top else []
         conn.close()
 
         def options(rows, labels=None, selected=()):
@@ -236,14 +256,16 @@ def create_app(config: Config) -> Flask:
             }
             for kind, count, exts in facets["type"]
         ]
-        active_filters = bool(
-            broken_mode != "hide" or kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
-        )
         return render_template(
             "index.html",
             assets=assets,
             total=total,
             next_offset=offset + len(assets),
+            sort=sort,
+            sort_options=SORT_LABELS,
+            flat=flat,
+            folder_cards=folder_cards if folder_top else [],
+            open_folders=[f for f in folders if f["id"] in folder_sel] if not flat else [],
             folders=folders,
             filter_options=filter_options,
             tag_mode=tag_mode,

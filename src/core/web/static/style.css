@@ -1675,3 +1675,34 @@ dialog.dup-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
   .brand svg { width: 17px; height: 17px; }
   .topbar .topnav { margin-left: auto; gap: 0.5rem; min-width: 0; }
 }
+
+/* フル: 登録日時の順に、左から右へ並べる(行ごとに高さをそろえて、縦横比のまま・切り抜きなし) -------------*/
+.asset-grid.is-full { display: flex; flex-wrap: wrap; column-width: auto; gap: var(--grid-gap); }
+.asset-grid.is-full .asset-card {
+  margin-bottom: 0;
+  flex: calc(var(--arn, 1) * 100) 1 calc(var(--arn, 1) * var(--thumb-size));
+  min-width: 0;
+}
+.asset-grid.is-full::after { content: ""; flex-grow: 1000000; }  /* 最後の行が、横いっぱいに引き伸ばされないように */
+.asset-grid.is-full .empty-state { flex: 1 1 100%; }
+
+/* 並び順・フォルダ/フラット -----------------------------------------------------*/
+.sort-control { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--fg-muted); }
+.sort-control select { width: auto; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+.folder-strip { display: flex; flex-wrap: wrap; gap: var(--grid-gap, 1.1rem); margin-bottom: 1.1rem; }
+.folder-card {
+  width: calc(var(--thumb-size, 190px) * 0.62);
+  min-width: 6.2rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+  padding: 0.5rem; text-decoration: none; color: var(--fg);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.folder-card:hover { border-color: var(--accent); }
+.folder-thumb {
+  aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--accent);
+}
+.folder-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.folder-name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-count { font-size: 0.72rem; color: var(--fg-muted); }
+.folder-open-note { margin: 0 0 0.8rem; font-size: 0.85rem; color: var(--fg-muted); }

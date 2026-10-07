@@ -42,6 +42,16 @@
     if (next >= 0 && next < items.length) show(next);
   }
 
+  // プレビューを開いても、一覧のスクロール位置が最上部へ戻らないようにする
+  // (モーダルを開くときに、ブラウザがページを先頭へ動かしてしまうことがあるため、開く前の位置へ戻す)
+  function openModal() {
+    if (dialog.open) return;
+    const x = window.scrollX;
+    const y = window.scrollY;
+    dialog.showModal();
+    if (window.scrollY !== y) window.scrollTo(x, y);
+  }
+
   function openLightbox(src, kind, alt) {
     const video = mediaContainer.querySelector("video");
     if (video) video.pause();
@@ -57,7 +67,7 @@
       video.autoplay = true;
       video.playsInline = true;
       mediaContainer.appendChild(video);
-      if (!dialog.open) dialog.showModal();
+      openModal();
       video.play().catch(() => {});
     } else {
       zoomBar.hidden = false;
@@ -71,7 +81,7 @@
       img.addEventListener("click", closeLightbox);
       img.src = src;
       mediaContainer.appendChild(img);
-      if (!dialog.open) dialog.showModal();
+      openModal();
     }
   }
 

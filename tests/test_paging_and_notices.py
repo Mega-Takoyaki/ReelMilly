@@ -94,3 +94,60 @@ def test_cli_ingest_notifies_inbox_import(env):
     assert cmd_ingest(config, defer_analysis=True) == 0
     conn = db.get_connection(config.paths.db_path)
     assert any(n["kind"] == "import" and "1件" in n["title"] for n in notifications.list_notifications(conn, 10))
+
+
+def _card_ids(html):
+    return [chunk.split('"')[0] for chunk in html.split('data-asset-id="')[1:]]
+
+
+def test_sort_options(env):
+    config, conn = env
+    client = create_app(config).test_client()
+    ids = _make_assets(client, 3)["asset_ids"]
+    conn.execute("UPDATE assets SET created_at = ?, original_name = ? WHERE id = ?", ("2026-01-01T00:00:00+00:00", "b.png", ids[0]))
+    conn.execute("UPDATE assets SET created_at = ?, original_name = ? WHERE id = ?", ("2026-01-02T00:00:00+00:00", "c.png", ids[1]))
+    conn.execute("UPDATE assets SET created_at = ?, original_name = ? WHERE id = ?", ("2026-01-03T00:00:00+00:00", "a.png", ids[2]))
+    conn.commit()
+
+    def order(sort):
+        return _card_ids(client.get(f"/?sort={sort}").get_data(as_text=True))
+
+    assert order("created_desc") == [ids[2], ids[1], ids[0]]
+    assert order("created_asc") == [ids[0], ids[1], ids[2]]
+    assert order("name_asc") == [ids[2], ids[0], ids[1]]
+    assert order("name_desc") == [ids[1], ids[0], ids[2]]
+    assert order("nonsense") == [ids[2], ids[1], ids[0]]  # 不明な値は、既定(登録日時の新しい順)
+    assert 'value="created_desc" selected' in client.get("/").get_data(as_text=True)
+
+
+def test_folder_view_vs_flat_view(env):
+    config, conn = env
+    client = create_app(config).test_client()
+    ids = _make_assets(client, 3)["asset_ids"]
+    folder = db.create_folder(conn, "お気に入り")
+    folder_id = folder["id"] if isinstance(folder, dict) else folder
+    db.add_asset_to_folder(conn, ids[0], folder_id)
+
+    top = client.get("/").get_data(as_text=True)
+    assert 'class="folder-card"' in top and "お気に入り" in top and "1件" in top
+    assert ids[0] not in _card_ids(top) and len(_card_ids(top)) == 2  # フォルダの中身は、フォルダを開くまで出ない
+
+    flat = client.get("/?flat=1").get_data(as_text=True)
+    assert 'class="folder-card"' not in flat and len(_card_ids(flat)) == 3  # フラット: 中身もすべて
+
+    inside = client.get(f"/?folder_id={folder_id}").get_data(as_text=True)
+    assert _card_ids(inside) == [ids[0]] and "の中身を表示中" in inside and 'class="folder-card"' not in inside
+
+    searched = client.get("/?q=p").get_data(as_text=True)  # 検索中は、フォルダに入っているものも該当すれば出る
+    assert len(_card_ids(searched)) == 3 and 'class="folder-card"' not in searched
+    assert 'name="flat"' in top and "checked" not in top.split('name="flat"')[1].split(">")[0]
+
+
+def test_full_layout_uses_row_order_with_aspect_numbers(env):
+    config, conn = env
+    client = create_app(config).test_client()
+    _make_assets(client, 1)
+    html = client.get("/").get_data(as_text=True)
+    assert "--arn:" in html
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert ".asset-grid.is-full { display: flex; flex-wrap: wrap;" in css

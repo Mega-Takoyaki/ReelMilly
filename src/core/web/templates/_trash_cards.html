@@ -1,7 +1,7 @@
 {# ごみ箱のカード(最初の表示と、下へスクロールしたときの続きで共通) #}
 {% from "_icons.html" import type_chip %}
 {% for asset in assets %}
-  <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}"{% endif %}>
+  <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}; --arn: {{ (asset.width / asset.height) | round(4) }}"{% endif %}>
     <label class="asset-select">
       <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
     </label>

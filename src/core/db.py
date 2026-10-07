@@ -141,6 +141,18 @@ def _like_escape(word: str) -> str:
     return word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+# 一覧の並び順(画面の選択肢の値 → ORDER BY)。同じ値のときは、IDの降順で安定させる
+SORTS = {
+    "created_desc": "assets.created_at DESC",
+    "created_asc": "assets.created_at ASC",
+    "updated_desc": "assets.updated_at DESC",
+    "name_asc": "lower(coalesce(assets.original_name, assets.id)) ASC",
+    "name_desc": "lower(coalesce(assets.original_name, assets.id)) DESC",
+    "pixels_desc": "coalesce(assets.width, 0) * coalesce(assets.height, 0) DESC",
+    "pixels_asc": "coalesce(assets.width, 0) * coalesce(assets.height, 0) ASC",
+}
+
+
 def list_assets(
     conn: sqlite3.Connection,
     status=None,
@@ -162,6 +174,8 @@ def list_assets(
     folder_mode: str = "any",
     broken: str = "hide",
     trashed: bool = False,
+    no_folder: bool = False,
+    sort: str | None = None,
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
@@ -265,6 +279,9 @@ def list_assets(
     elif plans == {"none"}:
         conditions.append("NOT EXISTS (SELECT 1 FROM channels c WHERE c.asset_id = assets.id)")
 
+    if no_folder:  # どのフォルダにも入っていない作品(フォルダ表示のトップ)
+        conditions.append("NOT EXISTS (SELECT 1 FROM asset_folders nf WHERE nf.asset_id = assets.id)")
+
     if confirmed_only:
         conditions.append("assets.content_rating_confirmed = 1")
 
@@ -324,7 +341,8 @@ def list_assets(
         count_query = query.replace("SELECT DISTINCT assets.*", "SELECT COUNT(DISTINCT assets.id)", 1)
         return conn.execute(count_query, params).fetchone()[0]
     order_sql = "ASC" if order.lower() == "asc" else "DESC"
-    query += f" ORDER BY assets.created_at {order_sql} LIMIT :limit OFFSET :offset"
+    order_by = SORTS.get(sort or "", f"assets.created_at {order_sql}")
+    query += f" ORDER BY {order_by}, assets.id DESC LIMIT :limit OFFSET :offset"
     params["limit"] = limit
     params["offset"] = offset
 
@@ -587,6 +605,23 @@ def create_folder(conn: sqlite3.Connection, name: str, parent_id: int | None = N
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def folder_summaries(conn: sqlite3.Connection, broken: str = "hide") -> list[dict]:
+    """フォルダの一覧(名前順)。中の作品数(ごみ箱・非表示の破綻画像を除く)と、表紙にする作品(新しい順の先頭)つき。"""
+    broken_sql = "AND a.is_broken = 1" if broken == "only" else ("" if broken == "show" else "AND a.is_broken = 0")
+    out = []
+    for f in conn.execute("SELECT * FROM folders ORDER BY name").fetchall():
+        rows = conn.execute(
+            "SELECT a.id, a.kind FROM assets a JOIN asset_folders af ON af.asset_id = a.id "
+            f"WHERE af.folder_id = ? AND a.deleted_at IS NULL {broken_sql} ORDER BY a.created_at DESC",
+            (f["id"],),
+        ).fetchall()
+        item = dict(f)
+        item["count"] = len(rows)
+        item["cover"] = dict(rows[0]) if rows else None
+        out.append(item)
+    return out
 
 
 def list_folders(conn: sqlite3.Connection) -> list[dict]:
