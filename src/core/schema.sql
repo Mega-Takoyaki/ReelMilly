@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS posts (
     external_id TEXT,
     error TEXT,
     posted_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'auto',  -- 'auto'=アプリが投稿 / 'manual'=手動で投稿して、記録だけした
     PRIMARY KEY (asset_id, channel)
 );
 CREATE INDEX IF NOT EXISTS idx_posts_channel_status ON posts(channel, status);

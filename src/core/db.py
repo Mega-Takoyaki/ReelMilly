@@ -43,6 +43,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for column in ("wm_path", "wm_text", "wm_position"):
         if column not in columns:
             conn.execute(f"ALTER TABLE assets ADD COLUMN {column} TEXT")
+    post_columns = {row["name"] for row in conn.execute("PRAGMA table_info(posts)")}
+    if "source" not in post_columns:
+        conn.execute("ALTER TABLE posts ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'")
     task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ai_tasks)")}
     if "params" not in task_columns:
         conn.execute("ALTER TABLE ai_tasks ADD COLUMN params TEXT")
@@ -340,17 +343,22 @@ def set_post(
     url: str | None = None,
     external_id: str | None = None,
     error: str | None = None,
+    posted_at: str | None = None,
+    source: str = "auto",
 ) -> None:
-    """投稿結果を記録する(作品x投稿先で1行。再投稿時は上書き)。"""
+    """投稿結果を記録する(作品x投稿先で1行。再投稿時は上書き)。
+
+    `source`は"auto"(アプリが投稿)か"manual"(手動で投稿した記録)。`posted_at`で投稿日時(ISO8601)を指定できる。
+    """
     conn.execute(
         """
-        INSERT INTO posts (asset_id, channel, status, url, external_id, error, posted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO posts (asset_id, channel, status, url, external_id, error, posted_at, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(asset_id, channel) DO UPDATE SET
             status = excluded.status, url = excluded.url, external_id = excluded.external_id,
-            error = excluded.error, posted_at = excluded.posted_at
+            error = excluded.error, posted_at = excluded.posted_at, source = excluded.source
         """,
-        (asset_id, channel, status, url, external_id, error, _now_iso()),
+        (asset_id, channel, status, url, external_id, error, posted_at or _now_iso(), source),
     )
     conn.commit()
 

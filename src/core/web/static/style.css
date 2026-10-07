@@ -1390,3 +1390,104 @@ dialog.wm-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .asset-grid.is-full .asset-card img,
 .asset-grid.is-full .asset-card video { aspect-ratio: auto; height: 100%; object-fit: cover; }
 .asset-grid.is-full .empty-state { column-span: all; }
+
+/* 作品の詳細画面 ----------------------------------------------------------*/
+
+.asset-detail .preview { position: sticky; top: 4.2rem; align-self: start; }
+@media (max-width: 760px) { .asset-detail .preview { position: static; } }
+
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.9rem; }
+.page-head h1 { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; font-size: 1.3rem; overflow-wrap: anywhere; }
+.page-head .hint { margin: 0.25rem 0 0; min-height: 1em; }
+.badge-broken { background: #b91c1c; color: #fff; border-color: transparent; }
+.info > .card h2 { margin: 0 0 0.6rem; font-size: 1.02rem; display: flex; align-items: center; gap: 0.1rem; }
+
+/* 操作メニュー(画像への操作をまとめる) */
+.menu { position: relative; flex: none; }
+.menu > summary { list-style: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.menu[open] > .menu-button { filter: brightness(0.92); }
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 60;
+  width: min(20rem, 88vw);
+  max-height: 75vh;
+  overflow: auto;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.menu-group { padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+.menu-group:last-child { border-bottom: none; }
+.menu-title { display: flex; align-items: center; padding: 0.2rem 0.6rem; font-size: 0.72rem; color: var(--fg-muted); letter-spacing: 0.04em; }
+.menu-note { padding: 0.1rem 0.6rem 0.3rem; font-size: 0.75rem; color: var(--fg-muted); overflow-wrap: anywhere; }
+.menu-form { display: flex; align-items: center; margin: 0; }
+.menu-form .menu-item { flex: 1; }
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.88rem;
+  font-weight: 400;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-hover); }
+.menu-item:disabled { opacity: 0.5; cursor: default; }
+.menu-danger { color: var(--danger); }
+
+/* 投稿(投稿予定と投稿状態を、投稿先ごとにまとめた行) */
+.post-rows { display: flex; flex-direction: column; gap: 0.5rem; }
+.post-row {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) 1fr auto;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+}
+.post-plan { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 600; margin: 0; }
+.post-plan input { width: 1.1rem; height: 1.1rem; }
+.post-plan .chip-post { position: static; }
+.post-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; min-width: 0; overflow-wrap: anywhere; font-size: 0.88rem; }
+.post-state .hint { margin: 0; }
+.state-none { color: var(--fg-muted); }
+.state-posted { color: #16a34a; font-weight: 600; }
+.state-failed { color: #c026d3; font-weight: 600; }
+.post-url { font-size: 0.8rem; }
+.post-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.3rem; }
+.no-plan-note { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--fg-muted); }
+.no-plan-note[hidden] { display: none; }
+@media (max-width: 640px) {
+  .post-row { grid-template-columns: 1fr; }
+  .post-actions { justify-content: flex-start; }
+  .page-head { flex-direction: column; }
+  .menu-panel { right: auto; left: 0; }
+}
+
+.confirm-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.confirm-form select { width: auto; min-width: 10rem; }

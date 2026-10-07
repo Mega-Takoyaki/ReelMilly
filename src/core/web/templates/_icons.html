@@ -46,7 +46,7 @@
 {%- for ch, c in channels.items() if ch in asset_posts -%}
 {%- set p = asset_posts[ch] -%}
 {%- if p.status == 'posted' -%}
-  {%- set tip = c.label ~ ': 投稿済み（' ~ (p.posted_at | localtime) ~ '）' ~ ((' ' ~ p.url) if p.url else '') -%}
+  {%- set tip = c.label ~ ': 投稿済み' ~ ('（手動で記録）' if p.source == 'manual' else '') ~ '（' ~ (p.posted_at | localtime) ~ '）' ~ ((' ' ~ p.url) if p.url else '') -%}
 {%- else -%}
   {%- set tip = c.label ~ ': 投稿に失敗（' ~ (p.error or '理由不明') ~ '）' -%}
 {%- endif -%}

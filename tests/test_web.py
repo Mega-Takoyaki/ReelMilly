@@ -1165,7 +1165,7 @@ def test_broken_flag_ui_filter_and_posting_exclusion(app_and_conn):
     assert client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]["broken"] is True
 
     detail = client.get("/assets/a1").get_data(as_text=True)
-    assert "破綻画像としてマークされています" in detail and "マークを解除する" in detail
+    assert "badge-broken" in detail and "破綻画像のマークを解除する" in detail  # 見出しのバッジと、操作メニューの項目
     assert client.post("/assets/a1/broken").status_code == 302  # 詳細画面から解除(トグル)
     assert has(client.get("/").get_data(as_text=True)) and db.get_asset(conn, "a1")["is_broken"] == 0
 
@@ -1209,3 +1209,74 @@ def test_watermark_view_popup_and_5x5_picker_and_settings_defaults(app_and_conn)
     saved = client.get("/settings").get_data(as_text=True)
     assert 'name="wm_text" value="@Mine"' in saved and _is_checked(saved, "wm_position", "r2c2") and _is_checked(saved, "wm_position", "tile")
     assert '"text": "@Mine"' in client.get("/").get_data(as_text=True)  # ダイアログの初期値にも反映
+
+
+def test_detail_page_is_organized_with_menu_and_merged_post_card(app_and_conn):
+    app, conn = app_and_conn
+    detail = app.test_client().get("/assets/a1").get_data(as_text=True)
+
+    # 画像への操作は、1つの「操作」メニューにまとまる(AI処理・透かし・ダウンロード・破綻・ごみ箱)
+    menu = detail.split('id="asset-menu"')[1].split("</details>")[0]
+    for item in ('data-ai-run="nsfw"', 'data-ai-run="describe"', 'data-ai-run="both"', "download", "破綻画像", "ごみ箱へ移動する"):
+        assert item in menu, item
+    # 以前は独立したカードだった項目が、重複していない
+    for old_card in ("<h2 style=\"margin-top: 0;\">AI処理</h2>", ">破綻画像（キメラ）</h2>", ">投稿先（投稿予定）</h2>", ">投稿状態</h2>", ">透かし</h2>"):
+        assert old_card not in detail, old_card
+    # 投稿予定と投稿状態は、「投稿」のカード1つに、投稿先ごとの行としてまとまる
+    posts = detail.split('id="live-posts"')[1].split('id="no-plan-note"')[0]
+    assert posts.count('class="post-row"') == 2
+    for ch in ('fanvue', 'x'):
+        row = posts.split('data-channel="' + ch + '"')[1].split('class="post-row"')[0]
+        assert 'name="channel"' in row and '未投稿' in row and '投稿済みとして記録' in row, ch
+    # 説明文は画面に出さず、ⓘのツールチップへ集約する
+    assert detail.count('class="info-icon"') >= 8
+    assert 'チェックした投稿先だけがSNS投稿の対象になります' in detail  # data-info(ツールチップの文)の中にある
+    assert '<p class="hint">処理は別プロセス' not in detail  # 本文には出さない
+    assert "post-actions.js" in detail and 'id="manual-post-dialog"' in detail
+
+
+def test_manual_post_record_clear_and_effect_on_auto_posting(app_and_conn):
+    from posting.jobs import run_fanvue_drop
+
+    app, conn = app_and_conn
+    client = app.test_client()
+    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1)
+
+    # 投稿日時(日本時間)とURLを指定して、手動の投稿を記録する
+    res = client.post("/api/assets/a1/posts/x/manual", json={"posted_at": "2026-10-07T21:30:00+09:00", "url": "https://x.com/me/status/1"})
+    assert res.status_code == 200
+    post = db.get_posts(conn, ["a1"])["a1"]["x"]
+    assert (post["status"], post["source"], post["url"]) == ("posted", "manual", "https://x.com/me/status/1")
+    assert post["posted_at"].startswith("2026-10-07T12:30:00")  # UTCで保存される
+
+    page = client.get("/assets/a1").get_data(as_text=True)
+    assert "手動で記録" in page and "https://x.com/me/status/1" in page and "記録を取り消す" in page
+    assert "手動で記録" in client.get("/").get_data(as_text=True)  # サムネイルのフラグにも出る
+    assert client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]["posts"]["x"]["source"] == "manual"
+
+    # Fanvueを手動で記録すると、自動投稿の対象から外れる(二重投稿を防ぐ)
+    from unittest.mock import MagicMock
+
+    db.set_channels(conn, "a1", ["fanvue"])
+    client.post("/api/assets/a1/posts/fanvue/manual", json={})
+    skipped = run_fanvue_drop(app.config["REELMILLY_CONFIG"], conn, MagicMock(), "h", "https://f.com/{handle}")
+    assert skipped.executed is False and skipped.asset_id is None
+    # 記録を取り消すと、再び自動投稿の対象になる
+    assert client.post("/api/assets/a1/posts/fanvue/clear").get_json() == {"cleared": True}
+    assert "fanvue" not in db.get_posts(conn, ["a1"]).get("a1", {})
+
+    # 入力の検証
+    assert client.post("/api/assets/a1/posts/bogus/manual", json={}).status_code == 400
+    assert client.post("/api/assets/a1/posts/x/manual", json={"url": "javascript:alert(1)"}).status_code == 400
+    assert client.post("/api/assets/a1/posts/x/manual", json={"posted_at": "yesterday"}).status_code == 400
+    assert client.post("/api/assets/missing/posts/x/manual", json={}).status_code == 404
+
+
+def test_channels_saved_via_ajax_from_detail(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    res = client.post("/assets/a1/channels", data={"channel": ["x"]}, headers={"X-Requested-With": "XMLHttpRequest"})
+    assert res.get_json() == {"channels": ["x"], "no_plan": False}
+    assert db.get_channels(conn, "a1") == ["x"]
+    res = client.post("/assets/a1/channels", data={}, headers={"X-Requested-With": "XMLHttpRequest"})
+    assert res.get_json()["no_plan"] is True and db.get_channels(conn, "a1") == []

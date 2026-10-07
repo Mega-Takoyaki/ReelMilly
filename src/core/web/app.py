@@ -378,6 +378,8 @@ def create_app(config: Config) -> Flask:
         chosen = [c for c in request.form.getlist("channel") if c in POST_CHANNELS]
         db.set_channels(conn, asset_id, chosen)
         conn.close()
+        if _is_xhr():
+            return jsonify({"channels": chosen, "no_plan": not chosen})
         return redirect(url_for("asset_detail", asset_id=asset_id))
 
     @app.route("/assets/<asset_id>")
@@ -492,7 +494,7 @@ def create_app(config: Config) -> Flask:
                 "wm": {"text": asset["wm_text"], "label": watermark.describe_positions(asset["wm_position"])}
                 if asset.get("wm_path") else None,
                 "posts": {
-                    ch: {k: p[k] for k in ("status", "url", "error", "posted_at")}
+                    ch: {k: p[k] for k in ("status", "url", "error", "posted_at", "source")}
                     for ch, p in posts.get(asset_id, {}).items()
                 },
                 "rev": f"{asset['updated_at']}|{len(tags)}|{asset.get('wm_path') or ''}|"
@@ -627,6 +629,45 @@ def create_app(config: Config) -> Flask:
         db.update_asset(conn, asset_id, **updates)
         conn.close()
         return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/api/assets/<asset_id>/posts/<channel>/manual", methods=["POST"])
+    def api_manual_post(asset_id, channel):
+        """手動で投稿したことを記録する(投稿済み・日時・URL)。アプリの自動投稿の二重投稿を防げる。"""
+        if channel not in POST_CHANNELS:
+            return jsonify({"error": "不明な投稿先です"}), 400
+        payload = request.get_json(silent=True) or {}
+        url = (payload.get("url") or "").strip() or None
+        if url and not re.match(r"^https?://", url):
+            return jsonify({"error": "URLは http:// または https:// で始まる形で入力してください"}), 400
+        posted_at = None
+        if payload.get("posted_at"):
+            try:
+                dt = datetime.fromisoformat(str(payload["posted_at"]).replace("Z", "+00:00"))
+            except ValueError:
+                return jsonify({"error": "投稿日時の形式が正しくありません"}), 400
+            if dt.tzinfo is None:
+                from zoneinfo import ZoneInfo
+
+                dt = dt.replace(tzinfo=ZoneInfo(config.timezone))
+            posted_at = dt.astimezone(timezone.utc).isoformat()
+        conn = get_conn()
+        if db.get_asset(conn, asset_id) is None:
+            conn.close()
+            return jsonify({"error": "作品が見つかりません"}), 404
+        db.set_post(conn, asset_id, channel, "posted", url=url, posted_at=posted_at, source="manual")
+        conn.close()
+        return jsonify({"recorded": True, "channel": channel})
+
+    @app.route("/api/assets/<asset_id>/posts/<channel>/clear", methods=["POST"])
+    def api_clear_post(asset_id, channel):
+        """投稿の記録を取り消す(未投稿に戻す)。手動で記録した間違いの訂正や、再投稿の対象に戻すときに使う。"""
+        if channel not in POST_CHANNELS:
+            return jsonify({"error": "不明な投稿先です"}), 400
+        conn = get_conn()
+        had = channel in db.get_posts(conn, [asset_id]).get(asset_id, {})
+        db.delete_post(conn, asset_id, channel)
+        conn.close()
+        return jsonify({"cleared": had})
 
     @app.route("/assets/<asset_id>/posts/<channel>/retry", methods=["POST"])
     def retry_post(asset_id, channel):

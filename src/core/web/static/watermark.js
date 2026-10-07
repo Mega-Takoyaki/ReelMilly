@@ -126,13 +126,24 @@
     }
   });
 
-  // 詳細画面のボタン
-  const open = document.getElementById("wm-open");
-  const root = document.getElementById("asset-root");
-  if (open && root) open.addEventListener("click", () => window.openWatermarkDialog([root.dataset.assetId], root.dataset.assetId));
-  const clear = document.getElementById("wm-clear");
-  if (clear && root) {
-    clear.addEventListener("click", async () => {
+  // 詳細画面のメニュー(中身は完了時に差し替わるため、documentで受ける)
+  function closeMenu() {
+    const menu = document.getElementById("asset-menu");
+    if (menu) menu.open = false;
+  }
+
+  document.addEventListener("click", async (e) => {
+    const root = document.getElementById("asset-root");
+    if (!root) return;
+
+    if (e.target.closest("#wm-open")) {
+      closeMenu();
+      window.openWatermarkDialog([root.dataset.assetId], root.dataset.assetId);
+      return;
+    }
+
+    if (e.target.closest("#wm-clear")) {
+      closeMenu();
       const ok = await window.confirmDialog("この作品の透かしを外します（元のファイルに戻ります）。よろしいですか？");
       if (!ok) return;
       const res = await fetch("/api/watermark/clear", {
@@ -146,14 +157,15 @@
       } else {
         window.showToast("透かしを外せませんでした", "error");
       }
-    });
-  }
+      return;
+    }
 
-  // 「透かし入りを見る」: 一覧のプレビューと同じポップアップで表示する
-  document.querySelectorAll("[data-wm-view]").forEach((link) => {
-    link.addEventListener("click", (e) => {
+    // 「透かし入りを見る」: 一覧のプレビューと同じポップアップで表示する
+    const view = e.target.closest("[data-wm-view]");
+    if (view) {
       e.preventDefault();
-      if (window.openPreview) window.openPreview(link.dataset.src, "image", "透かし入り");
-    });
+      closeMenu();
+      if (window.openPreview) window.openPreview(view.dataset.src, "image", "透かし入り");
+    }
   });
 })();

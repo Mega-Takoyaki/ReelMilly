@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_info.html" import info %}
 {% block title %}Reelmilly - {{ asset.id }}{% endblock %}
 {% block content %}
 <a href="{{ url_for('index') }}" class="back-link">
@@ -28,152 +29,161 @@
   </div>
 
   <div class="info">
-    <h1>
-      {{ asset.id }}
-      <span id="live-status"><span class="badge status-{{ asset.status }}">{{ asset.status }}</span></span>
-    </h1>
+    {# ---- 見出しと、画像への操作をまとめたメニュー ---- #}
+    <div class="page-head">
+      <div class="page-head-title">
+        <h1>
+          {{ asset.id }}
+          <span id="live-status"><span class="badge status-{{ asset.status }}">{{ asset.status }}</span></span>
+          {% if asset.is_broken %}<span class="badge badge-broken" data-tip="破綻画像（キメラ）としてマークされています">破綻画像</span>{% endif %}
+        </h1>
+        <p class="hint" id="ai-task-state"></p>
+      </div>
 
+      <details class="menu" id="asset-menu">
+        <summary class="menu-button">操作 <span aria-hidden="true">▾</span></summary>
+        <div class="menu-panel" role="menu">
+          <div id="live-menu">
+            <div class="menu-group">
+              <div class="menu-title">AI処理{{ info("処理は別プロセスのワーカー(reelmilly watch)が非同期で行い、完了すると画面が自動で更新されます。再実行すると結果を上書きします。") }}</div>
+              <button type="button" class="menu-item" role="menuitem" data-ai-run="nsfw">sfw/nsfw判定を実行</button>
+              <button type="button" class="menu-item" role="menuitem" data-ai-run="describe">説明文・タグ生成を実行</button>
+              <button type="button" class="menu-item" role="menuitem" data-ai-run="both">両方を実行</button>
+            </div>
+
+            {% if asset.kind == 'image' %}
+            <div class="menu-group">
+              <div class="menu-title">透かし{{ info("薄い文字の透かしを入れた別ファイルを作ります。元のファイルは変わりません。投稿(Fanvue)は、透かし入りがあればそれを使います。") }}</div>
+              {% if asset.wm_path %}
+              <div class="menu-note">入っている透かし:「{{ asset.wm_text }}」（{{ asset.wm_position | wm_label }}）</div>
+              {% endif %}
+              <button type="button" class="menu-item" role="menuitem" id="wm-open">透かしを入れる…</button>
+              {% if asset.wm_path %}
+              <a class="menu-item" role="menuitem" href="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}" data-wm-view data-src="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}">透かし入りを見る</a>
+              <button type="button" class="menu-item" role="menuitem" id="wm-clear">透かしを外す</button>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="menu-group">
+              <div class="menu-title">ダウンロード{{ info("元のファイル名で保存されます。透かし入りは「元の名前_watermarked」になります。") }}</div>
+              <a class="menu-item" role="menuitem" href="{{ url_for('asset_download', asset_id=asset.id) }}" download>元のファイル</a>
+              {% if asset.wm_path %}
+              <a class="menu-item" role="menuitem" href="{{ url_for('asset_download', asset_id=asset.id, variant='wm') }}" download>透かし入り</a>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="menu-group">
+            <div class="menu-title">作品の扱い</div>
+            <form method="post" action="{{ url_for('toggle_broken', asset_id=asset.id) }}" class="menu-form">
+              <button type="submit" class="menu-item" role="menuitem">{{ '破綻画像のマークを解除する' if asset.is_broken else '破綻画像（キメラ）としてマークする' }}</button>
+              {{ info("AI生成特有の崩れ(手足・顔の破綻など)がある作品に付けます。マークした作品は、既定の一覧に表示されず、SNS投稿・AI処理の対象から外れます。一覧の「破綻画像」で表示できます。") }}
+            </form>
+            {% if not asset.deleted_at %}
+            <form method="post" action="{{ url_for('trash_asset', asset_id=asset.id) }}" class="menu-form" onsubmit="return confirm('この作品をごみ箱へ移動します。よろしいですか？（ごみ箱から元に戻せます）');">
+              <button type="submit" class="menu-item menu-danger" role="menuitem">ごみ箱へ移動する</button>
+              {{ info("ファイルは削除されません。通常の一覧・投稿・AI処理の対象から外れ、「ごみ箱」から復旧できます。") }}
+            </form>
+            {% endif %}
+          </div>
+        </div>
+      </details>
+    </div>
+
+    {# ---- 基本情報 ---- #}
     <div class="card">
       <dl id="live-props">
         <dt>種別</dt><dd>{{ asset.kind }}</dd>
-        <dt>元のファイル名</dt>
-        <dd>
-          {{ asset.original_name or '不明' }}
-          <a href="{{ url_for('asset_download', asset_id=asset.id) }}" class="btn-download" download>ダウンロード</a>
-          {% if asset.wm_path %}<a href="{{ url_for('asset_download', asset_id=asset.id, variant='wm') }}" class="btn-download" download>透かし入りをダウンロード</a>{% endif %}
-        </dd>
+        <dt>元のファイル名</dt><dd>{{ asset.original_name or '不明' }}</dd>
         <dt>解像度</dt>
-        <dd>
-          {% if properties.width and properties.height %}
-          {{ properties.width }} × {{ properties.height }}
-          {% else %}
-          不明
-          {% endif %}
-        </dd>
+        <dd>{% if properties.width and properties.height %}{{ properties.width }} × {{ properties.height }}{% else %}不明{% endif %}</dd>
         {% if asset.kind == 'video' %}
         <dt>長さ</dt>
         <dd>{{ properties.duration_seconds ~ '秒' if properties.duration_seconds else '不明' }}</dd>
         {% endif %}
         <dt>ファイルサイズ</dt><dd>{{ properties.file_size_human or '不明' }}</dd>
-        <dt>取り込み日時</dt><dd>{{ asset.created_at }}</dd>
-        <dt>投稿先チャンネル</dt><dd>{{ channels | join(', ') if channels else '投稿予定なし' }}</dd>
-        <dt>NSFW自動判定（参考値）</dt>
+        <dt>取り込み日時</dt><dd>{{ asset.created_at | localtime }}</dd>
+        <dt>NSFW自動判定{{ info("AIによる参考値です。最終判断は必ず人が行ってください。") }}</dt>
         <dd>
           {% if asset.nsfw_auto_rating %}
           {{ asset.nsfw_auto_rating }}（確信度: {{ '%.2f'|format(asset.nsfw_auto_confidence) }}）
-          {% else %}
-          未実行
-          {% endif %}
+          {% else %}未実行{% endif %}
         </dd>
-        <dt>確定区分（content_rating）</dt>
-        <dd>
-          {% if asset.content_rating_confirmed %}
-          <strong>{{ asset.content_rating }}（承認済み）</strong>
-          {% else %}
-          未承認
-          {% endif %}
-        </dd>
-        <dt>内容説明（AI自動生成、参考値）</dt>
+        <dt>確定区分</dt>
+        <dd>{% if asset.content_rating_confirmed %}<strong>{{ asset.content_rating }}（承認済み）</strong>{% else %}未承認{% endif %}</dd>
+        <dt>内容説明{{ info("AIが自動生成した参考値です。") }}</dt>
         <dd>{{ asset.content_description or '未取得' }}
           {% if asset.analysis_error %}<br><span class="hint">分析エラー: {{ asset.analysis_error }}</span>{% endif %}</dd>
       </dl>
     </div>
 
+    {# ---- 区分の承認 ---- #}
     <div class="card">
-      <h2 style="margin-top: 0;">投稿先（投稿予定）</h2>
-      <form method="post" action="{{ url_for('update_channels', asset_id=asset.id) }}" class="channels-form">
-        {% for ch, c in post_channels.items() %}
-        <label class="checkbox-label">
-          <input type="checkbox" name="channel" value="{{ ch }}" {% if ch in channels %}checked{% endif %}>
-          {{ c.label }}
-        </label>
-        {% endfor %}
-        <button type="submit">保存する</button>
+      <h2>区分の承認{{ info("AIの判定は一次判定の補助です。最終判断は必ず人が行ってください。" ~ (" 初期選択は、AIの自動判定(" ~ asset.nsfw_auto_rating ~ ")からの推定です(nsfw→explicit。suggestiveかどうかはAIでは判別できないため、人が選んでください)。" if (not asset.content_rating and suggested_rating) else "")) }}</h2>
+      <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
+        <select name="content_rating" required aria-label="区分">
+          {% if not suggested_rating %}<option value="" selected disabled>選択してください</option>{% endif %}
+          {% for r in content_ratings %}
+          <option value="{{ r }}" {% if suggested_rating == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">承認する</button>
       </form>
-      <p class="hint">
-        チェックした投稿先だけが、SNS投稿の対象になります。<strong>すべてオフにすると「投稿予定なし」</strong>になり、
-        どのSNS投稿の対象にもなりません（一覧のサムネイルには斜線の丸が出ます）。
-      </p>
     </div>
 
-    {% if asset.kind == 'image' %}
-    <div class="card" id="live-wm">
-      <h2 style="margin-top: 0;">透かし</h2>
-      {% if asset.wm_path %}
-      <p>
-        透かし入りのファイルがあります:「<strong>{{ asset.wm_text }}</strong>」（{{ asset.wm_position | wm_label }}）
-        <a href="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}" data-wm-view data-src="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}">透かし入りを見る</a>
-      </p>
-      {% else %}
-      <p class="hint">透かしは入っていません。</p>
-      {% endif %}
-      <div class="ai-actions">
-        <button type="button" id="wm-open">透かしを入れる…</button>
-        {% if asset.wm_path %}<button type="button" id="wm-clear" class="btn-ghost-inline">透かしを外す</button>{% endif %}
-      </div>
-      <p class="hint">元のファイルは変わらず、透かし入りの別ファイルを作ります。投稿（Fanvue）は、透かし入りがあればそれを使います。処理は非同期で、完了するとお知らせします。</p>
-    </div>
-    {% include "_watermark_dialog.html" %}
-    {% endif %}
-
-    <div class="card">
-      <h2 style="margin-top: 0;">破綻画像（キメラ）</h2>
-      <form method="post" action="{{ url_for('toggle_broken', asset_id=asset.id) }}">
-        {% if asset.is_broken %}
-        <p><strong>この作品は破綻画像としてマークされています</strong>（既定の一覧に出ず、投稿の対象外です）。</p>
-        <button type="submit">破綻画像のマークを解除する</button>
-        {% else %}
-        <button type="submit" class="btn-danger-outline">破綻画像としてマークする</button>
-        {% endif %}
-      </form>
-      <p class="hint">AI生成特有の崩れ（手足・顔の破綻など）がある作品に付けます。マークした作品は、既定の一覧に表示されず、SNS投稿・AI処理の対象から外れます。一覧の「破綻画像」で表示できます。</p>
-    </div>
-
+    {# ---- 投稿(投稿予定と投稿状態を、投稿先ごとにまとめる) ---- #}
     <div class="card" id="live-posts">
-      <h2 style="margin-top: 0;">投稿状態</h2>
-      <table class="post-table">
+      <h2>投稿{{ info("投稿先ごとに、「投稿予定」(チェックした投稿先だけがSNS投稿の対象になります。すべてオフなら『投稿予定なし』で、どの投稿の対象にもなりません)と、「投稿状態」(未投稿・投稿済み・失敗)をまとめて管理します。準備状態(READY等)とは別に記録され、失敗した作品は自動では再投稿されません。手動で投稿した場合は『投稿済みとして記録』で記録すると、自動投稿との二重投稿を防げます。") }}</h2>
+      <div class="post-rows">
         {% for ch, c in post_channels.items() %}
         {% set p = posts.get(ch) %}
-        <tr>
-          <th><span class="chip chip-post {{ 'post-' ~ p.status if p else '' }}" style="--ch: {{ c.color }}">{{ c.letter }}</span> {{ c.label }}</th>
-          <td>
+        <div class="post-row" data-channel="{{ ch }}">
+          <label class="post-plan" data-tip="この投稿先を投稿予定にする">
+            <input type="checkbox" name="channel" value="{{ ch }}" {% if ch in channels %}checked{% endif %} aria-label="{{ c.label }}を投稿予定にする">
+            <span class="chip chip-post {{ 'post-' ~ p.status if p else '' }}" style="--ch: {{ c.color }}">{{ c.letter }}</span>
+            <span class="post-name">{{ c.label }}</span>
+          </label>
+          <div class="post-state">
             {% if not p %}
-            <span class="hint">未投稿</span>
+            <span class="state-none">未投稿</span>
             {% elif p.status == 'posted' %}
-            投稿済み（{{ p.posted_at | localtime }}）{% if p.url %} <a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.url }}</a>{% endif %}
+            <span class="state-posted">投稿済み</span>
+            <span class="hint">{{ p.posted_at | localtime }}{% if p.source == 'manual' %}（手動で記録）{% endif %}</span>
+            {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener" class="post-url">{{ p.url }}</a>{% endif %}
             {% else %}
-            <strong>投稿に失敗</strong>（{{ p.posted_at | localtime }}）<br><span class="hint">{{ p.error or '理由不明' }}</span>
+            <span class="state-failed">投稿に失敗</span>
+            <span class="hint">{{ p.posted_at | localtime }} {{ p.error or '理由不明' }}</span>
+            {% endif %}
+          </div>
+          <div class="post-actions">
+            {% if p and p.status == 'failed' %}
             <form method="post" action="{{ url_for('retry_post', asset_id=asset.id, channel=ch) }}" class="inline-form">
-              <button type="submit" class="btn-ghost-inline">再投稿の対象に戻す</button>
+              <button type="submit" class="btn-ghost-inline" data-tip="失敗の記録を消して、次回の投稿の対象に戻します">再投稿の対象に戻す</button>
             </form>
             {% endif %}
-          </td>
-        </tr>
+            {% if p and p.status == 'posted' %}
+            <button type="button" class="btn-ghost-inline" data-post-clear="{{ ch }}" data-label="{{ c.label }}" data-tip="投稿の記録を取り消して、未投稿に戻します">記録を取り消す</button>
+            {% else %}
+            <button type="button" class="btn-ghost-inline" data-post-manual="{{ ch }}" data-label="{{ c.label }}">投稿済みとして記録…</button>
+            {% endif %}
+          </div>
+        </div>
         {% endfor %}
-      </table>
-      <p class="hint">準備状態（READY等）とは別に、投稿先ごとに記録されます。失敗した作品は自動では再投稿されません。</p>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top: 0;">AI処理</h2>
-      <div class="ai-actions">
-        <button type="button" data-ai-run="nsfw">sfw/nsfw判定を実行</button>
-        <button type="button" data-ai-run="describe">説明文・タグ生成を実行</button>
-        <button type="button" class="btn-ghost-inline" data-ai-run="both">両方実行</button>
       </div>
-      <p class="hint" id="ai-task-state"></p>
-      <p class="hint">処理は別プロセスのワーカー（reelmilly watch）が非同期で行い、完了すると画面が自動で更新されます。再実行すると結果を上書きします。</p>
+      <p class="no-plan-note" id="no-plan-note" {% if channels %}hidden{% endif %}>投稿予定なし（どの投稿先にも、自動では投稿されません）</p>
     </div>
 
+    {# ---- Fanvue投稿文 ---- #}
     <div class="card">
-      <h2 style="margin-top: 0;">Fanvue投稿文</h2>
+      <h2>Fanvue投稿文{{ info("未設定の場合、投稿時に内容説明から自動生成されます。生成モードがdraftのときは、下書きを確認して採用します。") }}</h2>
       <form method="post" action="{{ url_for('update_caption', asset_id=asset.id) }}" class="caption-form">
-        <textarea name="fanvue_text" rows="3" placeholder="未設定の場合、投稿時に内容説明から自動生成されます">{{ asset.fanvue_text or '' }}</textarea>
+        <textarea name="fanvue_text" rows="3" placeholder="未設定の場合は、内容説明から自動生成されます" aria-label="Fanvue投稿文">{{ asset.fanvue_text or '' }}</textarea>
         <button type="submit">保存する</button>
       </form>
       {% if asset.fanvue_caption_draft %}
       <div class="caption-draft">
-        <p class="hint">生成AIによる下書き（caption_mode=draft）。内容を確認のうえ採用してください。</p>
+        <p class="hint">生成AIによる下書き</p>
         <p>{{ asset.fanvue_caption_draft }}</p>
         <form method="post" action="{{ url_for('adopt_caption_draft', asset_id=asset.id) }}">
           <button type="submit">この下書きを投稿文として採用する</button>
@@ -183,36 +193,7 @@
     </div>
 
     <div class="card">
-      <h2 style="margin-top: 0;">区分の承認</h2>
-      <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
-        <label>区分を確定して承認する
-          <select name="content_rating" required>
-            {% if not suggested_rating %}<option value="" selected disabled>選択してください</option>{% endif %}
-            {% for r in content_ratings %}
-            <option value="{{ r }}" {% if suggested_rating == r %}selected{% endif %}>{{ r }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <button type="submit">承認する</button>
-      </form>
-      {% if not asset.content_rating and suggested_rating %}
-      <p class="hint">初期選択はAIの自動判定（{{ asset.nsfw_auto_rating }}）からの推定値です（nsfw→explicit。suggestiveかどうかはAIでは判別できないため人が選んでください）。</p>
-      {% endif %}
-      <p class="hint">これはAIによる一次判定の補助表示です。最終判断は必ず人が行ってください。</p>
-    </div>
-
-    {% if not asset.deleted_at %}
-    <div class="card">
-      <h2 style="margin-top: 0;">ごみ箱</h2>
-      <form method="post" action="{{ url_for('trash_asset', asset_id=asset.id) }}" onsubmit="return confirm('この作品をごみ箱へ移動します。よろしいですか？（ごみ箱から元に戻せます）');">
-        <button type="submit" class="btn-danger-outline">この作品をごみ箱へ移動する</button>
-      </form>
-      <p class="hint">ファイルは削除されません。通常の一覧・投稿・AI処理の対象から外れ、「ごみ箱」から復旧できます。</p>
-    </div>
-    {% endif %}
-
-    <div class="card">
-      <h2 style="margin-top: 0;">タグ</h2>
+      <h2>タグ</h2>
       <ul class="tag-list" id="tag-list" data-asset-id="{{ asset.id }}">
         {% for tag in tags %}
         <li data-tag="{{ tag }}">
@@ -228,7 +209,7 @@
     </div>
 
     <div class="card">
-      <h2 style="margin-top: 0;">フォルダ</h2>
+      <h2>フォルダ</h2>
       <ul class="folder-list" id="folder-list" data-asset-id="{{ asset.id }}">
         {% for folder in asset_folders %}
         <li data-folder-id="{{ folder.id }}">
@@ -250,6 +231,25 @@
     </div>
   </div>
 </section>
+
+{% if asset.kind == 'image' %}{% include "_watermark_dialog.html" %}{% endif %}
+
+<dialog id="manual-post-dialog" class="wm-dialog">
+  <form method="dialog" id="manual-post-form">
+    <h2 style="margin-top: 0;">投稿済みとして記録<span id="manual-post-label"></span>{{ info("アプリを使わず、手動で投稿した作品の記録です。記録すると、その投稿先は『投稿済み』になり、自動投稿の対象から外れます(二重投稿を防げます)。日時とURLは、あとから分かる範囲で構いません。") }}</h2>
+    <label>投稿日時
+      <input type="datetime-local" id="manual-post-time" required>
+    </label>
+    <label>投稿のURL（任意）
+      <input type="url" id="manual-post-url" placeholder="https://…" autocomplete="off">
+    </label>
+    <div class="confirm-actions">
+      <button type="button" class="btn-ghost" id="manual-post-cancel">キャンセル</button>
+      <button type="submit" class="btn-primary" id="manual-post-save">記録する</button>
+    </div>
+  </form>
+</dialog>
+
 {% include "_lightbox.html" %}
 {% endblock %}
 {% block scripts %}
@@ -258,5 +258,6 @@
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
+<script src="{{ url_for('static', filename='post-actions.js') }}"></script>
 <script src="{{ url_for('static', filename='esc-back.js') }}"></script>
 {% endblock %}

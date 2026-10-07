@@ -1,0 +1,2 @@
+{# 項目名の横の「ⓘ」。ホバーで説明、クリックで固定表示(app.js)。説明文は画面に出さず、ここに集約する #}
+{% macro info(text) %}<button type="button" class="info-icon" data-info="{{ text }}" aria-label="説明を表示" aria-haspopup="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>{% endmacro %}

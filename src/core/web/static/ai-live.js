@@ -67,7 +67,7 @@
       span.style.setProperty("--ch", CHANNELS[ch].color);
       span.dataset.channel = ch;
       span.dataset.tip = p.status === "posted"
-        ? `${CHANNELS[ch].label}: 投稿済み（${fmtTime(p.posted_at)}）${p.url ? " " + p.url : ""}`
+        ? `${CHANNELS[ch].label}: 投稿済み${p.source === "manual" ? "（手動で記録）" : ""}（${fmtTime(p.posted_at)}）${p.url ? " " + p.url : ""}`
         : `${CHANNELS[ch].label}: 投稿に失敗（${p.error || "理由不明"}）`;
       span.textContent = CHANNELS[ch].letter;
       box.appendChild(span);
@@ -181,7 +181,7 @@
     try {
       const res = await fetch(window.location.href, { headers: { "X-Requested-With": "XMLHttpRequest" } });
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-      ["live-props", "live-status", "live-posts", "live-wm"].forEach((id) => {
+      ["live-props", "live-status", "live-posts", "live-menu"].forEach((id) => {
         const fresh = doc.getElementById(id);
         const cur = document.getElementById(id);
         if (fresh && cur) cur.innerHTML = fresh.innerHTML;
@@ -423,12 +423,14 @@
     poll();
   });
 
-  // 詳細画面などの実行ボタン
-  document.querySelectorAll("[data-ai-run]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const root = document.getElementById("asset-root");
-      if (root) enqueue([root.dataset.assetId], btn.dataset.aiRun);
-    });
+  // 詳細画面の実行ボタン(メニューの中身は完了時に差し替わるため、documentで受ける)
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-ai-run]");
+    const root = document.getElementById("asset-root");
+    if (!btn || !root || btn.disabled) return;
+    enqueue([root.dataset.assetId], btn.dataset.aiRun);
+    const menu = document.getElementById("asset-menu");
+    if (menu) menu.open = false;
   });
 
   poll();

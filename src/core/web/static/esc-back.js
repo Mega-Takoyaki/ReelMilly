@@ -3,6 +3,11 @@
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.defaultPrevented) return;
     if (document.querySelector("dialog[open]")) return;
+    const menu = document.querySelector("details.menu[open]");
+    if (menu) {
+      menu.open = false; // 画面を戻る前に、開いているメニューを閉じる
+      return;
+    }
     const el = document.activeElement;
     if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
       el.blur(); // 入力欄ではまずフォーカスを外すだけ(誤って画面遷移しない)
