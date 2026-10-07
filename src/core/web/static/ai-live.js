@@ -99,12 +99,30 @@
       chip.textContent = "透";
       box.appendChild(chip);
     }
-    chip.dataset.tip = `透かし入り: 「${a.wm.text}」（${WM_POSITIONS[a.wm.position] || a.wm.position}）。投稿は透かし入りのファイルを使います`;
+    chip.dataset.tip = `透かし入り: 「${a.wm.text}」（${a.wm.label}）。投稿は透かし入りのファイルを使います`;
+  }
+
+  // 破綻画像のチップ(表示モードが「含める/のみ」のときだけ、該当する作品に出る)
+  function renderBroken(card, a) {
+    const box = card.querySelector(".asset-badges");
+    if (!box) return;
+    let chip = box.querySelector(".chip-broken");
+    if (!a.broken) {
+      if (chip) chip.remove();
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement("span");
+      chip.className = "chip chip-broken";
+      chip.textContent = "破";
+      chip.dataset.tip = "破綻画像（キメラ）: 既定の一覧・投稿の対象から外れています";
+      box.appendChild(chip);
+    }
   }
 
   function renderOverlay(card, a) {
     const busy = activeLabels(a);
-    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts, a.no_plan, a.wm]);
+    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts, a.no_plan, a.wm, a.broken]);
     if (card.dataset.sig === sig) return; // 変化が無ければ触らない(ツールチップのちらつき防止)
     card.dataset.sig = sig;
 
@@ -132,6 +150,7 @@
 
     renderPosts(card, a);
     renderWatermark(card, a);
+    renderBroken(card, a);
 
     const dot = card.querySelector(".status-dot");
     if (dot) {

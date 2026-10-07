@@ -13,6 +13,76 @@
 
   let controller = null;
   let timer = null;
+  const chipBox = document.getElementById("filter-chips");
+  const brokenBadge = document.getElementById("broken-badge");
+  const RADIO_TEXT = { show: "含む", only: "のみ" };
+
+  function optionText(input) {
+    const label = input.closest("label");
+    return label ? label.textContent.replace(/\s*\(\d+\)\s*$/, "").trim() : input.value;
+  }
+
+  // 選択中の条件を、「見出し: 値 ×」のチップで一覧の上に出す。×で、その条件だけ外せる
+  function renderChips() {
+    if (!chipBox) return;
+    const chips = [];
+    const search = form.querySelector('input[type="search"]');
+    if (search && search.value.trim()) {
+      chips.push({ text: `検索: ${search.value.trim()}`, remove: () => { search.value = ""; } });
+    }
+    // ファイルタイプ: 種別を丸ごと選んでいれば1つのチップにまとめる
+    form.querySelectorAll(".tree-node").forEach((node) => {
+      const parent = node.querySelector('input[name="kind"]');
+      const exts = Array.from(node.querySelectorAll('input[name="ext"]'));
+      const checked = exts.filter((e) => e.checked);
+      if (parent.checked) {
+        chips.push({ text: `ファイルタイプ: ${optionText(parent).replace(/\s*\(\d+\)$/, "")}`, input: parent });
+      } else {
+        checked.forEach((e) => chips.push({ text: `ファイルタイプ: ${optionText(e)}`, input: e }));
+      }
+    });
+    form.querySelectorAll('input[type="checkbox"]:checked').forEach((input) => {
+      if (input.name === "kind" || input.name === "ext") return; // 上で処理済み
+      chips.push({ text: `${input.dataset.group || input.name}: ${optionText(input)}`, input });
+    });
+    form.querySelectorAll('input[type="radio"]:checked').forEach((r) => {
+      if (r.value === r.dataset.default) return; // 既定のままの条件は出さない
+      chips.push({ text: `${r.dataset.group || r.name}: ${optionText(r)}`, radio: r });
+    });
+
+    chipBox.replaceChildren(
+      ...chips.map((c) => {
+        const el = document.createElement("span");
+        el.className = "filter-chip";
+        el.append(c.text);
+        const x = document.createElement("button");
+        x.type = "button";
+        x.setAttribute("aria-label", `${c.text} を外す`);
+        x.textContent = "×";
+        x.addEventListener("click", () => {
+          if (c.remove) c.remove();
+          if (c.input) { c.input.checked = false; c.input.dispatchEvent(new Event("change", { bubbles: true })); return; }
+          if (c.radio) {
+            const def = form.querySelector(`input[name="${c.radio.name}"][value="${c.radio.dataset.default}"]`);
+            def.checked = true;
+            def.dispatchEvent(new Event("change", { bubbles: true }));
+            return;
+          }
+          apply();
+        });
+        el.appendChild(x);
+        return el;
+      })
+    );
+    chipBox.hidden = chips.length === 0;
+  }
+
+  function syncBrokenBadge() {
+    if (!brokenBadge) return;
+    const mode = (form.querySelector('input[name="broken"]:checked') || {}).value;
+    brokenBadge.hidden = !RADIO_TEXT[mode];
+    brokenBadge.textContent = RADIO_TEXT[mode] || "";
+  }
 
   function queryString() {
     const params = new URLSearchParams();
@@ -27,6 +97,8 @@
   }
 
   async function apply() {
+    renderChips();
+    syncBrokenBadge();
     const qs = queryString();
     const url = qs ? `/?${qs}` : "/";
     if (controller) controller.abort();
@@ -55,6 +127,7 @@
   });
   form.addEventListener("input", (e) => {
     if (e.target.matches('input[type="search"]')) {
+      renderChips();
       clearTimeout(timer);
       timer = setTimeout(apply, 350);
     }
@@ -65,11 +138,14 @@
     apply();
   });
 
+  renderChips(); // 読み込み時(URLで指定された絞り込み)の分
+
   if (clearLink) {
     clearLink.addEventListener("click", (e) => {
       e.preventDefault();
       form.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; cb.indeterminate = false; });
       form.querySelectorAll('input[type="radio"]').forEach((r) => { r.checked = r.value === r.dataset.default; });
+      form.querySelectorAll(".tree-node input").forEach((cb) => { cb.indeterminate = false; });
       form.querySelectorAll('input[type="search"]').forEach((i) => (i.value = ""));
       form.querySelectorAll(".ms-count").forEach((c) => { c.textContent = "0"; c.hidden = true; });
       apply();

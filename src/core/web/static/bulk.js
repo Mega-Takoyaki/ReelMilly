@@ -82,6 +82,29 @@
     });
   });
 
+  // 破綻画像(キメラ)のマーク。付けた作品は既定の一覧から消える(フィルタで表示できる)
+  [["bulk-broken", true], ["bulk-unbroken", false]].forEach(([id, broken]) => {
+    document.getElementById(id).addEventListener("click", async () => {
+      if (selected.size === 0) return;
+      if (broken) {
+        const ok = await window.confirmDialog(
+          `選択した${selected.size}件を破綻画像（キメラ）にします。既定の一覧に表示されなくなり、SNS投稿の対象からも外れます（フィルタの「破綻画像」で表示できます）。よろしいですか？`
+        );
+        if (!ok) return;
+      }
+      try {
+        const data = await postJson("/api/assets/broken", { asset_ids: Array.from(selected), broken });
+        window.showToast(
+          broken ? `${data.changed}件を破綻画像にしました` : `${data.changed}件の破綻画像のマークを解除しました`,
+          "success"
+        );
+        setTimeout(() => window.location.reload(), 600);
+      } catch (err) {
+        window.showToast(`変更に失敗しました: ${err.message}`, "error");
+      }
+    });
+  });
+
   // 透かし: 設定ダイアログを開く(プレビューには、選択した画像のうち最初の1枚を使う)
   document.getElementById("bulk-wm").addEventListener("click", () => {
     if (selected.size === 0) return;

@@ -104,6 +104,14 @@
     else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
   });
 
+  // 一覧以外(詳細画面の「透かし入りを見る」など)から、1枚だけ同じポップアップで表示する
+  window.openPreview = function (src, kind, alt) {
+    index = -1;
+    prevButton.hidden = true;
+    nextButton.hidden = true;
+    openLightbox(src, kind || "image", alt);
+  };
+
   zoomSlider.addEventListener("input", applyZoom);
   closeButton.addEventListener("click", closeLightbox);
 

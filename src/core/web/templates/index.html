@@ -1,29 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
-{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip %}
-{# 複数選択できる絞り込み(項目内はOR)。チェックを入れて「絞り込む」で適用する #}
-{% macro multi(name, label, options, selected, hint='', mode_name='', mode_value='', mode_default='', mode_choices=()) %}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip %}
+{# 絞り込みの部品。項目内はOR。チェックを入れるとその場で一覧に反映される(filters.js) #}
+
+{# チェックの並び1つ分。groupは、選択中の条件を表すチップの見出しにも使う #}
+{% macro options(name, group, items, selected) %}
 {% set sel = selected | map('string') | list %}
+{% for value, text in items %}
+<label class="ms-opt"><input type="checkbox" name="{{ name }}" value="{{ value }}" data-group="{{ group }}" {% if value | string in sel %}checked{% endif %}> {{ text }}</label>
+{% else %}
+<p class="hint">選択肢がありません</p>
+{% endfor %}
+{% endmacro %}
+
+{# 1項目だけのプルダウン(タグ・フォルダ)。必要なら「すべて含む/いずれか」の切り替えを付ける #}
+{% macro multi(name, label, items, selected, hint='', mode_name='', mode_value='', mode_default='', mode_choices=()) %}
 <div class="ms">
   <details>
-    <summary>{{ label }}<span class="ms-count" {% if not sel %}hidden{% endif %}>{{ sel | length }}</span></summary>
+    <summary>{{ label }}<span class="ms-count" {% if not selected %}hidden{% endif %}>{{ selected | length }}</span></summary>
     <div class="ms-panel">
       {% if mode_name %}
-      {# 1つの作品が複数持てる項目(タグ・フォルダ)は、選んだものを「すべて含む」か「いずれか」かを選べる #}
       <div class="ms-mode" role="radiogroup" aria-label="{{ label }}の条件">
         {% for value, text in mode_choices %}
-        <label><input type="radio" name="{{ mode_name }}" value="{{ value }}" data-default="{{ mode_default }}" {% if mode_value == value %}checked{% endif %}> {{ text }}</label>
+        <label><input type="radio" name="{{ mode_name }}" value="{{ value }}" data-default="{{ mode_default }}" data-group="{{ label }}の条件" {% if mode_value == value %}checked{% endif %}> {{ text }}</label>
         {% endfor %}
       </div>
       {% endif %}
       {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
-      {% for value, text in options %}
-      <label class="ms-opt"><input type="checkbox" name="{{ name }}" value="{{ value }}" {% if value | string in sel %}checked{% endif %}> {{ text }}</label>
-      {% else %}
-      <p class="hint">選択肢がありません</p>
-      {% endfor %}
+      {{ options(name, label, items, selected) }}
     </div>
+  </details>
+</div>
+{% endmacro %}
+
+{# 関連する項目を、1つのプルダウンに見出しつきでまとめる(状態・区分、投稿) #}
+{% macro group(label, count) %}
+<div class="ms">
+  <details>
+    <summary>{{ label }}<span class="ms-count" {% if not count %}hidden{% endif %}>{{ count }}</span></summary>
+    <div class="ms-panel ms-wide">{{ caller() }}</div>
   </details>
 </div>
 {% endmacro %}
@@ -37,10 +53,10 @@
       <p class="hint">画像・動画を選ぶと、その拡張子すべてが対象です。拡張子だけを選ぶこともできます。</p>
       {% for node in tree %}
       <div class="tree-node">
-        <label class="ms-opt tree-parent"><input type="checkbox" name="kind" value="{{ node.kind }}" {% if node.checked %}checked{% endif %}> {{ node.label }}</label>
+        <label class="ms-opt tree-parent"><input type="checkbox" name="kind" value="{{ node.kind }}" data-group="ファイルタイプ" {% if node.checked %}checked{% endif %}> {{ node.label }}</label>
         <div class="tree-children">
           {% for e in node.exts %}
-          <label class="ms-opt"><input type="checkbox" name="ext" value="{{ e.ext }}" data-parent-kind="{{ node.kind }}" {% if e.checked %}checked{% endif %}> {{ e.label }}</label>
+          <label class="ms-opt"><input type="checkbox" name="ext" value="{{ e.ext }}" data-parent-kind="{{ node.kind }}" data-group="ファイルタイプ" {% if e.checked %}checked{% endif %}> {{ e.label }}</label>
           {% endfor %}
         </div>
       </div>
@@ -78,19 +94,41 @@
     </label>
     {# 候補は、いま実在する値だけを件数つきで出す(ごみ箱の作品は除く) #}
     {{ type_filter(type_tree, type_count) }}
-    {{ multi("status", "ステータス", filter_options.status, status_sel) }}
-    {{ multi("content_rating", "区分（承認済み）", filter_options.content_rating, rating_sel) }}
-    {{ multi("nsfw_auto", "AI判定", filter_options.nsfw_auto, auto_sel) }}
-    {{ multi("confirmed", "承認状態", filter_options.confirmed, confirmed_sel) }}
-    {{ multi("plan", "投稿予定", filter_options.plan, plan_sel) }}
-    {{ multi("post", "投稿状態", filter_options.post, post_sel) }}
     {{ multi("tag", "タグ", filter_options.tag, tag_sel, mode_name="tag_mode", mode_value=tag_mode, mode_default="all",
              mode_choices=(("all", "すべて含む (AND)"), ("any", "いずれかを含む (OR)"))) }}
     {{ multi("folder_id", "フォルダ", filter_options.folder_id, folder_sel, mode_name="folder_mode", mode_value=folder_mode, mode_default="any",
              mode_choices=(("any", "いずれかに入っている (OR)"), ("all", "すべてに入っている (AND)"))) }}
+    {% call group("状態・区分", status_sel | length + rating_sel | length + auto_sel | length + confirmed_sel | length) %}
+    <div class="ms-columns">
+      <div class="ms-section"><h4>ステータス</h4>{{ options("status", "ステータス", filter_options.status, status_sel) }}</div>
+      <div class="ms-section"><h4>区分（承認済み）</h4>{{ options("content_rating", "区分", filter_options.content_rating, rating_sel) }}</div>
+      <div class="ms-section"><h4>AI判定</h4>{{ options("nsfw_auto", "AI判定", filter_options.nsfw_auto, auto_sel) }}</div>
+      <div class="ms-section"><h4>承認状態</h4>{{ options("confirmed", "承認状態", filter_options.confirmed, confirmed_sel) }}</div>
+    </div>
+    {% endcall %}
+    {% call group("投稿", plan_sel | length + post_sel | length) %}
+    <div class="ms-columns">
+      <div class="ms-section"><h4>投稿予定</h4>{{ options("plan", "投稿予定", filter_options.plan, plan_sel) }}</div>
+      <div class="ms-section"><h4>投稿状態</h4>{{ options("post", "投稿状態", filter_options.post, post_sel) }}</div>
+    </div>
+    {% endcall %}
+    <div class="ms">
+      <details>
+        <summary>破綻画像<span class="ms-count" id="broken-badge" {% if broken_mode == 'hide' %}hidden{% endif %}>{{ '含む' if broken_mode == 'show' else 'のみ' }}</span></summary>
+        <div class="ms-panel">
+          <p class="hint">AI生成特有の崩れ（キメラ）としてマークした作品です。既定では一覧に出ません（{{ broken_total }}件）。</p>
+          <div class="ms-mode ms-mode-col" role="radiogroup" aria-label="破綻画像の表示">
+            <label><input type="radio" name="broken" value="hide" data-default="hide" data-group="破綻画像" {% if broken_mode == 'hide' %}checked{% endif %}> 表示しない（既定）</label>
+            <label><input type="radio" name="broken" value="show" data-default="hide" data-group="破綻画像" {% if broken_mode == 'show' %}checked{% endif %}> 含めて表示する</label>
+            <label><input type="radio" name="broken" value="only" data-default="hide" data-group="破綻画像" {% if broken_mode == 'only' %}checked{% endif %}> 破綻画像だけ表示する</label>
+          </div>
+        </div>
+      </details>
+    </div>
     <button type="submit" class="btn-primary" id="filter-apply">絞り込む</button>
-    <a href="{{ url_for('index') }}" class="filter-clear" id="filter-clear" {% if not active_filters %}hidden{% endif %}>クリア</a>
+    <a href="{{ url_for('index') }}" class="filter-clear" id="filter-clear" {% if not active_filters %}hidden{% endif %}>すべてクリア</a>
   </form>
+  <div id="filter-chips" class="filter-chips" aria-label="選択中の条件"></div>
 </section>
 
 <div id="dropzone" class="asset-area">
@@ -122,7 +160,7 @@
       {% else %}
       <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
       {% endif %}
-      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset, wm_positions) }}</span>
+      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset) }}{{ broken_chip(asset) }}</span>
       {{ status_dot(asset) }}
       <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
       <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
@@ -144,17 +182,7 @@
 </div>
 </div>
 
-<dialog id="lightbox" class="lightbox">
-  <button type="button" class="lightbox-close" aria-label="閉じる">&times;</button>
-  <button type="button" class="lightbox-nav lightbox-prev" aria-label="前へ">&#8249;</button>
-  <button type="button" class="lightbox-nav lightbox-next" aria-label="次へ">&#8250;</button>
-  <div class="lightbox-media"></div>
-  <div class="lightbox-zoom" hidden>
-    <span>Zoom</span>
-    <input type="range" min="50" max="400" step="10" value="100" aria-label="表示倍率">
-    <output>100%</output>
-  </div>
-</dialog>
+{% include "_lightbox.html" %}
 
 {% include "_watermark_dialog.html" %}
 
@@ -193,6 +221,11 @@
   <span class="bulk-group">
     <button type="button" id="bulk-noplan">投稿予定なしにする</button>
     <button type="button" id="bulk-plan">投稿予定に戻す</button>
+  </span>
+
+  <span class="bulk-group">
+    <button type="button" id="bulk-broken" class="btn-danger-outline">破綻画像にする</button>
+    <button type="button" id="bulk-unbroken" class="btn-ghost-inline">破綻を解除</button>
   </span>
 
   <span class="bulk-group">

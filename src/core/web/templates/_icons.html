@@ -11,9 +11,16 @@
 {%- endmacro %}
 
 {# 透かし入りのファイルがある作品に付く小さなチップ(ai-live.jsのrenderOverlayと同じ表示) #}
-{% macro wm_chip(asset, positions) -%}
+{% macro wm_chip(asset) -%}
 {%- if asset.wm_path -%}
-<span class="chip chip-wm" data-tip="透かし入り: 「{{ asset.wm_text }}」（{{ positions.get(asset.wm_position, asset.wm_position) }}）。投稿は透かし入りのファイルを使います">透</span>
+<span class="chip chip-wm" data-tip="透かし入り: 「{{ asset.wm_text }}」（{{ asset.wm_position | wm_label }}）。投稿は透かし入りのファイルを使います">透</span>
+{%- endif -%}
+{%- endmacro %}
+
+{# 破綻画像(キメラ)のマーク。表示モード(含める/のみ)のときだけ一覧に出る #}
+{% macro broken_chip(asset) -%}
+{%- if asset.is_broken -%}
+<span class="chip chip-broken" data-tip="破綻画像（キメラ）: 既定の一覧・投稿の対象から外れています">破</span>
 {%- endif -%}
 {%- endmacro %}
 

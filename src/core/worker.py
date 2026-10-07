@@ -240,12 +240,13 @@ class AnalysisWorker:
                 params = json.loads(task.get("params") or "{}")
                 if asset["kind"] != "image":
                     return "watermark: 動画は透かしの挿入に未対応です"
+                positions = watermark.normalize_positions(params.get("positions") or params.get("position"))
                 out = watermark.apply_to_file(
-                    media_path, params["text"], params["position"], params["opacity"], params["size"]
+                    media_path, params["text"], positions, params["opacity"], params["size"]
                 )
                 db.update_asset(
                     conn, asset["id"], wm_path=str(out), wm_text=params["text"],
-                    wm_position=params["position"], updated_at=_now().isoformat(),
+                    wm_position=",".join(positions), updated_at=_now().isoformat(),
                 )
                 return None
             if task["kind"] == "nsfw":

@@ -183,6 +183,7 @@ window.confirmDialog = function confirmDialog(message) {
   document.querySelectorAll(".ms").forEach((ms) => {
     const count = ms.querySelector(".ms-count");
     ms.addEventListener("change", (e) => {
+      if (!ms.querySelector('input[type="checkbox"]')) return; // ラジオだけの項目(破綻画像)は、filters.jsが表示を更新する
       if (ms.hasAttribute("data-tree")) syncTree(ms, e.target);
       const selector = ms.hasAttribute("data-tree") ? 'input[name="ext"]:checked' : 'input[type="checkbox"]:checked';
       const n = ms.querySelectorAll(selector).length;

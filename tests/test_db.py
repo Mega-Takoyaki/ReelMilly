@@ -377,3 +377,35 @@ def test_tag_and_folder_filters_support_all_and_any_modes(tmp_path):
     assert ids(folder_id=[f1, f2]) == ["a", "b"]
     assert ids(folder_id=[f1, f2], folder_mode="any") == ["a", "b"]
     assert ids(folder_id=[f1, f2], folder_mode="all") == ["a"]
+
+
+def test_broken_images_are_hidden_by_default_and_excluded_from_everything(tmp_path):
+    conn = db.get_connection(tmp_path / "t.db")
+    db.init_db(conn)
+    for i in ("ok", "bad"):
+        db.insert_asset(conn, _make_asset(i))
+    db.set_channels(conn, "bad", ["fanvue"])
+    db.set_channels(conn, "ok", ["fanvue"])
+    db.enqueue_ai_task(conn, "bad", "nsfw")
+
+    assert db.set_broken(conn, ["bad", "ok", "missing"], True) == 2
+    assert db.set_broken(conn, ["bad"], True) == 0  # 変化なし
+    ids = lambda **kw: sorted(x["id"] for x in db.list_assets(conn, **kw))
+
+    assert ids() == []  # どちらも破綻にした → 既定の一覧には出ない
+    db.set_broken(conn, ["ok"], False)
+    assert ids() == ["ok"]  # 既定は破綻画像を含めない
+    assert ids(broken="show") == ["bad", "ok"]
+    assert ids(broken="only") == ["bad"]
+    assert ids(channel="fanvue") == ["ok"]  # 投稿ジョブ(既定)の対象にもならない
+    assert db.ai_task_counts(conn)["queued"] == 0  # 待機中のAI処理は取り消される
+    assert "bad" not in db.unprocessed_asset_ids(conn, "nsfw")  # 定期実行の対象外
+
+    # 件数(絞り込み候補)は、いま一覧に出す範囲に合わせる
+    assert dict(db.facets(conn, [])["status"]) == {"ready": 1}
+    assert dict(db.facets(conn, [], "show")["status"]) == {"ready": 2}
+    assert dict(db.facets(conn, [], "only")["status"]) == {"ready": 1}
+
+    # ごみ箱の中では破綻の区別をしない(復旧・完全削除の対象から漏れない)
+    db.trash_assets(conn, ["bad"])
+    assert ids(trashed=True) == ["bad"]

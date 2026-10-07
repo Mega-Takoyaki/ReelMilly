@@ -37,7 +37,7 @@ def normalize_asset_files(config: Config, conn: sqlite3.Connection) -> Normalize
     """
     result = NormalizeResult()
     running = {r["asset_id"] for r in conn.execute("SELECT asset_id FROM ai_tasks WHERE status = 'running'")}
-    for asset in db.list_assets(conn, limit=1000000) + db.list_assets(conn, trashed=True, limit=1000000):
+    for asset in db.list_assets(conn, broken="show", limit=1000000) + db.list_assets(conn, trashed=True, limit=1000000):
         path = Path(asset["file_path"])
         target = path.with_name(id_filename(asset["id"], path))
         if path.name == target.name:

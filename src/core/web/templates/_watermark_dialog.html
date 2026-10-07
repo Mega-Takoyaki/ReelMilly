@@ -1,23 +1,17 @@
-{# 透かしの設定ダイアログ。文字・挿入位置・濃さ・大きさを、実行前に指定する(一覧の一括操作と詳細画面で共用) #}
+{# 透かしの設定ダイアログ。文字・挿入位置(5x5・複数)・濃さ・大きさを、実行前に指定する(一覧の一括操作と詳細画面で共用) #}
+{% from "_wm_picker.html" import position_picker %}
 <dialog id="wm-dialog" class="wm-dialog" data-defaults='{{ wm_defaults | tojson }}'>
   <form method="dialog" id="wm-form">
     <h2 style="margin-top: 0;">透かしを入れる</h2>
     <p class="hint" id="wm-target"></p>
 
     <label>透かしの文字
-      <input type="text" id="wm-text" maxlength="100" placeholder="例: @ai_hiyo" required>
+      <input type="text" id="wm-text" maxlength="100" placeholder="例: @GirlAidol" required>
     </label>
 
     <fieldset class="wm-position">
-      <legend>挿入位置</legend>
-      <div class="wm-grid" role="radiogroup" aria-label="挿入位置">
-        {% for key in ["top-left", "top-center", "top-right", "middle-left", "center", "middle-right", "bottom-left", "bottom-center", "bottom-right"] %}
-        <label class="wm-cell" title="{{ wm_positions[key] }}">
-          <input type="radio" name="wm-position" value="{{ key }}"><span>{{ wm_positions[key] }}</span>
-        </label>
-        {% endfor %}
-      </div>
-      <label class="wm-tile"><input type="radio" name="wm-position" value="tile"> {{ wm_positions["tile"] }}</label>
+      <legend>挿入位置（複数選べます）</legend>
+      {{ position_picker("wm-position", [], wm_grid, wm_positions) }}
     </fieldset>
 
     <div class="wm-sliders">
@@ -40,6 +34,6 @@
       <button type="button" class="btn-ghost" id="wm-cancel">キャンセル</button>
       <button type="submit" class="btn-primary" id="wm-run">透かしを入れる</button>
     </div>
-    <p class="hint">動画には入れられません（画像のみ）。元のファイルは変わらず、透かし入りの別ファイルを作ります。処理は非同期で行われます。</p>
+    <p class="hint">動画には入れられません（画像のみ）。元のファイルは変わらず、透かし入りの別ファイルを作ります。処理は非同期で行われます。この画面を開いている間は、前回の設定が引き継がれます（初期値は設定画面で変更できます）。</p>
   </form>
 </dialog>

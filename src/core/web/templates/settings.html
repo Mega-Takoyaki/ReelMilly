@@ -51,6 +51,7 @@
     <button type="button" role="tab" data-tab="sec-telegram">Telegram</button>
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
     <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
+    <button type="button" role="tab" data-tab="sec-wm">透かし</button>
     <button type="button" role="tab" data-tab="sec-watch">自動取り込み</button>
   </nav>
 
@@ -210,6 +211,26 @@
     <button type="button" id="category-add" class="btn-ghost-inline">＋ カテゴリを追加</button>
   </section>
 
+  {% from "_wm_picker.html" import position_picker %}
+  <section class="card settings-tab" id="sec-wm">
+    <h2 style="margin-top: 0;">透かし（ウォーターマーク）の既定値{{ info("透かしを入れるダイアログを開いたときの初期値です。ダイアログで変えた値は、その画面を開いている間だけ引き継がれ、画面を開き直すと、ここで決めた既定値に戻ります。") }}</h2>
+    <div class="settings-form">
+      <label>既定の文字{{ info("透かしとして入れる文字です。アカウント名など(例: @GirlAidol)を入れます。") }}
+        <input type="text" name="wm_text" value="{{ wm_defaults.text }}" maxlength="100" required>
+      </label>
+      <label>既定の濃さ（不透明度）{{ info("小さいほど薄く、目立ちません。10〜20%が「簡単には見えない」目安です。") }}
+        <span class="range-row"><input type="range" name="wm_opacity" min="{{ wm_ranges.opacity[0] }}" max="{{ wm_ranges.opacity[1] }}" step="1" value="{{ wm_defaults.opacity }}" data-output="wm-opacity-set"><output id="wm-opacity-set">{{ wm_defaults.opacity }}</output>%</span>
+      </label>
+      <label>既定の大きさ{{ info("画像の短い辺に対する、文字の高さの割合です。大きいほど目立ちます。") }}
+        <span class="range-row"><input type="range" name="wm_size" min="{{ wm_ranges.size[0] }}" max="{{ wm_ranges.size[1] }}" step="0.5" value="{{ wm_defaults.size }}" data-output="wm-size-set"><output id="wm-size-set">{{ wm_defaults.size }}</output>%</span>
+      </label>
+      <fieldset class="wm-position">
+        <legend>既定の挿入位置（複数選べます）{{ info("5x5の格子から、透かしを入れる場所を選びます。複数選ぶと、それぞれの場所に入ります。「全面に繰り返す」は画像全体に並べて入れます。") }}</legend>
+        {{ position_picker("wm_position", wm_defaults.positions, wm_grid, wm_positions) }}
+      </fieldset>
+    </div>
+  </section>
+
   <section class="card settings-tab" id="sec-watch">
     <h2 style="margin-top: 0;">定期実行（watch）の自動取り込み（ADR-0020）</h2>
     <div class="settings-form">
@@ -231,6 +252,7 @@
   <form id="fanvue-disconnect-form" method="post" action="{{ url_for('fanvue_oauth_disconnect') }}"></form>
 </section>
 
+<script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script>
 (function () {
   const choices = {{ model_choices | tojson }};
@@ -275,6 +297,12 @@
     } catch (e) {
       refreshStatus.textContent = "取得に失敗しました: " + e;
     }
+  });
+
+  // 透かしの濃さ・大きさの現在値を、スライダーの横に表示する
+  document.querySelectorAll("input[data-output]").forEach((range) => {
+    const out = document.getElementById(range.dataset.output);
+    range.addEventListener("input", () => { out.textContent = range.value; });
   });
 
   // タグカテゴリの追加・削除

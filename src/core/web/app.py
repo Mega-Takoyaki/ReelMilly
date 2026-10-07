@@ -91,6 +91,8 @@ def create_app(config: Config) -> Flask:
         db.init_db(conn)
         return conn
 
+    app.add_template_filter(watermark.describe_positions, "wm_label")
+
     @app.template_filter("localtime")
     def localtime_filter(value):
         """ISO8601(UTC)の日時を、設定のタイムゾーンの「YYYY-MM-DD HH:MM」に変換する。"""
@@ -124,6 +126,7 @@ def create_app(config: Config) -> Flask:
         folder_mode = "all" if request.args.get("folder_mode") == "all" else "any"  # 既定: いずれか
         kind_sel = [v for v in request.args.getlist("kind") if v in ("image", "video")]
         ext_sel = [v.lower() for v in request.args.getlist("ext") if v.isalnum()]
+        broken_mode = request.args.get("broken") if request.args.get("broken") in ("show", "only") else "hide"
         q = (request.args.get("q") or "").strip()
 
         assets = db.list_assets(
@@ -136,6 +139,7 @@ def create_app(config: Config) -> Flask:
             ext=ext_sel,
             tag_mode=tag_mode,
             folder_mode=folder_mode,
+            broken=broken_mode,
             tag=tag_sel,
             folder_id=folder_sel,
             confirmed=[v == "1" for v in confirmed_sel],
@@ -146,7 +150,10 @@ def create_app(config: Config) -> Flask:
         asset_ids = [a["id"] for a in assets]
         posts = db.get_posts(conn, asset_ids)
         channels_map = db.get_channels_map(conn, asset_ids)
-        facets = db.facets(conn, list(POST_CHANNELS))
+        facets = db.facets(conn, list(POST_CHANNELS), broken_mode)
+        broken_total = conn.execute(
+            "SELECT COUNT(*) FROM assets WHERE is_broken = 1 AND deleted_at IS NULL"
+        ).fetchone()[0]
         folders = db.list_folders(conn)
         conn.close()
 
@@ -196,7 +203,7 @@ def create_app(config: Config) -> Flask:
             for kind, count, exts in facets["type"]
         ]
         active_filters = bool(
-            kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
+            broken_mode != "hide" or kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
         )
         return render_template(
             "index.html",
@@ -205,6 +212,8 @@ def create_app(config: Config) -> Flask:
             filter_options=filter_options,
             tag_mode=tag_mode,
             folder_mode=folder_mode,
+            broken_mode=broken_mode,
+            broken_total=broken_total,
             type_tree=type_tree,
             type_count=len(ext_sel) if ext_sel else len(kind_sel),
             status_sel=status_sel,
@@ -228,17 +237,13 @@ def create_app(config: Config) -> Flask:
     def inject_common():
         conn = get_conn()
         count = db.count_trashed(conn)
-        raw = db.get_setting(conn, "watermark_defaults")  # 前回使った透かしの設定を初期値にする
+        wm_defaults = settings_module.get_watermark_defaults(conn)  # 設定画面で編集する既定値
         conn.close()
-        wm_defaults = dict(watermark.DEFAULTS)
-        try:
-            wm_defaults.update(json.loads(raw or "{}"))
-        except ValueError:
-            pass
         return {
             "trash_count": count,
             "wm_defaults": wm_defaults,
             "wm_positions": watermark.POSITIONS,
+            "wm_grid": [[f"r{r}c{c}" for c in range(5)] for r in range(5)],
             "wm_ranges": {"opacity": watermark.OPACITY_RANGE, "size": watermark.SIZE_RANGE},
         }
 
@@ -292,6 +297,29 @@ def create_app(config: Config) -> Flask:
     def restore_asset(asset_id):
         conn = get_conn()
         db.restore_assets(conn, [asset_id])
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
+
+    @app.route("/api/assets/broken", methods=["POST"])
+    def api_set_broken():
+        """破綻画像(キメラ)のフラグを付け外しする。付けた作品は、既定の一覧・投稿の対象から外れる。"""
+        payload = request.get_json(silent=True) or {}
+        ids = payload.get("asset_ids") or []
+        if not ids or "broken" not in payload:
+            return jsonify({"error": "asset_ids and broken are required"}), 400
+        conn = get_conn()
+        changed = db.set_broken(conn, ids, bool(payload["broken"]))
+        conn.close()
+        return jsonify({"changed": changed, "broken": bool(payload["broken"])})
+
+    @app.route("/assets/<asset_id>/broken", methods=["POST"])
+    def toggle_broken(asset_id):
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        db.set_broken(conn, [asset_id], not asset["is_broken"])
         conn.close()
         return redirect(url_for("asset_detail", asset_id=asset_id))
 
@@ -429,7 +457,9 @@ def create_app(config: Config) -> Flask:
                 "tags": tags,
                 "tasks": states.get(asset_id, {}),
                 "no_plan": not channels_map.get(asset_id),
-                "wm": {"text": asset["wm_text"], "position": asset["wm_position"]} if asset.get("wm_path") else None,
+                "broken": bool(asset["is_broken"]),
+                "wm": {"text": asset["wm_text"], "label": watermark.describe_positions(asset["wm_position"])}
+                if asset.get("wm_path") else None,
                 "posts": {
                     ch: {k: p[k] for k in ("status", "url", "error", "posted_at")}
                     for ch, p in posts.get(asset_id, {}).items()
@@ -482,7 +512,7 @@ def create_app(config: Config) -> Flask:
             return jsonify({"error": "asset_ids is required"}), 400
         try:
             params = watermark.clean_params(
-                payload.get("text"), payload.get("position"),
+                payload.get("text"), payload.get("positions") or payload.get("position"),
                 payload.get("opacity", watermark.DEFAULTS["opacity"]), payload.get("size", watermark.DEFAULTS["size"]),
             )
         except watermark.WatermarkError as exc:
@@ -498,7 +528,6 @@ def create_app(config: Config) -> Flask:
                 continue
             if db.enqueue_ai_task(conn, asset_id, "watermark", params):
                 queued += 1
-        db.set_setting(conn, "watermark_defaults", json.dumps(params, ensure_ascii=False))  # 次回の初期値
         status = worker_module.get_status(conn, config.timezone)
         conn.close()
         return jsonify({"queued": queued, "skipped_video": skipped_video, "status": status})
@@ -530,11 +559,11 @@ def create_app(config: Config) -> Flask:
             abort(404)
         try:
             params = watermark.clean_params(
-                request.args.get("text"), request.args.get("position"),
+                request.args.get("text"), request.args.getlist("position") or request.args.get("positions"),
                 request.args.get("opacity", watermark.DEFAULTS["opacity"]), request.args.get("size", watermark.DEFAULTS["size"]),
             )
             data = watermark.preview_jpeg(
-                Path(asset["file_path"]), params["text"], params["position"], params["opacity"], params["size"]
+                Path(asset["file_path"]), params["text"], params["positions"], params["opacity"], params["size"]
             )
         except watermark.WatermarkError as exc:
             return str(exc), 400
@@ -684,6 +713,16 @@ def create_app(config: Config) -> Flask:
                     )
                 ],
             )
+            try:
+                settings_module.set_watermark_defaults(
+                    conn,
+                    request.form.get("wm_text"),
+                    request.form.getlist("wm_position"),
+                    request.form.get("wm_opacity"),
+                    request.form.get("wm_size"),
+                )
+            except watermark.WatermarkError:
+                pass  # 入力が不正なら、既存の既定値を変えない
             env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
             env_settings.update_connection_values(config.env_path, env_updates)
             conn.close()

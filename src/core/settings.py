@@ -250,3 +250,38 @@ def tag_category_instructions(conn: sqlite3.Connection) -> str:
         "最後の「タグ:」行に「カテゴリ名=タグ」の形式でカンマ区切りで並べてください"
         "（判断できないカテゴリは省略してよい）。\n" + "\n".join(lines)
     )
+
+
+# --- 透かしの既定値(設定画面で編集。ダイアログの初期値になる) ----------------------
+
+def get_watermark_defaults(conn: sqlite3.Connection) -> dict:
+    import json
+
+    from core import watermark
+
+    result = dict(watermark.DEFAULTS)
+    raw = db.get_setting(conn, "watermark_defaults")
+    if raw:
+        try:
+            saved = json.loads(raw)
+        except ValueError:
+            saved = {}
+        if saved.get("text"):
+            result["text"] = saved["text"]
+        keys = watermark.normalize_positions(saved.get("positions") or saved.get("position"))
+        if keys:
+            result["positions"] = keys
+        for name in ("opacity", "size"):
+            if saved.get(name) is not None:
+                result[name] = saved[name]
+    return result
+
+
+def set_watermark_defaults(conn: sqlite3.Connection, text, positions, opacity, size) -> None:
+    """検証に通らない値は保存せず、例外(WatermarkError)を送出する。"""
+    import json
+
+    from core import watermark
+
+    params = watermark.clean_params(text, positions, opacity, size)
+    db.set_setting(conn, "watermark_defaults", json.dumps(params, ensure_ascii=False))

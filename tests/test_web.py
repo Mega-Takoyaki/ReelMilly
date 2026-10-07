@@ -66,6 +66,14 @@ def app_and_conn(tmp_path):
     return app, conn
 
 
+def _is_checked(html: str, name: str, value: str) -> bool:
+    """name・valueが一致するinputが、checkedになっているか(属性の並び順に依存しない)。"""
+    import re
+
+    pattern = rf'<input[^>]*name="{re.escape(name)}"[^>]*value="{re.escape(value)}"[^>]*>'
+    return any(" checked" in m.group(0) for m in re.finditer(pattern, html))
+
+
 def test_index_lists_asset(app_and_conn):
     app, _ = app_and_conn
     client = app.test_client()
@@ -886,7 +894,7 @@ def test_index_filters_are_multi_select_and_free_text(app_and_conn):
     assert 'data-asset-id="a2"' in only and 'data-asset-id="a1"' not in only
     found = client.get("/?q=女性").get_data(as_text=True)
     assert 'data-asset-id="a2"' in found and 'data-asset-id="a1"' not in found
-    assert 'type="checkbox" name="status" value="analyzing" checked' in only  # 選択状態の保持
+    assert _is_checked(only, "status", "analyzing")  # 選択状態の保持
     assert 'value="女性"' in found  # 検索語の保持
 
 
@@ -990,7 +998,7 @@ def test_file_type_two_level_filter_in_ui(app_and_conn):
 
     only_video = client.get("/?kind=video").get_data(as_text=True)
     assert 'data-asset-id="v1"' in only_video and 'data-asset-id="a1"' not in only_video
-    assert 'name="ext" value="mp4" data-parent-kind="video" checked' in only_video  # 親を選ぶと配下も選択済み表示
+    assert _is_checked(only_video, "ext", "mp4")  # 親を選ぶと配下も選択済み表示
     only_jpg = client.get("/?ext=jpg").get_data(as_text=True)
     assert 'data-asset-id="a1"' in only_jpg and 'data-asset-id="v1"' not in only_jpg
 
@@ -1019,15 +1027,15 @@ def test_tag_and_folder_mode_switches_in_ui(app_and_conn):
 
     body = client.get("/").get_data(as_text=True)
     # 既定: タグ=すべて含む、フォルダ=いずれか。切り替えのラジオが出る
-    assert 'name="tag_mode" value="all" data-default="all" checked' in body
-    assert 'name="folder_mode" value="any" data-default="any" checked' in body
+    assert _is_checked(body, "tag_mode", "all")
+    assert _is_checked(body, "folder_mode", "any")
 
     has = lambda html, aid: f'data-asset-id="{aid}"' in html
     both_and = client.get("/?tag=夜&tag=海").get_data(as_text=True)
     assert not has(both_and, "a1") and not has(both_and, "a2")  # すべて含む(AND)
     both_or = client.get("/?tag=夜&tag=海&tag_mode=any").get_data(as_text=True)
     assert has(both_or, "a1") and has(both_or, "a2")  # いずれか(OR)
-    assert 'name="tag_mode" value="any" data-default="all" checked' in both_or
+    assert _is_checked(both_or, "tag_mode", "any")
 
 
 def test_watermark_api_dialog_preview_and_clear(app_and_conn):
@@ -1045,27 +1053,29 @@ def test_watermark_api_dialog_preview_and_clear(app_and_conn):
     assert 'id="wm-open"' in client.get("/assets/a1").get_data(as_text=True)
 
     # 実行前のプレビュー(保存しない)
-    res = client.get("/assets/a1/watermark-preview?text=@ai_hiyo&position=center&opacity=16&size=3")
+    res = client.get("/assets/a1/watermark-preview?text=@ai_hiyo&position=r1c1&position=r3c3&opacity=16&size=3")
     assert res.status_code == 200 and res.mimetype == "image/jpeg"
-    assert client.get("/assets/a1/watermark-preview?text=&position=center").status_code == 400
+    assert client.get("/assets/a1/watermark-preview?text=&position=r2c2").status_code == 400
     assert db.get_asset(conn, "a1")["wm_path"] is None
 
     # 非同期ジョブとして積む(文字・位置・濃さ・大きさを指定)
-    bad = client.post("/api/watermark", json={"asset_ids": ["a1"], "text": "", "position": "center"})
+    bad = client.post("/api/watermark", json={"asset_ids": ["a1"], "text": "", "positions": ["r2c2"]})
     assert bad.status_code == 400
+    no_pos = client.post("/api/watermark", json={"asset_ids": ["a1"], "text": "x", "positions": []})
+    assert no_pos.status_code == 400  # 位置は1か所以上必要
     ok = client.post(
         "/api/watermark",
-        json={"asset_ids": ["a1", "none"], "text": "@ai_hiyo", "position": "bottom-right", "opacity": 16, "size": 3},
+        json={"asset_ids": ["a1", "none"], "text": "@ai_hiyo", "positions": ["r4c4", "r0c0"], "opacity": 16, "size": 3},
     )
     assert ok.get_json()["queued"] == 1
     task = conn.execute("SELECT kind, params FROM ai_tasks").fetchone()
     assert task["kind"] == "watermark" and json.loads(task["params"])["text"] == "@ai_hiyo"
-    assert json.loads(db.get_setting(conn, "watermark_defaults"))["position"] == "bottom-right"  # 次回の初期値
+    assert json.loads(task["params"])["positions"] == ["r4c4", "r0c0"]  # 複数の位置を指定できる
 
     # 透かし入りができた後: サムネイルのチップ・API・外す操作
     out = asset["file_path"].replace("look-a.jpg", "watermarked.jpg")
     Image.new("RGB", (400, 300)).save(out, format="JPEG")
-    db.update_asset(conn, "a1", wm_path=out, wm_text="@ai_hiyo", wm_position="bottom-right")
+    db.update_asset(conn, "a1", wm_path=out, wm_text="@ai_hiyo", wm_position="r4c4")
     assert "chip chip-wm" in client.get("/").get_data(as_text=True)
     assert client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]["wm"]["text"] == "@ai_hiyo"
     assert client.get("/assets/a1/media?variant=wm").status_code == 200
@@ -1138,3 +1148,64 @@ def test_download_watermarked_variant_name(app_and_conn, tmp_path):
     db.update_asset(conn, "a1", original_name="元の名前.jpg", wm_path=str(wm), wm_text="@x", wm_position="center")
     disposition = client.get("/assets/a1/download?variant=wm").headers["Content-Disposition"]
     assert "_watermarked.jpg" in disposition
+
+
+def test_broken_flag_ui_filter_and_posting_exclusion(app_and_conn):
+    app, conn = app_and_conn
+    client = app.test_client()
+    has = lambda html: 'data-asset-id="a1"' in html
+
+    assert client.post("/api/assets/broken", json={"asset_ids": ["a1"]}).status_code == 400
+    assert client.post("/api/assets/broken", json={"asset_ids": ["a1"], "broken": True}).get_json() == {"changed": 1, "broken": True}
+    assert not has(client.get("/").get_data(as_text=True))  # 既定の一覧に出ない
+    shown = client.get("/?broken=show").get_data(as_text=True)
+    assert has(shown) and "chip chip-broken" in shown  # 含めて表示 → 「破」のチップが付く
+    assert has(client.get("/?broken=only").get_data(as_text=True))
+    assert _is_checked(client.get("/?broken=only").get_data(as_text=True), "broken", "only")
+    assert client.get("/api/ai-live?ids=a1").get_json()["assets"]["a1"]["broken"] is True
+
+    detail = client.get("/assets/a1").get_data(as_text=True)
+    assert "破綻画像としてマークされています" in detail and "マークを解除する" in detail
+    assert client.post("/assets/a1/broken").status_code == 302  # 詳細画面から解除(トグル)
+    assert has(client.get("/").get_data(as_text=True)) and db.get_asset(conn, "a1")["is_broken"] == 0
+
+
+def test_filter_bar_is_grouped_and_has_chip_area(app_and_conn):
+    app, _ = app_and_conn
+    body = app.test_client().get("/").get_data(as_text=True)
+    # 9〜10個あったプルダウンを、ファイルタイプ・タグ・フォルダ・状態/区分・投稿・破綻画像の6つにまとめる
+    filters = body.split('<section class="filters">')[1].split("</section>")[0]
+    assert filters.count('<details>') == 6
+    for heading in ("状態・区分", "投稿", "ステータス", "区分（承認済み）", "AI判定", "承認状態", "投稿予定", "投稿状態", "破綻画像"):
+        assert heading in filters
+    assert 'id="filter-chips"' in filters  # 選択中の条件のチップ
+
+
+def test_watermark_view_popup_and_5x5_picker_and_settings_defaults(app_and_conn):
+    from PIL import Image
+
+    app, conn = app_and_conn
+    client = app.test_client()
+    asset = db.get_asset(conn, "a1")
+    out = asset["file_path"].replace("look-a.jpg", "watermarked.jpg")
+    Image.new("RGB", (40, 30)).save(out, format="JPEG")
+    db.update_asset(conn, "a1", wm_path=out, wm_text="@x", wm_position="r0c0,r4c4")
+
+    detail = client.get("/assets/a1").get_data(as_text=True)
+    assert "data-wm-view" in detail and 'target="_blank"' not in detail.split("透かし入りを見る")[0][-200:]  # 新しいタブではなくポップアップ
+    assert 'id="lightbox"' in detail and "lightbox.js" in detail
+    assert "（2か所）" in detail  # 複数位置の説明
+
+    page = client.get("/").get_data(as_text=True)
+    import re
+
+    assert len(re.findall(r'<input[^>]*name="wm-position"', page)) == 26  # 5x5の25か所 + 全面に繰り返す
+    assert "data-wm-all" in page and "25か所すべて選択" in page
+
+    # 設定画面: 既定の文字は@GirlAidol。編集して保存できる
+    settings_page = client.get("/settings").get_data(as_text=True)
+    assert 'name="wm_text" value="@GirlAidol"' in settings_page
+    client.post("/settings", data={"wm_text": "@Mine", "wm_opacity": "20", "wm_size": "4", "wm_position": ["r2c2", "tile"]})
+    saved = client.get("/settings").get_data(as_text=True)
+    assert 'name="wm_text" value="@Mine"' in saved and _is_checked(saved, "wm_position", "r2c2") and _is_checked(saved, "wm_position", "tile")
+    assert '"text": "@Mine"' in client.get("/").get_data(as_text=True)  # ダイアログの初期値にも反映

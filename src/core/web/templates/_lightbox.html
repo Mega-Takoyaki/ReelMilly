@@ -1,0 +1,12 @@
+{# 画像・動画のプレビュー(ポップアップ)。lightbox.jsが使う。一覧・ごみ箱・詳細画面で共用 #}
+<dialog id="lightbox" class="lightbox">
+  <button type="button" class="lightbox-close" aria-label="閉じる">&times;</button>
+  <button type="button" class="lightbox-nav lightbox-prev" aria-label="前へ">&#8249;</button>
+  <button type="button" class="lightbox-nav lightbox-next" aria-label="次へ">&#8250;</button>
+  <div class="lightbox-media"></div>
+  <div class="lightbox-zoom" hidden>
+    <span>Zoom</span>
+    <input type="range" min="50" max="400" step="10" value="100" aria-label="表示倍率">
+    <output>100%</output>
+  </div>
+</dialog>

@@ -101,8 +101,8 @@
       <h2 style="margin-top: 0;">透かし</h2>
       {% if asset.wm_path %}
       <p>
-        透かし入りのファイルがあります:「<strong>{{ asset.wm_text }}</strong>」（{{ wm_positions.get(asset.wm_position, asset.wm_position) }}）
-        <a href="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}" target="_blank" rel="noopener">透かし入りを見る</a>
+        透かし入りのファイルがあります:「<strong>{{ asset.wm_text }}</strong>」（{{ asset.wm_position | wm_label }}）
+        <a href="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}" data-wm-view data-src="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}">透かし入りを見る</a>
       </p>
       {% else %}
       <p class="hint">透かしは入っていません。</p>
@@ -115,6 +115,19 @@
     </div>
     {% include "_watermark_dialog.html" %}
     {% endif %}
+
+    <div class="card">
+      <h2 style="margin-top: 0;">破綻画像（キメラ）</h2>
+      <form method="post" action="{{ url_for('toggle_broken', asset_id=asset.id) }}">
+        {% if asset.is_broken %}
+        <p><strong>この作品は破綻画像としてマークされています</strong>（既定の一覧に出ず、投稿の対象外です）。</p>
+        <button type="submit">破綻画像のマークを解除する</button>
+        {% else %}
+        <button type="submit" class="btn-danger-outline">破綻画像としてマークする</button>
+        {% endif %}
+      </form>
+      <p class="hint">AI生成特有の崩れ（手足・顔の破綻など）がある作品に付けます。マークした作品は、既定の一覧に表示されず、SNS投稿・AI処理の対象から外れます。一覧の「破綻画像」で表示できます。</p>
+    </div>
 
     <div class="card" id="live-posts">
       <h2 style="margin-top: 0;">投稿状態</h2>
@@ -237,10 +250,12 @@
     </div>
   </div>
 </section>
+{% include "_lightbox.html" %}
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='detail.js') }}"></script>
 <script>window.WM_POSITIONS = {{ wm_positions | tojson }};</script>
+<script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='esc-back.js') }}"></script>

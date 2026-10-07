@@ -1,0 +1,17 @@
+{# 透かしの挿入位置の選択(5x5の格子を複数選択 + 全面に繰り返す)。ダイアログと設定画面で共用する #}
+{% macro position_picker(name, selected, grid, positions) %}
+<div class="wm-picker" data-name="{{ name }}">
+  <div class="wm-grid5" role="group" aria-label="挿入位置（複数選択できます）">
+    {% for row in grid %}{% for key in row %}
+    <label class="wm-cell5" title="{{ positions[key] }}">
+      <input type="checkbox" name="{{ name }}" value="{{ key }}" {% if key in selected %}checked{% endif %}><span></span>
+    </label>
+    {% endfor %}{% endfor %}
+  </div>
+  <div class="wm-picker-actions">
+    <button type="button" class="btn-ghost-inline" data-wm-all>25か所すべて選択</button>
+    <button type="button" class="btn-ghost-inline" data-wm-none>すべて解除</button>
+    <label class="wm-tile"><input type="checkbox" name="{{ name }}" value="tile" {% if 'tile' in selected %}checked{% endif %}> {{ positions["tile"] }}</label>
+  </div>
+</div>
+{% endmacro %}

@@ -30,6 +30,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")
     if "deleted_at" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN deleted_at TEXT")
+    if "is_broken" not in columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN is_broken INTEGER NOT NULL DEFAULT 0")
     if "original_name" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN original_name TEXT")
     # 既存の作品は、いまのファイル名を元の名前として記録する(ファイルは動かさない)
@@ -145,6 +147,7 @@ def list_assets(
     plan=None,
     tag_mode: str = "all",
     folder_mode: str = "any",
+    broken: str = "hide",
     trashed: bool = False,
     order: str = "desc",
     limit: int = 50,
@@ -165,6 +168,12 @@ def list_assets(
 
     # ごみ箱に入れた作品は、通常の一覧・投稿・AI処理の対象から外す(trashed=Trueでごみ箱の中身だけ)
     conditions.append("assets.deleted_at IS NOT NULL" if trashed else "assets.deleted_at IS NULL")
+    # 破綻画像(キメラ): 既定は一覧・投稿の対象から外す。"show"=含める、"only"=破綻画像だけ。ごみ箱の中では区別しない
+    if not trashed:
+        if broken == "only":
+            conditions.append("assets.is_broken = 1")
+        elif broken != "show":
+            conditions.append("assets.is_broken = 0")
 
     def in_clause(column: str, values: list, prefix: str) -> None:
         """IN条件。NONE_VALUE(未設定)が含まれていれば、NULLも対象にする。"""
@@ -425,12 +434,33 @@ def count_trashed(conn: sqlite3.Connection) -> int:
 
 # --- 絞り込み候補(実在する値の一覧と件数) -------------------------------------
 
-def facets(conn: sqlite3.Connection, channels: list[str]) -> dict[str, list[tuple]]:
+def set_broken(conn: sqlite3.Connection, asset_ids: list[str], broken: bool) -> int:
+    """破綻画像(キメラ)のフラグを付け外しする。待機中のAI処理は不要になるので取り消す。"""
+    changed = 0
+    for asset_id in asset_ids:
+        cur = conn.execute(
+            "UPDATE assets SET is_broken = ? WHERE id = ? AND is_broken != ?",
+            (1 if broken else 0, asset_id, 1 if broken else 0),
+        )
+        if cur.rowcount:
+            changed += 1
+            if broken:
+                conn.execute("DELETE FROM ai_tasks WHERE asset_id = ? AND status = 'queued'", (asset_id,))
+    conn.commit()
+    return changed
+
+
+def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide") -> dict[str, list[tuple]]:
     """一覧の絞り込み候補。ごみ箱以外の作品に実在する値だけを、件数つきで返す。
 
     値が未設定(NULL)のものは`NONE_VALUE`として含める。`channels`は投稿状態の候補にする投稿先。
     """
     live = "FROM assets WHERE deleted_at IS NULL"
+    if broken == "only":  # 件数は、いま一覧に出す範囲(破綻画像の扱い)に合わせる
+        live += " AND is_broken = 1"
+    elif broken != "show":
+        live += " AND is_broken = 0"
+    live_ids = "SELECT id " + live
 
     def grouped(column: str) -> list[tuple]:
         rows = conn.execute(f"SELECT {column} AS v, COUNT(*) AS n {live} GROUP BY {column} ORDER BY v IS NULL, v").fetchall()
@@ -462,16 +492,16 @@ def facets(conn: sqlite3.Connection, channels: list[str]) -> dict[str, list[tupl
     result["tag"] = [(r["name"], r["n"]) for r in conn.execute(
         "SELECT t.name AS name, COUNT(DISTINCT a.id) AS n FROM tags t "
         "JOIN asset_tags at ON at.tag_id = t.id JOIN assets a ON a.id = at.asset_id "
-        "WHERE a.deleted_at IS NULL GROUP BY t.name ORDER BY t.name")]
+        f"WHERE a.id IN ({live_ids}) GROUP BY t.name ORDER BY t.name")]
     result["folder"] = [(r["id"], r["name"], r["n"]) for r in conn.execute(
         "SELECT f.id AS id, f.name AS name, COUNT(DISTINCT a.id) AS n FROM folders f "
         "JOIN asset_folders af ON af.folder_id = f.id JOIN assets a ON a.id = af.asset_id "
-        "WHERE a.deleted_at IS NULL GROUP BY f.id ORDER BY f.name")]
+        f"WHERE a.id IN ({live_ids}) GROUP BY f.id ORDER BY f.name")]
     post = []
     for ch in channels:
         counts = {r["status"]: r["n"] for r in conn.execute(
             "SELECT p.status AS status, COUNT(*) AS n FROM posts p JOIN assets a ON a.id = p.asset_id "
-            "WHERE a.deleted_at IS NULL AND p.channel = ? GROUP BY p.status", (ch,))}
+            f"WHERE a.id IN ({live_ids}) AND p.channel = ? GROUP BY p.status", (ch,))}
         counts["none"] = total - sum(counts.values())
         post += [(ch, st, n) for st, n in counts.items() if n > 0]
     result["post"] = post
@@ -720,7 +750,7 @@ def ai_task_states(conn: sqlite3.Connection, asset_ids: list[str]) -> dict[str, 
 def unprocessed_asset_ids(conn: sqlite3.Connection, kind: str, since_iso: str | None = None) -> list[str]:
     """kindの処理結果がまだ無いアセットID(古い順)。`since_iso`以降に登録されたものに絞れる。"""
     column = "nsfw_auto_rating" if kind == "nsfw" else "content_description"
-    sql = f"SELECT id FROM assets WHERE {column} IS NULL AND deleted_at IS NULL"
+    sql = f"SELECT id FROM assets WHERE {column} IS NULL AND deleted_at IS NULL AND is_broken = 0"
     params: list = []
     if since_iso:
         sql += " AND created_at >= ?"
