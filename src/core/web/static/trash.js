@@ -1,31 +1,36 @@
 // ごみ箱画面: サムネイルから複数選択して、元に戻す。
 (function () {
-  const checkboxes = Array.from(document.querySelectorAll(".asset-checkbox"));
+  const allCheckboxes = () => Array.from(document.querySelectorAll(".asset-checkbox"));
   const toolbar = document.getElementById("trash-toolbar");
   const countEl = document.getElementById("trash-count");
   const toggle = document.getElementById("select-all-toggle");
   if (!toolbar) return;
 
   const selected = new Set();
+  const totalCount = () => {
+    const el = document.getElementById("grid-count");
+    return el && el.dataset.total ? el.dataset.total : allCheckboxes().length;
+  };
 
   function refresh() {
     toolbar.hidden = selected.size === 0;
     countEl.textContent = `${selected.size}件を選択中`;
   }
 
-  checkboxes.forEach((cb) => {
-    cb.addEventListener("click", (e) => e.stopPropagation());
-    cb.addEventListener("change", () => {
-      if (cb.checked) selected.add(cb.value);
-      else selected.delete(cb.value);
-      refresh();
-    });
+  // 下へスクロールして続きが増えても効くよう、documentで受ける
+  document.addEventListener("change", (e) => {
+    const cb = e.target.closest ? e.target.closest(".asset-checkbox") : null;
+    if (!cb) return;
+    if (cb.checked) selected.add(cb.value);
+    else selected.delete(cb.value);
+    refresh();
   });
 
   if (toggle) {
     toggle.addEventListener("click", () => {
-      const all = selected.size < checkboxes.length;
-      checkboxes.forEach((cb) => {
+      const boxes = allCheckboxes();
+      const all = selected.size < boxes.length;
+      boxes.forEach((cb) => {
         cb.checked = all;
         if (all) selected.add(cb.value);
         else selected.delete(cb.value);
@@ -37,7 +42,7 @@
 
   document.getElementById("trash-clear").addEventListener("click", () => {
     selected.clear();
-    checkboxes.forEach((cb) => (cb.checked = false));
+    allCheckboxes().forEach((cb) => (cb.checked = false));
     refresh();
   });
 
@@ -73,7 +78,7 @@
     emptyButton.addEventListener("click", () => {
       purge(
         { all: true },
-        `ごみ箱の${checkboxes.length}件すべてを完全に削除します。ファイルと記録が消え、元に戻せません。よろしいですか？`
+        `ごみ箱の${totalCount()}件すべてを完全に削除します。ファイルと記録が消え、元に戻せません。よろしいですか？`
       );
     });
   }

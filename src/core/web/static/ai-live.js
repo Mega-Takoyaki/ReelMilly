@@ -12,7 +12,13 @@
 
   // 画面にある作品(一覧のカード・詳細画面)を集め直す。絞り込みで一覧が差し替わるたびに呼ぶ
   function collectCards() {
-    cards = Array.from(document.querySelectorAll("[data-asset-id].asset-card, #asset-root[data-asset-id]"));
+    const all = Array.from(document.querySelectorAll("[data-asset-id].asset-card, #asset-root[data-asset-id]"));
+    // 下へスクロールして増えた分も含め、問い合わせるのは画面の前後にあるものだけ(件数が増えてもURLが長くならない)
+    const margin = window.innerHeight * 2;
+    cards = all.length <= 300 ? all : all.filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.bottom > -margin && r.top < window.innerHeight + margin;
+    }).slice(0, 300);
     ids = Array.from(new Set(cards.map((el) => el.dataset.assetId)));
   }
   collectCards();
@@ -415,6 +421,21 @@
   }
 
   window.aiLive = { enqueue, track };
+
+  // 続きが増えた/スクロールが止まったときは、問い合わせ対象だけ更新する(完了検知の比較元は残す)
+  let scrollTimer = null;
+  function refreshVisible() {
+    collectCards();
+    clearTimeout(timer);
+    poll();
+  }
+  window.addEventListener("grid-appended", refreshVisible);
+  window.addEventListener("scroll", () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      if (document.querySelectorAll(".asset-card").length > 300) refreshVisible();
+    }, 500);
+  }, { passive: true });
 
   window.addEventListener("grid-updated", () => {
     collectCards();

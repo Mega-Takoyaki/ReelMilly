@@ -28,6 +28,7 @@ from core.media import get_media_properties
 from core.nsfw import try_create_classifier
 
 CONTENT_RATINGS = ("sfw", "suggestive", "explicit")
+GRID_PAGE_SIZE = 200  # 一覧・ごみ箱で、1回に読み込む件数(下へスクロールすると続きを読み込む)
 ALLOWED_UPLOAD_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
@@ -149,8 +150,7 @@ def create_app(config: Config) -> Flask:
         broken_mode = request.args.get("broken") if request.args.get("broken") in ("show", "only") else "hide"
         q = (request.args.get("q") or "").strip()
 
-        assets = db.list_assets(
-            conn,
+        list_args = dict(
             status=status_sel,
             content_rating=rating_sel,
             nsfw_auto=auto_sel,
@@ -165,8 +165,10 @@ def create_app(config: Config) -> Flask:
             confirmed=[v == "1" for v in confirmed_sel],
             post_filters=[tuple(v.split(":", 1)) for v in post_sel],
             q=q,
-            limit=200,
         )
+        offset = max(request.args.get("offset", 0, type=int), 0)
+        total = db.list_assets(conn, count=True, **list_args)
+        assets = db.list_assets(conn, limit=GRID_PAGE_SIZE, offset=offset, **list_args)
         # 幅・高さが未記録の作品(旧バージョンで取り込んだもの)は、ファイルから読んで補う(「フル」表示の枠用)
         if storage_status().available:
             for a in [a for a in assets if not a.get("width")][:60]:
@@ -178,6 +180,10 @@ def create_app(config: Config) -> Flask:
         asset_ids = [a["id"] for a in assets]
         posts = db.get_posts(conn, asset_ids)
         channels_map = db.get_channels_map(conn, asset_ids)
+        if request.args.get("partial") == "cards":  # 下へスクロールしたときの続き(カードだけ)
+            conn.close()
+            html = render_template("_cards.html", assets=assets, posts=posts, channels_map=channels_map, post_channels=POST_CHANNELS)
+            return jsonify({"html": html, "next": offset + len(assets), "total": total})
         facets = db.facets(conn, list(POST_CHANNELS), broken_mode)
         broken_total = conn.execute(
             "SELECT COUNT(*) FROM assets WHERE is_broken = 1 AND deleted_at IS NULL"
@@ -236,6 +242,8 @@ def create_app(config: Config) -> Flask:
         return render_template(
             "index.html",
             assets=assets,
+            total=total,
+            next_offset=offset + len(assets),
             folders=folders,
             filter_options=filter_options,
             tag_mode=tag_mode,
@@ -279,9 +287,14 @@ def create_app(config: Config) -> Flask:
     @app.route("/trash")
     def trash_page():
         conn = get_conn()
-        assets = db.list_assets(conn, trashed=True, limit=500)
+        offset = max(request.args.get("offset", 0, type=int), 0)
+        total = db.list_assets(conn, trashed=True, count=True)
+        assets = db.list_assets(conn, trashed=True, limit=GRID_PAGE_SIZE, offset=offset)
         conn.close()
-        return render_template("trash.html", assets=assets)
+        if request.args.get("partial") == "cards":
+            html = render_template("_trash_cards.html", assets=assets)
+            return jsonify({"html": html, "next": offset + len(assets), "total": total})
+        return render_template("trash.html", assets=assets, total=total, next_offset=offset + len(assets))
 
     @app.route("/api/assets/trash", methods=["POST"])
     def api_trash_assets():
@@ -313,6 +326,11 @@ def create_app(config: Config) -> Flask:
         require_storage()  # ファイルが見えない状態で記録だけ消さないように
         conn = get_conn()
         result = purge_assets(config, conn, None if payload.get("all") else ids)
+        if result.deleted >= 2 or result.errors:
+            notifications.add(
+                conn, "trash", f"{result.deleted}件を完全に削除しました",
+                "；".join(result.errors[:3]), "warning" if result.errors else "success",
+            )
         conn.close()
         return jsonify({"deleted": result.deleted, "errors": result.errors})
 
@@ -452,6 +470,16 @@ def create_app(config: Config) -> Flask:
         # status="analyzing"で登録して即応答する。分析は別プロセスのワーカーが行う
         conn = get_conn()
         results = ingest_inbox(config, conn, defer_analysis=True)
+        if results or held or rejected:
+            parts = [f"{len(results)}件を取り込みました"]
+            if held:
+                parts.append(f"重複のため保留 {len(held)}件")
+            if rejected:
+                parts.append(f"対象外の形式 {len(rejected)}件")
+            notifications.add(
+                conn, "import", "アップロードが完了しました", "、".join(parts),
+                "warning" if held or rejected else "success", action="duplicates" if held else None,
+            )
         conn.close()
         conn_dup.close()
 
@@ -921,6 +949,15 @@ def create_app(config: Config) -> Flask:
             out["uploads"] = duplicates.resolve_uploads(config, conn, payload["uploads"])
         if payload.get("groups"):
             out["groups"] = duplicates.resolve_groups(conn, payload["groups"])
+        handled = sum(sum(v.values()) for k, v in out.items() if k in ("uploads", "groups") and isinstance(v, dict))
+        if handled >= 2:
+            ups, grs = out.get("uploads"), out.get("groups")
+            parts = []
+            if ups:
+                parts.append(f"アップロード分: 取り込み{ups['imported']}件・破棄{ups['skipped']}件")
+            if grs:
+                parts.append(f"登録済み: ごみ箱へ{grs['trashed']}件・残す{grs['kept_all']}組")
+            notifications.add(conn, "duplicates", "重複を処理しました", "、".join(parts), "success")
         out["remaining"] = {
             "pending": len(duplicates.list_pending(config, conn)),
             "groups": len(duplicates.duplicate_groups(conn)),

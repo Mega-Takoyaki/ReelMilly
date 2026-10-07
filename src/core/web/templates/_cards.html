@@ -1,0 +1,26 @@
+{# 一覧のカード(最初の表示と、下へスクロールしたときの続きで共通) #}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip %}
+{% for asset in assets %}
+  <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}"{% endif %}>
+    <label class="asset-select">
+      <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
+    </label>
+    <div class="asset-media" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}" data-alt="{{ asset.id }}">
+      {% if asset.kind == 'video' %}
+      <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
+      {% else %}
+      <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
+      {% endif %}
+      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset) }}{{ broken_chip(asset) }}</span>
+      {{ status_dot(asset) }}
+      <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
+      <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h6v6"></path>
+          <path d="M10 14L21 3"></path>
+          <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
+        </svg>
+      </a>
+    </div>
+  </div>
+{% endfor %}

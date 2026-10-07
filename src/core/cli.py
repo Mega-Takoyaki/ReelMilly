@@ -104,6 +104,20 @@ def _storage_ready(config: Config, conn, label: str) -> bool:
     return status.available
 
 
+def _notify_ingested(config: Config, count: int) -> None:
+    """inboxフォルダから取り込んだ件数を、通知に残す(画面を開いていないときの自動取り込みも含む)。"""
+    if count <= 0:
+        return
+    from core import notifications
+
+    conn = get_connection(config.paths.db_path)
+    try:
+        init_db(conn)
+        notifications.add(conn, "import", f"inboxから{count}件を取り込みました", "AI処理(判定・説明文・タグ)は、これから行います", "success")
+    finally:
+        conn.close()
+
+
 def _notify_duplicates(config: Config) -> None:
     """重複(同じ中身のファイル)が増えていれば、通知する。"""
     from core import duplicates
@@ -128,6 +142,7 @@ def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
         conn.close()
         for result in results:
             print(f"ingested {result.asset_id} ({result.kind}) -> 分析待ち")
+        _notify_ingested(config, len(results))
         _notify_duplicates(config)
         return 0
     nsfw_classifier = try_create_classifier(config.nsfw)
@@ -145,6 +160,7 @@ def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
         return 0
     for result in results:
         print(f"ingested {result.asset_id} ({result.kind}) -> {result.dest_path}")
+    _notify_ingested(config, len(results))
     _notify_duplicates(config)
     return 0
 

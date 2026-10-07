@@ -68,6 +68,8 @@
 </div>
 {% endmacro %}
 
+<div id="top-controls-wrap" class="top-controls-wrap">
+<div id="top-controls" class="top-controls">
 <section class="action-bar">
   <div id="job-status" class="job-status" aria-live="polite"></div>
   <div class="action-buttons">
@@ -131,13 +133,10 @@
   <div id="filter-chips" class="filter-chips" aria-label="選択中の条件"></div>
 </section>
 
-<div id="dropzone" class="asset-area">
-<div class="drop-overlay">ここにドロップして画像・動画をアップロード</div>
-<div id="grid-region">
-
+<div id="grid-toolbar">
 <div class="grid-toolbar">
   <div class="grid-toolbar-left">
-    <p class="hint">{{ assets | length }}件を表示中</p>
+    <p class="hint" id="grid-count" data-total="{{ total }}">{{ assets | length }}件を表示中{% if total > assets | length %}（全{{ total }}件）{% endif %}</p>
     {% if assets %}
     <button type="button" id="select-all-toggle" class="btn-ghost-inline">表示中をすべて選択</button>
     {% endif %}
@@ -155,38 +154,26 @@
     </label>
   </div>
 </div>
+</div>
+</div>
+</div>
+
+<div id="dropzone" class="asset-area">
+<div class="drop-overlay">ここにドロップして画像・動画をアップロード</div>
+<div id="grid-region">
 
 <section class="asset-grid">
-  {% for asset in assets %}
-  <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}"{% endif %}>
-    <label class="asset-select">
-      <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
-    </label>
-    <div class="asset-media" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}" data-alt="{{ asset.id }}">
-      {% if asset.kind == 'video' %}
-      <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
-      {% else %}
-      <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
-      {% endif %}
-      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset) }}{{ broken_chip(asset) }}</span>
-      {{ status_dot(asset) }}
-      <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
-      <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 3h6v6"></path>
-          <path d="M10 14L21 3"></path>
-          <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
-        </svg>
-      </a>
-    </div>
-  </div>
-  {% else %}
+  {% include "_cards.html" %}
+  {% if not assets %}
   <div class="empty-state">
     <p>該当するアセットがありません。</p>
     <p class="hint">フィルタを変更するか、上のエリアから画像・動画を取り込んでください。</p>
   </div>
-  {% endfor %}
+  {% endif %}
 </section>
+{% if next_offset < total %}
+<div id="grid-more" class="grid-more" data-next="{{ next_offset }}" data-total="{{ total }}">続きを読み込み中…</div>
+{% endif %}
 </div>
 </div>
 
@@ -256,5 +243,7 @@
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='drag-select.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
+<script src="{{ url_for('static', filename='infinite-scroll.js') }}"></script>
+<script src="{{ url_for('static', filename='top-dock.js') }}"></script>
 <script src="{{ url_for('static', filename='grid-controls.js') }}"></script>
 {% endblock %}

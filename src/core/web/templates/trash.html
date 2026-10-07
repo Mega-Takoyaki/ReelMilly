@@ -12,7 +12,7 @@
 
 <div class="grid-toolbar">
   <div class="grid-toolbar-left">
-    <p class="hint">{{ assets | length }}件</p>
+    <p class="hint" id="grid-count" data-total="{{ total }}">{{ assets | length }}件{% if total > assets | length %}（全{{ total }}件）{% endif %}</p>
     {% if assets %}
     <button type="button" id="select-all-toggle" class="btn-ghost-inline">すべて選択</button>
     <button type="button" id="trash-empty" class="btn-danger-outline btn-small">ごみ箱を空にする</button>
@@ -33,35 +33,17 @@
 </div>
 
 <section class="asset-grid">
-  {% for asset in assets %}
-  <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}"{% endif %}>
-    <label class="asset-select">
-      <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
-    </label>
-    <div class="asset-media" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}" data-alt="{{ asset.id }}">
-      {% if asset.kind == 'video' %}
-      <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
-      {% else %}
-      <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
-      {% endif %}
-      <span class="asset-badges">{{ type_chip(asset) }}</span>
-      <span class="trash-date" data-tip="ごみ箱に入れた日時">{{ asset.deleted_at | localtime }}</span>
-      <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 3h6v6"></path>
-          <path d="M10 14L21 3"></path>
-          <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
-        </svg>
-      </a>
-    </div>
-  </div>
-  {% else %}
+  {% include "_trash_cards.html" %}
+  {% if not assets %}
   <div class="empty-state">
     <p>ごみ箱は空です。</p>
     <p class="hint">一覧で作品を選んで「ごみ箱へ」を押すか、詳細画面から移動すると、ここに入ります。</p>
   </div>
-  {% endfor %}
+  {% endif %}
 </section>
+{% if next_offset < total %}
+<div id="grid-more" class="grid-more" data-next="{{ next_offset }}" data-total="{{ total }}">続きを読み込み中…</div>
+{% endif %}
 
 {% include "_lightbox.html" %}
 
@@ -75,6 +57,7 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='drag-select.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
+<script src="{{ url_for('static', filename='infinite-scroll.js') }}"></script>
 <script src="{{ url_for('static', filename='grid-controls.js') }}"></script>
 <script src="{{ url_for('static', filename='trash.js') }}"></script>
 {% endblock %}

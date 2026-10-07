@@ -111,6 +111,9 @@
       const fresh = doc.getElementById("grid-region");
       if (!fresh) throw new Error("grid-region not found");
       region.innerHTML = fresh.innerHTML;
+      const toolbar = document.getElementById("grid-toolbar");
+      const freshToolbar = doc.getElementById("grid-toolbar");
+      if (toolbar && freshToolbar) toolbar.innerHTML = freshToolbar.innerHTML;
       history.replaceState(null, "", url);
       if (clearLink) clearLink.hidden = qs === "";
       window.dispatchEvent(new Event("grid-updated"));

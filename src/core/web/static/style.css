@@ -1622,3 +1622,56 @@ dialog.dup-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
 .dup-same { max-width: 14rem; }
 .dup-choices { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; margin-top: 0.6rem; }
 .dup-choice { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+
+/* 下へスクロールで続きを読み込む -------------------------------------------------*/
+
+.grid-more {
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  padding: 1.2rem 0 2rem;
+}
+
+/* 上部メニューの小さなタブ(スクロールで上部メニューが画面の外へ出たとき) ---------------*/
+
+.controls-tab {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 19;
+  padding: 0.15rem 0.9rem 0.2rem;
+  font-size: 0.78rem;
+  background: var(--surface);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.controls-tab:hover, .controls-tab.is-open { color: var(--fg); background: var(--surface-alt); }
+.controls-tab[hidden] { display: none; }
+
+.top-controls.is-floating {
+  position: fixed;
+  top: calc(var(--dock-top, 3.2rem) + 1.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1200px, calc(100vw - 1.5rem));
+  z-index: 18;
+  padding: 0.8rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+@media (max-width: 640px) {
+  .top-controls.is-floating { max-height: calc(100vh - 6rem); overflow-y: auto; }
+}
+
+/* スマホ幅: 上部バーにベルが加わっても、右にはみ出さないようにする */
+@media (max-width: 640px) {
+  .topbar { gap: 0.4rem; }
+  .brand { gap: 0.3rem; font-size: 0.9rem; }
+  .brand svg { width: 17px; height: 17px; }
+  .topbar .topnav { margin-left: auto; gap: 0.5rem; min-width: 0; }
+}

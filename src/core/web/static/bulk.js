@@ -1,7 +1,7 @@
 (function () {
   const toolbar = document.getElementById("bulk-toolbar");
   const countEl = document.getElementById("bulk-count");
-  let checkboxes = [];
+  const allCheckboxes = () => Array.from(document.querySelectorAll(".asset-checkbox"));
 
   if (!toolbar) return;
 
@@ -16,38 +16,28 @@
     countEl.textContent = `${selected.size}件を選択中`;
   }
 
-  // 一覧のサムネイル・「表示中をすべて選択」を結び付ける。絞り込みで一覧が差し替わるたびに呼ぶ
-  function bindGrid() {
-    checkboxes = Array.from(document.querySelectorAll(".asset-checkbox"));
-    checkboxes.forEach((checkbox) => {
-      checkbox.addEventListener("click", (e) => e.stopPropagation());
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) {
-          selected.add(checkbox.value);
-        } else {
-          selected.delete(checkbox.value);
-        }
-        refreshToolbar();
-      });
-    });
+  // 一覧のサムネイル・「表示中をすべて選択」。絞り込みで差し替わっても、下へスクロールして続きが増えても効くよう、documentで受ける
+  document.addEventListener("change", (e) => {
+    const checkbox = e.target.closest ? e.target.closest(".asset-checkbox") : null;
+    if (!checkbox) return;
+    if (checkbox.checked) selected.add(checkbox.value);
+    else selected.delete(checkbox.value);
+    refreshToolbar();
+  });
 
-    const selectAllToggle = document.getElementById("select-all-toggle");
-    if (selectAllToggle) {
-      selectAllToggle.addEventListener("click", () => {
-        const shouldSelectAll = selected.size < checkboxes.length;
-        checkboxes.forEach((checkbox) => {
-          checkbox.checked = shouldSelectAll;
-          if (shouldSelectAll) {
-            selected.add(checkbox.value);
-          } else {
-            selected.delete(checkbox.value);
-          }
-        });
-        selectAllToggle.textContent = shouldSelectAll ? "表示中の選択を解除" : "表示中をすべて選択";
-        refreshToolbar();
-      });
-    }
-  }
+  document.addEventListener("click", (e) => {
+    const selectAllToggle = e.target.closest("#select-all-toggle");
+    if (!selectAllToggle) return;
+    const boxes = allCheckboxes();
+    const shouldSelectAll = selected.size < boxes.length;
+    boxes.forEach((checkbox) => {
+      checkbox.checked = shouldSelectAll;
+      if (shouldSelectAll) selected.add(checkbox.value);
+      else selected.delete(checkbox.value);
+    });
+    selectAllToggle.textContent = shouldSelectAll ? "表示中の選択を解除" : "表示中をすべて選択";
+    refreshToolbar();
+  });
 
   // スマホでは、一括操作のバーを「件数 + 操作▾」だけに畳んでおき、必要なときに開く
   const bulkToggle = document.getElementById("bulk-toggle");
@@ -59,11 +49,9 @@
     });
   }
 
-  bindGrid();
   window.addEventListener("grid-updated", () => {
     selected.clear(); // 表示する作品が変わるので、選択はリセットする
     refreshToolbar();
-    bindGrid();
   });
 
   async function postJson(url, body) {
@@ -160,7 +148,7 @@
 
   document.getElementById("bulk-clear").addEventListener("click", () => {
     selected.clear();
-    checkboxes.forEach((cb) => (cb.checked = false));
+    allCheckboxes().forEach((cb) => (cb.checked = false));
     const toggle = document.getElementById("select-all-toggle");
     if (toggle) toggle.textContent = "表示中をすべて選択";
     refreshToolbar();

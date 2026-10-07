@@ -82,15 +82,20 @@
   // サムネイルのクリックを結び付ける。絞り込みで一覧が差し替わるたびに呼ぶ
   function bindItems() {
     items = Array.from(document.querySelectorAll(".asset-media"));
-    items.forEach((el, i) => {
-      el.addEventListener("click", () => show(i));
+    items.forEach((el) => {
+      if (el.dataset.lbBound) return; // 続きの追加で呼ばれても、結び付け済みのものは重ねない
+      el.dataset.lbBound = "1";
+      el.addEventListener("click", () => show(items.indexOf(el)));
     });
     document.querySelectorAll(".asset-detail-link").forEach((link) => {
+      if (link.dataset.lbBound) return;
+      link.dataset.lbBound = "1";
       // 詳細アイコンのクリックはサムネイルのクリック(ライトボックス表示)へ伝播させない
       link.addEventListener("click", (e) => e.stopPropagation());
     });
   }
   bindItems();
+  window.addEventListener("grid-appended", bindItems);
   window.addEventListener("grid-updated", () => {
     if (dialog.open) dialog.close();
     bindItems();

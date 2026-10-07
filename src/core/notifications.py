@@ -13,6 +13,8 @@ KINDS = {
     "ai": "AI処理",
     "watermark": "透かし",
     "post": "投稿",
+    "import": "取り込み",
+    "trash": "ごみ箱・削除",
     "duplicates": "重複",
     "storage": "ストレージ",
     "system": "その他",

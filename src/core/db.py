@@ -165,7 +165,8 @@ def list_assets(
     order: str = "desc",
     limit: int = 50,
     offset: int = 0,
-) -> list[dict]:
+    count: bool = False,
+) -> list[dict] | int:
     """アセット一覧。絞り込みは項目間でAND。
 
     `status`/`content_rating`/`confirmed`などはリストで複数指定でき、その項目内はOR
@@ -319,6 +320,9 @@ def list_assets(
         query += " " + " ".join(joins)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
+    if count:  # 件数だけ(ページ送りの「全N件」用)
+        count_query = query.replace("SELECT DISTINCT assets.*", "SELECT COUNT(DISTINCT assets.id)", 1)
+        return conn.execute(count_query, params).fetchone()[0]
     order_sql = "ASC" if order.lower() == "asc" else "DESC"
     query += f" ORDER BY assets.created_at {order_sql} LIMIT :limit OFFSET :offset"
     params["limit"] = limit
