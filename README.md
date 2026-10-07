@@ -234,9 +234,9 @@ Web UIからのアップロード、および`watch`の自動取り込みで登�
 `reelmilly web`と`reelmilly watch`を、Windowsへのログオン時に自動で（最小化して）起動できます。外出先から画面を使う運用（Tailscale等）向けです。スタートアップフォルダにショートカットを作るだけで、管理者権限は不要です。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scriptsutostart.ps1 -Enable    # 自動起動をオンにする
-powershell -ExecutionPolicy Bypass -File scriptsutostart.ps1 -Disable   # オフにする
-powershell -ExecutionPolicy Bypass -File scriptsutostart.ps1            # 現在の状態を表示
+powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1 -Enable    # 自動起動をオンにする
+powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1 -Disable   # オフにする
+powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現在の状態を表示
 ```
 
 手動で起動するときは`scripts\start-reelmilly.bat`（デスクトップのショートカットと同じ）です。外出先から使う場合は、PCの電源設定で「スリープしない」にしてください。
