@@ -1077,3 +1077,32 @@ def test_live_script_does_not_hardcode_task_kinds(app_and_conn):
     js = app.test_client().get("/static/ai-live.js").get_data(as_text=True)
     assert "nsfw: [], describe: []" not in js
     assert "Object.keys(LABEL).map" in js and "watermark" in js
+
+
+def test_safe_upload_filename_keeps_japanese_and_blocks_paths():
+    from core.web.app import safe_upload_filename as f
+
+    assert f("展示会ブースの笑顔の案内スタッフ.png") == "展示会ブースの笑顔の案内スタッフ.png"  # 日本語は残す
+    assert f("日本語.PNG") == "日本語.png"  # 拡張子は小文字にそろえる
+    assert f("photo 1.png") == "photo 1.png"
+    assert f(r"C:\Users\me\pic.jpg") == "pic.jpg" and f("../../evil.png") == "evil.png"  # フォルダ部分は捨てる
+    assert f('a<b>:c?.webp') == "a_b__c_.webp"  # 保存できない文字は置き換える
+    assert f("   .mp4") == "upload.mp4"  # 名前が空になったら補う
+    assert f("x.png.exe").endswith(".exe")  # 最後の拡張子で判定される(取り込み対象外になる)
+
+
+def test_upload_accepts_japanese_file_names(app_and_conn):
+    """日本語のファイル名が、ASCII以外を消す整形で拡張子ごと失われ「非対応形式」にされていた不具合の回帰テスト。"""
+    app, conn = app_and_conn
+    client = app.test_client()
+    res = client.post(
+        "/assets/upload",
+        data={"files": [
+            (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"x" * 20), "展示会ブースの笑顔の案内スタッフ.png"),
+            (io.BytesIO(b"x"), "メモ.txt"),
+        ]},
+        content_type="multipart/form-data",
+    ).get_json()
+    assert res["ingested"] == 1 and res["rejected"] == ["メモ.txt"]  # 画像は取り込まれ、非対応形式だけが除かれる
+    asset = db.get_asset(conn, res["asset_ids"][0])
+    assert asset["file_path"].endswith("展示会ブースの笑顔の案内スタッフ.png") and asset["kind"] == "image"

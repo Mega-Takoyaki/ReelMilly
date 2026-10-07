@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
-from werkzeug.utils import secure_filename
 
 from core import db, env_settings, generation
 from core import watermark
@@ -40,6 +40,26 @@ def _is_xhr() -> bool:
 
 def _fanvue_token_store_path(config: Config) -> Path:
     return config.paths.state_dir / "fanvue_oauth_tokens.json"
+
+
+_FORBIDDEN_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def safe_upload_filename(original: str) -> str:
+    """アップロードされたファイル名を、保存してよい名前に整える。
+
+    werkzeugのsecure_filenameは日本語などASCII以外を全部消してしまい、「日本語.png」が
+    拡張子なしの「png」になって取り込めなかった。ここでは、パスの区切りや保存できない
+    文字だけを除き、日本語はそのまま残す。名前の部分が空になったときは「upload」にする。
+    拡張子は小文字にそろえる。
+    """
+    name = re.split(r"[\\/]", original or "")[-1]  # フォルダ部分は捨てる
+    path = Path(name)
+    suffix = path.suffix.lower()
+    stem = _FORBIDDEN_FILENAME_CHARS.sub("_", path.stem).strip(" .")
+    if len(stem) > 80:
+        stem = stem[:80]
+    return f"{stem or 'upload'}{suffix}"
 
 
 def _unique_inbox_path(inbox: Path, filename: str) -> Path:
@@ -342,9 +362,9 @@ def create_app(config: Config) -> Flask:
         for file in files:
             if not file.filename:
                 continue
-            filename = secure_filename(file.filename)
+            filename = safe_upload_filename(file.filename)
             ext = Path(filename).suffix.lower()
-            if not filename or ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            if ext not in ALLOWED_UPLOAD_EXTENSIONS:
                 rejected.append(file.filename)
                 continue
             dest = _unique_inbox_path(config.paths.inbox, filename)
