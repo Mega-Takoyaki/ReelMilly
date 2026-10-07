@@ -26,12 +26,13 @@ if "%MODE%"=="startup" ping -n 11 127.0.0.1 >nul
 
 rem Do not start a second Web UI if port 8420 is already in use.
 netstat -ano | find ":8420" | find "LISTENING" >nul && goto skipweb
-start "Reelmilly Web" %MINFLAG% cmd /k ".venv\Scripts\reelmilly.exe web"
+rem Each runs in a restart loop and logs to data\logs\ (see run-service.bat).
+start "Reelmilly Web" %MINFLAG% cmd /c scripts\run-service.bat web
 :skipweb
 
 rem The worker holds a lock, so a duplicate window will not process tasks twice.
 tasklist /v /fi "imagename eq cmd.exe" | find "Reelmilly Worker" >nul && goto skipworker
-start "Reelmilly Worker" %MINFLAG% cmd /k ".venv\Scripts\reelmilly.exe watch"
+start "Reelmilly Worker" %MINFLAG% cmd /c scripts\run-service.bat watch
 :skipworker
 
 if "%MODE%"=="startup" goto end

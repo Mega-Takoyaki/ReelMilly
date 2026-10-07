@@ -19,6 +19,7 @@ data/library/x_only/*
 data/profiles/x/*
 data/screenshots/*
 data/state/*
+data/logs/*
 !data/library/inbox/.gitkeep
 !data/library/ready/.gitkeep
 !data/library/posted/.gitkeep

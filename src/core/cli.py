@@ -364,6 +364,25 @@ def cmd_migrate_filenames(config: Config) -> int:
     return 0
 
 
+def _quiet_access_log() -> None:
+    """アクセスログは、失敗(4xx/5xx)だけを残す。
+
+    画面が数秒おきに状況を問い合わせるため、成功までログに書くと、ログ(data/logs/web.log)がすぐ巨大になり、
+    落ちたときの原因が埋もれてしまう。
+    """
+    import logging
+
+    class _ErrorsOnly(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            args = record.args if isinstance(record.args, tuple) else ()
+            try:
+                return int(str(args[1])) >= 400
+            except (IndexError, ValueError):
+                return True  # アクセスログ以外(起動メッセージ・エラー)は、そのまま残す
+
+    logging.getLogger("werkzeug").addFilter(_ErrorsOnly())
+
+
 def cmd_web(config: Config) -> int:
     from core.web.app import create_app
 
@@ -395,6 +414,7 @@ def cmd_web(config: Config) -> int:
         print("[web] 画像なしで起動します。画面の設定「ストレージ」で場所を直せます")
 
     app = create_app(config)
+    _quiet_access_log()
     print(f"[web] starting on http://{config.web.host}:{config.web.port} (Ctrl+Cで終了)")
     app.run(host=config.web.host, port=config.web.port, debug=False)
     return 0

@@ -306,3 +306,41 @@ def test_schedule_and_categories_settings_roundtrip(tmp_path):
     settings_module.set_tag_categories(conn, [{"name": " 服装 ", "options": "a, b"}, {"name": "", "options": "x"}])
     assert settings_module.get_tag_categories(conn) == [{"name": "服装", "options": "a, b"}]
     assert settings_module.tag_category_instructions(conn).count("- ") == 1
+
+
+def test_long_backlog_reports_progress_before_the_queue_is_empty(tmp_path, monkeypatch):
+    """待ちが多くて1巡が何時間も続くときも、途中経過が通知に残る(以前は、待ちが空になるまで1件も通知が出なかった)。"""
+    from core import notifications
+
+    config, conn = _setup(tmp_path)
+    for i in range(3):
+        _insert(conn, tmp_path, asset_id=f"a{i}")
+        db.enqueue_ai_task(conn, f"a{i}", "nsfw")
+    classifier = MagicMock()
+    classifier.classify.return_value = NsfwResult(rating="sfw", confidence=0.9)
+    monkeypatch.setattr(worker, "PROGRESS_NOTIFY_SECONDS", 0)  # 1件ごとに途中経過を出す
+
+    assert _run(config, conn, classifier=classifier) == (3, 0)
+
+    items = notifications.list_notifications(conn, 10)
+    progress = [n for n in items if "途中経過" in n["title"]]
+    assert len(progress) == 2  # 残りがあるうちは途中経過、最後の1件は通常の完了通知
+    assert "まだ1件が待っています" in progress[0]["body"] or "まだ1件が待っています" in progress[1]["body"]
+    assert any("途中経過" not in n["title"] for n in items)
+
+
+def test_web_access_log_keeps_only_errors():
+    import logging
+
+    from core.cli import _quiet_access_log
+
+    _quiet_access_log()
+    logger = logging.getLogger("werkzeug")
+
+    def passes(code):
+        record = logger.makeRecord("werkzeug", logging.INFO, "x", 1, '%s "%s" %s %s', ("127.0.0.1", "GET / HTTP/1.1", str(code), "-"), None)
+        record.args = ('"GET / HTTP/1.1"', str(code), "-")
+        return all(f.filter(record) for f in logger.filters)
+
+    assert not passes(200) and not passes(304)
+    assert passes(404) and passes(500)

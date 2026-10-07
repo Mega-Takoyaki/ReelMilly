@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -29,6 +30,8 @@ LOCK_KEY = "_analyze_worker"
 STALE_AFTER = timedelta(minutes=30)
 # UIの「稼働中」表示用
 ALIVE_WITHIN = timedelta(minutes=15)
+
+PROGRESS_NOTIFY_SECONDS = 30 * 60  # 長いAI処理の途中経過を通知する間隔(秒)
 
 
 def _now() -> datetime:
@@ -316,6 +319,8 @@ class AnalysisWorker:
 
         done = failed = 0
         summary: dict[str, dict] = {}  # 種別ごとの(成功・失敗の数、最初の失敗理由)。巡回の最後に、まとめて通知する
+        # 待ちが多いと1巡が何時間も続くため、途中でも一定時間ごとに、それまでの分を通知する(途中で止まっても結果が残る)
+        last_flush = time.monotonic()
         try:
             queued = enqueue_scheduled(conn, self._config.timezone)
             if queued:
@@ -349,6 +354,11 @@ class AnalysisWorker:
                     done += 1
                     db.update_asset(conn, task["asset_id"], analysis_error=None)
                     self._promote_if_complete(conn, task["asset_id"], log)
+                if summary and time.monotonic() - last_flush >= PROGRESS_NOTIFY_SECONDS:
+                    remaining = conn.execute("SELECT COUNT(*) FROM ai_tasks WHERE status = 'queued'").fetchone()[0]
+                    self._notify_summary(conn, summary, remaining)
+                    summary = {}
+                    last_flush = time.monotonic()
             self._write_lock(conn, None, None)
             self._notify_summary(conn, summary)
         finally:
@@ -356,11 +366,17 @@ class AnalysisWorker:
                 self.close(conn)
         return done, failed
 
-    def _notify_summary(self, conn: sqlite3.Connection, summary: dict) -> None:
-        """今回の巡回で処理した分を、種別ごとに1件の通知にまとめる(画面を見ていなくても、結果が残る)。"""
+    def _notify_summary(self, conn: sqlite3.Connection, summary: dict, remaining: int | None = None) -> None:
+        """今回の巡回で処理した分を、種別ごとに1件の通知にまとめる(画面を見ていなくても、結果が残る)。
+
+        `remaining`を渡したときは途中経過として、まだ待っている件数を添える。
+        """
         for kind, entry in summary.items():
             label = settings_module.AI_KIND_LABELS.get(kind) or ("透かし挿入" if kind == "watermark" else kind)
             title, body, level = notifications.summarize_tasks(label, entry["done"], entry["failed"], entry["error"])
+            if remaining:
+                title = f"{title}（途中経過）"
+                body = f"{body}　まだ{remaining}件が待っています（続けて処理中）".strip()
             single = entry["asset"] if entry["done"] + entry["failed"] == 1 else None
             notifications.add(
                 conn, "watermark" if kind == "watermark" else "ai", title, body, level, asset_id=single

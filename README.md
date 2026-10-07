@@ -239,7 +239,9 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1 -Disable   # オ�
 powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現在の状態を表示
 ```
 
-手動で起動するときは`scripts\start-reelmilly.bat`（デスクトップのショートカットと同じ）です。外出先から使う場合は、PCの電源設定で「スリープしない」にしてください。
+手動で起動するときは`scripts\start-reelmilly.bat`（デスクトップのショートカットと同じ）です。
+
+`web`と`watch`は、それぞれ`scripts\run-service.bat`の中で動き、**終了しても10秒後に自動で再起動**します。出力は`data\logs\web.log`・`data\logs\watch.log`に書かれます（画面からの定期的な問い合わせのうち、成功したものは書きません）。ログには起動・終了の行が残るので、落ちたときは「終了コードつきの終了の行がある＝プログラムが異常終了した」「起動の行のあとに終了の行が無い＝ウィンドウを閉じた・外から止められた」と見分けられます。外出先から使う場合は、PCの電源設定で「スリープしない」にしてください。
 
 ### 通知・履歴と重複の検出
 
