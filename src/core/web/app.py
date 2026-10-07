@@ -15,7 +15,7 @@ from pathlib import Path
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from core import db, env_settings, generation
-from core import storage, watermark
+from core import duplicates, notifications, storage, watermark
 from core.dimensions import read_dimensions
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
@@ -420,6 +420,11 @@ def create_app(config: Config) -> Flask:
         config.paths.inbox.mkdir(parents=True, exist_ok=True)
         saved_names = []
         rejected = []
+        held = []  # 重複のため保留にしたファイル名
+        seen_hashes: dict[str, str] = {}
+        token = duplicates.new_token()
+        conn_dup = get_conn()
+        duplicates.cleanup_stale(config)
         for file in files:
             if not file.filename:
                 continue
@@ -430,6 +435,17 @@ def create_app(config: Config) -> Flask:
                 continue
             dest = _unique_inbox_path(config.paths.inbox, filename)
             file.save(dest)
+            # 既にある作品(ごみ箱の中も含む)や、このアップロードの中の先のファイルと、同じ中身なら、
+            # 取り込まずに保留にして、取り込むかどうかをあとで確認する
+            content_hash = duplicates.file_hash(dest)
+            existing = [a["id"] for a in duplicates.assets_with_hash(conn_dup, content_hash)] if content_hash else []
+            same_as = seen_hashes.get(content_hash)
+            if content_hash and (existing or same_as):
+                duplicates.stage_duplicate(config, token, dest, content_hash, existing, same_as)
+                held.append(dest.name)
+                continue
+            if content_hash:
+                seen_hashes[content_hash] = dest.name
             saved_names.append(dest.name)
 
         # 分析(NSFW仕分け・内容説明)はVLM推論に数分かかるため、アップロードでは行わず
@@ -437,6 +453,7 @@ def create_app(config: Config) -> Flask:
         conn = get_conn()
         results = ingest_inbox(config, conn, defer_analysis=True)
         conn.close()
+        conn_dup.close()
 
         return jsonify(
             {
@@ -444,6 +461,7 @@ def create_app(config: Config) -> Flask:
                 "rejected": rejected,
                 "ingested": len(results),
                 "asset_ids": [r.asset_id for r in results],
+                "duplicates_held": len(held),  # 重複のため、取り込まずに保留にした数(確認のダイアログを出す)
             }
         )
 
@@ -873,6 +891,68 @@ def create_app(config: Config) -> Flask:
         except storage.StorageError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"started": True})
+
+    # --- 重複の確認 ---
+
+    @app.route("/api/duplicates")
+    def api_duplicates():
+        """確認が必要な重複: 保留中のアップロードと、登録済みの重複グループ。"""
+        conn = get_conn()
+        pending = duplicates.list_pending(config, conn)
+        groups = duplicates.duplicate_groups(conn)
+        conn.close()
+        return jsonify({"pending": pending, "groups": groups})
+
+    @app.route("/api/duplicates/pending/<token>/<path:name>")
+    def api_duplicate_pending_file(token, name):
+        path = duplicates.pending_file(config, token, name)
+        if path is None:
+            abort(404)
+        return send_file(path)
+
+    @app.route("/api/duplicates/resolve", methods=["POST"])
+    def api_duplicates_resolve():
+        """重複の扱いを、まとめて実行する。"""
+        payload = request.get_json(silent=True) or {}
+        conn = get_conn()
+        out = {}
+        if payload.get("uploads"):
+            require_storage()
+            out["uploads"] = duplicates.resolve_uploads(config, conn, payload["uploads"])
+        if payload.get("groups"):
+            out["groups"] = duplicates.resolve_groups(conn, payload["groups"])
+        out["remaining"] = {
+            "pending": len(duplicates.list_pending(config, conn)),
+            "groups": len(duplicates.duplicate_groups(conn)),
+        }
+        conn.close()
+        return jsonify(out)
+
+    # --- 通知(ベル・履歴) ---
+
+    @app.route("/api/notifications")
+    def api_notifications():
+        conn = get_conn()
+        limit = min(max(request.args.get("limit", 10, type=int), 1), 200)
+        offset = max(request.args.get("offset", 0, type=int), 0)
+        kind = request.args.get("kind") or None
+        data = {
+            "unread": notifications.unread_count(conn),
+            "total": notifications.count(conn, kind),
+            "items": notifications.list_notifications(conn, limit, offset, kind),
+            "kinds": notifications.KINDS,
+        }
+        conn.close()
+        return jsonify(data)
+
+    @app.route("/api/notifications/read", methods=["POST"])
+    def api_notifications_read():
+        payload = request.get_json(silent=True) or {}
+        conn = get_conn()
+        marked = notifications.mark_read(conn, None if payload.get("all") else [int(i) for i in payload.get("ids", [])])
+        data = {"marked": marked, "unread": notifications.unread_count(conn)}
+        conn.close()
+        return jsonify(data)
 
     @app.route("/help")
     def help_page():

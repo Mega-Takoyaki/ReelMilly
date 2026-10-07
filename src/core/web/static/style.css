@@ -1504,3 +1504,121 @@ body.is-drag-selecting { user-select: none; -webkit-user-select: none; cursor: c
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 3px;
 }
+
+/* 通知(ベル・ポップアップ・履歴) --------------------------------------------*/
+
+.topbar { gap: 0.8rem; }
+.topbar .topnav { margin-left: auto; }
+.notif { position: relative; flex: none; }
+.notif-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--fg-muted);
+}
+.notif-bell:hover { color: var(--fg); background: var(--surface-hover); }
+.notif-bell.has-unread { color: var(--accent); border-color: var(--accent); animation: bell-ring 2.4s ease-in-out infinite; }
+.notif-dot {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.1rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid var(--surface);
+}
+.notif-dot:not([hidden]) { animation: badge-pulse 1.2s ease-in-out infinite; }
+@keyframes bell-ring {
+  0%, 60%, 100% { transform: rotate(0); }
+  66% { transform: rotate(14deg); }
+  72% { transform: rotate(-12deg); }
+  78% { transform: rotate(8deg); }
+  84% { transform: rotate(-4deg); }
+}
+
+.notif-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  z-index: 120;
+  width: min(24rem, 92vw);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.notif-pop[hidden] { display: none; }
+.notif-head { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+.notif-list { list-style: none; margin: 0; padding: 0; max-height: min(26rem, 60vh); overflow: auto; }
+.notif-all { display: block; padding: 0.6rem 0.8rem; text-align: center; border-top: 1px solid var(--border); font-size: 0.85rem; }
+.notif-empty { padding: 1.2rem; text-align: center; color: var(--fg-muted); font-size: 0.85rem; }
+.notif-item { display: flex; gap: 0.6rem; padding: 0.65rem 0.8rem; border-bottom: 1px solid var(--border); }
+.notif-item:last-child { border-bottom: none; }
+.notif-item.unread { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.notif-mark { flex: none; width: 0.55rem; height: 0.55rem; margin-top: 0.35rem; border-radius: 50%; background: var(--fg-muted); }
+.notif-item.level-success .notif-mark { background: #16a34a; }
+.notif-item.level-warning .notif-mark { background: #d97706; }
+.notif-item.level-error .notif-mark { background: #dc2626; }
+.notif-item.level-info .notif-mark { background: #3b82f6; }
+.notif-body { flex: 1; min-width: 0; }
+.notif-title { font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
+.notif-item.unread .notif-title::after { content: " ●"; color: var(--accent); font-size: 0.6rem; vertical-align: middle; }
+.notif-text { margin-top: 0.1rem; font-size: 0.78rem; color: var(--fg-muted); overflow-wrap: anywhere; }
+.notif-meta { margin-top: 0.15rem; font-size: 0.72rem; color: var(--fg-muted); }
+.notif-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; font-size: 0.8rem; white-space: nowrap; }
+.notif-log { max-height: none; border: 1px solid var(--border); border-radius: var(--radius-md); margin: 0.6rem 0; }
+.log-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 0.8rem; }
+.log-toolbar select { width: auto; }
+@media (max-width: 640px) {
+  .notif-pop { position: fixed; left: 0.5rem; right: 0.5rem; top: 3.6rem; width: auto; }
+}
+
+/* 重複の確認ダイアログ ---------------------------------------------------------*/
+
+dialog.dup-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 1.1rem 1.3rem;
+  width: min(94vw, 62rem);
+  max-height: 92vh;
+  overflow: auto;
+  box-shadow: var(--shadow-md);
+}
+dialog.dup-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.dup-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+.dup-close { position: static; background: var(--surface-alt); color: var(--fg-muted); }
+.dup-empty { padding: 1.5rem; text-align: center; color: var(--fg-muted); }
+.dup-section { margin-bottom: 1.2rem; }
+.dup-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+.dup-section-head h3 { margin: 0; font-size: 1rem; }
+.dup-count { color: var(--fg-muted); font-weight: 400; font-size: 0.85rem; }
+.dup-bulk { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.dup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+.dup-item { padding: 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-alt); }
+.dup-compare { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.dup-eq { font-size: 1.3rem; color: var(--fg-muted); }
+.dup-existing, .dup-members { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.dup-asset { width: 8.2rem; font-size: 0.75rem; }
+.dup-new { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+.dup-thumb { aspect-ratio: 1 / 1; overflow: hidden; border-radius: var(--radius-sm); background: #000; }
+.dup-thumb img, .dup-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dup-cap { margin-top: 0.25rem; }
+.dup-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dup-cap .hint { margin: 0; }
+.dup-keep { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0.2rem 0; font-size: 0.8rem; }
+.dup-keep input, .dup-choice input { width: auto; }
+.dup-link { font-size: 0.75rem; }
+.dup-same { max-width: 14rem; }
+.dup-choices { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; margin-top: 0.6rem; }
+.dup-choice { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }

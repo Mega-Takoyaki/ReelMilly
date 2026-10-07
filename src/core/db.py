@@ -30,6 +30,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")
     if "deleted_at" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN deleted_at TEXT")
+    if "content_hash" not in columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN content_hash TEXT")
+    # 列を足したあとに作る(既存DBでは、schema.sqlの時点では列が無いため、そこでは作れない)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_content_hash ON assets(content_hash)")
     for column in ("width", "height"):
         if column not in columns:
             conn.execute(f"ALTER TABLE assets ADD COLUMN {column} INTEGER")
@@ -74,13 +78,13 @@ def insert_asset(conn: sqlite3.Connection, asset: dict) -> None:
         """
         INSERT INTO assets (
             id, status, kind, file_path, caption, x_caption, fanvue_text,
-            audience, price_cents, fanvue_url, fanvue_uuid, x_ok, original_name, width, height,
+            audience, price_cents, fanvue_url, fanvue_uuid, x_ok, original_name, content_hash, width, height,
             content_rating, content_rating_confirmed, nsfw_auto_rating,
             nsfw_auto_confidence, content_description, fanvue_caption_draft,
             created_at, updated_at
         ) VALUES (
             :id, :status, :kind, :file_path, :caption, :x_caption, :fanvue_text,
-            :audience, :price_cents, :fanvue_url, :fanvue_uuid, :x_ok, :original_name, :width, :height,
+            :audience, :price_cents, :fanvue_url, :fanvue_uuid, :x_ok, :original_name, :content_hash, :width, :height,
             :content_rating, :content_rating_confirmed, :nsfw_auto_rating,
             :nsfw_auto_confidence, :content_description, :fanvue_caption_draft,
             :created_at, :updated_at
@@ -100,6 +104,7 @@ def insert_asset(conn: sqlite3.Connection, asset: dict) -> None:
             "fanvue_uuid": asset.get("fanvue_uuid"),
             "x_ok": int(asset.get("x_ok", False)),
             "original_name": asset.get("original_name"),
+            "content_hash": asset.get("content_hash"),
             "width": asset.get("width"),
             "height": asset.get("height"),
             "content_rating": asset.get("content_rating"),

@@ -51,6 +51,7 @@
     <button type="button" role="tab" data-tab="sec-telegram">Telegram</button>
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
     <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
+    <button type="button" role="tab" data-tab="sec-log">通知・ログ</button>
     <button type="button" role="tab" data-tab="sec-storage">ストレージ</button>
     <button type="button" role="tab" data-tab="sec-wm">透かし</button>
     <button type="button" role="tab" data-tab="sec-watch">自動取り込み</button>
@@ -210,6 +211,26 @@
       {% endfor %}
     </div>
     <button type="button" id="category-add" class="btn-ghost-inline">＋ カテゴリを追加</button>
+  </section>
+
+  <section class="card settings-tab" id="sec-log">
+    <h2 style="margin-top: 0;">通知・ログ{{ info("AI処理・透かし・投稿・ストレージ・重複の検出などの、完了や失敗の履歴です。画面を開いていないときに起きたことも残ります。画面右上のベルのアイコンでは、最新10件を見られます(未読があると印が出ます)。") }}</h2>
+    <div class="log-toolbar">
+      <label>種類
+        <select id="log-kind">
+          <option value="">すべて</option>
+          <option value="ai">AI処理</option>
+          <option value="watermark">透かし</option>
+          <option value="post">投稿</option>
+          <option value="duplicates">重複</option>
+          <option value="storage">ストレージ</option>
+          <option value="system">その他</option>
+        </select>
+      </label>
+      <span class="hint" id="log-total"></span>
+    </div>
+    <ul class="notif-list notif-log" id="log-list"></ul>
+    <button type="button" id="log-more" class="btn-ghost-inline" hidden>さらに読み込む</button>
   </section>
 
   <section class="card settings-tab" id="sec-storage">

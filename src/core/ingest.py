@@ -15,6 +15,7 @@ from core import db
 from core.analysis import AnalysisResult, analyze_asset, apply_auto_tags
 from core.config import Config
 from core.dimensions import read_dimensions
+from core.duplicates import file_hash
 from core.events import log_event
 from core.filenames import id_filename
 from core.nsfw import NsfwClassifier
@@ -124,6 +125,7 @@ def ingest_inbox(
             "kind": kind,
             "file_path": str(dest_path),
             "original_name": media_path.name,  # 元のファイル名は作品の情報として残す
+            "content_hash": file_hash(dest_path),  # 中身のハッシュ(重複の検出用)
             "width": size[0] if size else None,
             "height": size[1] if size else None,
             "caption": sidecar_data.get("caption"),

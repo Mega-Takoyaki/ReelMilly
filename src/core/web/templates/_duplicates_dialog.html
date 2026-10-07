@@ -1,0 +1,37 @@
+{# 重複の確認ダイアログ(全画面で共通)。duplicates.jsが中身を作る。アップロード直後や、通知・ベルから開く #}
+{% from "_info.html" import info %}
+<dialog id="dup-dialog" class="dup-dialog">
+  <div class="dup-head">
+    <h2 style="margin: 0;">重複の確認{{ info("ファイルの中身が完全に同じ画像・動画を『重複』として扱います。アップロードしようとしたものは、取り込まずに保留にしてあります。登録済みの重複は、定期処理で検出して通知します。再エンコードや縮小などで中身が変わったものは、別のファイルとして扱います(見た目が似ているだけのものは検出しません)。") }}</h2>
+    <button type="button" class="lightbox-close dup-close" id="dup-close" aria-label="閉じる">&times;</button>
+  </div>
+
+  <div id="dup-empty" class="dup-empty" hidden>確認が必要な重複は、ありません。</div>
+
+  <section id="dup-pending" class="dup-section" hidden>
+    <div class="dup-section-head">
+      <h3>アップロードしようとしたファイル<span class="dup-count" id="dup-pending-count"></span></h3>
+      <div class="dup-bulk">
+        <button type="button" class="btn-ghost-inline" id="dup-pending-skip-all">すべて取り込まない</button>
+        <button type="button" class="btn-ghost-inline" id="dup-pending-import-all">すべて取り込む</button>
+      </div>
+    </div>
+    <ul class="dup-list" id="dup-pending-list"></ul>
+  </section>
+
+  <section id="dup-groups" class="dup-section" hidden>
+    <div class="dup-section-head">
+      <h3>登録済みの重複<span class="dup-count" id="dup-groups-count"></span></h3>
+      <div class="dup-bulk">
+        <button type="button" class="btn-ghost-inline" id="dup-groups-trash-all">すべて、1つ残して他をごみ箱へ</button>
+        <button type="button" class="btn-ghost-inline" id="dup-groups-keep-all">すべて残す</button>
+      </div>
+    </div>
+    <ul class="dup-list" id="dup-groups-list"></ul>
+  </section>
+
+  <div class="confirm-actions">
+    <button type="button" class="btn-ghost" id="dup-later">あとで決める</button>
+    <button type="button" class="btn-primary" id="dup-run">選んだ内容で実行</button>
+  </div>
+</dialog>

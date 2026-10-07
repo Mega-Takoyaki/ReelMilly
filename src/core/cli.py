@@ -104,6 +104,18 @@ def _storage_ready(config: Config, conn, label: str) -> bool:
     return status.available
 
 
+def _notify_duplicates(config: Config) -> None:
+    """重複(同じ中身のファイル)が増えていれば、通知する。"""
+    from core import duplicates
+
+    conn = get_connection(config.paths.db_path)
+    try:
+        init_db(conn)
+        duplicates.notify_new_duplicates(conn)
+    finally:
+        conn.close()
+
+
 def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
     conn = get_connection(config.paths.db_path)
     init_db(conn)
@@ -116,6 +128,7 @@ def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
         conn.close()
         for result in results:
             print(f"ingested {result.asset_id} ({result.kind}) -> 分析待ち")
+        _notify_duplicates(config)
         return 0
     nsfw_classifier = try_create_classifier(config.nsfw)
     if nsfw_classifier is None:
@@ -132,6 +145,7 @@ def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
         return 0
     for result in results:
         print(f"ingested {result.asset_id} ({result.kind}) -> {result.dest_path}")
+    _notify_duplicates(config)
     return 0
 
 
@@ -308,6 +322,7 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
             if auto_ingest:
                 cmd_ingest(config, defer_analysis=True)
             cmd_analyze(config, worker, enqueue_pending=False)
+            _notify_duplicates(config)  # 定期処理: 取り込み(自動取り込み等)で増えた重複を検出して通知する
             cmd_run_due(config)
             time.sleep(interval_seconds)
     except KeyboardInterrupt:
@@ -345,11 +360,14 @@ def cmd_web(config: Config) -> int:
         cmd_migrate_filenames(config)  # 旧バージョンで取り込んだ作品のファイル名も、起動時にそろえる
 
         def backfill() -> None:  # 旧バージョンで取り込んだ作品の幅・高さ(「フル」表示用)を、背景で補う
+            from core import duplicates
             from core.dimensions import backfill_dimensions
 
             bg = get_connection(config.paths.db_path)
             try:
                 backfill_dimensions(bg)
+                duplicates.backfill_hashes(bg)  # 旧バージョンで取り込んだ作品の、中身のハッシュ(重複の検出用)
+                duplicates.notify_new_duplicates(bg)
             finally:
                 bg.close()
 

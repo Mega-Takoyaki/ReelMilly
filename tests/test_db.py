@@ -409,3 +409,47 @@ def test_broken_images_are_hidden_by_default_and_excluded_from_everything(tmp_pa
     # ごみ箱の中では破綻の区別をしない(復旧・完全削除の対象から漏れない)
     db.trash_assets(conn, ["bad"])
     assert ids(trashed=True) == ["bad"]
+
+
+def test_init_db_upgrades_an_old_database_without_new_columns(tmp_path):
+    """旧バージョンのDB(後から足した列が無い)でも、起動(init_db)で壊れず、列・テーブルが足される。
+
+    新しい列のインデックスをschema.sqlに書くと、既存DBでは「no such column」で起動できなくなる(実際に起きた)。
+    """
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript(
+        """
+        CREATE TABLE assets (
+            id TEXT PRIMARY KEY, status TEXT NOT NULL, kind TEXT NOT NULL, file_path TEXT NOT NULL,
+            caption TEXT, x_caption TEXT, fanvue_text TEXT, audience TEXT, price_cents INTEGER,
+            fanvue_url TEXT, fanvue_uuid TEXT, x_ok INTEGER NOT NULL DEFAULT 0, content_rating TEXT,
+            content_rating_confirmed INTEGER NOT NULL DEFAULT 0, nsfw_auto_rating TEXT, nsfw_auto_confidence REAL,
+            content_description TEXT, fanvue_caption_draft TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        INSERT INTO assets (id, status, kind, file_path, created_at, updated_at)
+        VALUES ('old1', 'posted', 'image', '/x/old1/pic.png', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+        CREATE TABLE posts (asset_id TEXT NOT NULL, channel TEXT NOT NULL, status TEXT NOT NULL, url TEXT,
+            external_id TEXT, error TEXT, posted_at TEXT NOT NULL, PRIMARY KEY (asset_id, channel));
+        CREATE TABLE ai_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, asset_id TEXT NOT NULL, kind TEXT NOT NULL,
+            status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, finished_at TEXT);
+        """
+    )
+    old.commit()
+    old.close()
+
+    conn = db.get_connection(path)
+    db.init_db(conn)  # ここで例外にならないこと
+    db.init_db(conn)  # 何度呼んでも安全
+
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(assets)")}
+    assert {"content_hash", "width", "height", "is_broken", "original_name", "deleted_at", "wm_path"} <= columns
+    assert "source" in {r["name"] for r in conn.execute("PRAGMA table_info(posts)")}
+    assert "params" in {r["name"] for r in conn.execute("PRAGMA table_info(ai_tasks)")}
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"notifications", "dup_ignores"} <= tables
+    indexes = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    assert "idx_assets_content_hash" in indexes
+    assert db.get_asset(conn, "old1")["status"] == "ready"  # 旧ステータス(posted)は、移行される

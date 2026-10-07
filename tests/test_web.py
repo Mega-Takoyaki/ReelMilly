@@ -418,7 +418,7 @@ def test_upload_avoids_filename_collision(app_and_conn):
     for _ in range(2):
         response = client.post(
             "/assets/upload",
-            data={"files": [(io.BytesIO(b"jpeg-bytes"), "dup.jpg")]},
+            data={"files": [(io.BytesIO(b"jpeg-bytes-" + bytes([_])), "dup.jpg")]},  # 同じ名前・別の中身(同じ中身は、重複として保留になる)
             content_type="multipart/form-data",
         )
         assert response.get_json()["uploaded"] == 1
@@ -1292,3 +1292,69 @@ def test_drag_select_script_loaded_and_internal_drags_are_not_uploads(app_and_co
     upload = client.get("/static/upload.js").get_data(as_text=True)
     # ページ内のサムネイルのドラッグを、アップロードとして扱わない(以前は、サムネイルをドラッグすると重複アップロードされた)
     assert "internalDrag" in upload and 'closest(".asset-card")' in upload
+
+
+def test_notifications_api_bell_and_history_tab(app_and_conn):
+    from core import notifications
+
+    app, conn = app_and_conn
+    client = app.test_client()
+    page = client.get("/").get_data(as_text=True)
+    assert 'id="notif-bell"' in page and "すべての履歴を見る" in page and "notifications.js" in page  # 全画面の右上にベル
+    assert 'data-tab="sec-log"' in client.get("/settings").get_data(as_text=True)  # 設定画面の履歴タブ
+
+    assert client.get("/api/notifications").get_json()["unread"] == 0
+    for i in range(12):
+        notifications.add(conn, "ai", f"処理{i}", "本文", "success" if i % 2 else "error")
+    notifications.add(conn, "duplicates", "重複を検出", "3組", "warning", action="duplicates")
+    notifications.add(conn, "bogus-kind", "不明な種類", level="weird", action="evil")  # 不正な値は無難な値へ寄せる
+
+    data = client.get("/api/notifications?limit=10").get_json()
+    assert data["unread"] == 14 and len(data["items"]) == 10 and data["total"] == 14  # ベルは最新10件
+    assert data["items"][0]["title"] == "不明な種類" and data["items"][0]["kind"] == "system"
+    assert data["items"][0]["level"] == "info" and data["items"][0]["action"] is None
+    assert data["items"][1]["action"] == "duplicates" and data["items"][1]["kind_label"] == "重複"
+    assert all(not n["read"] for n in data["items"])
+
+    # 履歴: 種類で絞り込み・ページ送り
+    assert client.get("/api/notifications?kind=duplicates").get_json()["total"] == 1
+    page2 = client.get("/api/notifications?limit=10&offset=10").get_json()["items"]
+    assert [n["title"] for n in page2] == ["処理3", "処理2", "処理1", "処理0"]
+
+    # 既読
+    ids = [n["id"] for n in data["items"][:3]]
+    assert client.post("/api/notifications/read", json={"ids": ids}).get_json() == {"marked": 3, "unread": 11}
+    assert client.post("/api/notifications/read", json={"all": True}).get_json() == {"marked": 11, "unread": 0}
+
+
+def test_worker_and_drop_leave_notifications(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from core import notifications
+    from core.worker import AnalysisWorker
+    from posting.jobs import run_fanvue_drop
+
+    from tests.test_worker import _insert, _setup  # 既存のテスト用の準備を使う
+
+    config, conn = _setup(tmp_path)
+    _insert(conn, tmp_path, "a1")
+    _insert(conn, tmp_path, "a2")
+    db.enqueue_ai_task(conn, "a1", "nsfw")
+    db.enqueue_ai_task(conn, "a2", "nsfw")
+    classifier = MagicMock()
+    classifier.classify.side_effect = [MagicMock(rating="sfw", confidence=0.1), RuntimeError("boom")]
+    with patch("core.worker.try_create_classifier", return_value=classifier):
+        AnalysisWorker(config).run_once(conn, log=lambda m: None)
+
+    items = notifications.list_notifications(conn, 10)
+    assert len(items) == 1  # 巡回ごとに、種別ごとの1件にまとめる
+    assert "1件完了" in items[0]["title"] and "1件失敗" in items[0]["title"] and items[0]["level"] == "warning"
+    assert "boom" in items[0]["body"]
+
+    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1, status="ready")
+    db.set_channels(conn, "a1", ["fanvue"])
+    client = MagicMock()
+    client.upload_media.side_effect = RuntimeError("upload failed")
+    run_fanvue_drop(config, conn, client, "h", "https://f.com/{handle}")
+    latest = notifications.list_notifications(conn, 1)[0]
+    assert latest["kind"] == "post" and latest["level"] == "error" and latest["asset_id"] == "a1"

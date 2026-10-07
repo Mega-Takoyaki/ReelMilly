@@ -40,8 +40,15 @@
         if (data.rejected && data.rejected.length > 0) {
           message += `（非対応形式のためスキップ: ${data.rejected.join(", ")}）`;
         }
+        if (data.duplicates_held > 0) {
+          message += `／ 既にある画像と同じ${data.duplicates_held}件は、取り込まずに保留にしています`;
+        }
         if (window.showToast) window.showToast(message, "success");
-        setTimeout(() => window.location.reload(), 800);
+        if (data.duplicates_held > 0 && window.openDuplicates) {
+          window.openDuplicates(); // 取り込むかどうかを、その場でまとめて決める(閉じたときに、一覧を更新する)
+        } else {
+          setTimeout(() => window.location.reload(), 800);
+        }
       } else if (window.showToast) {
         window.showToast(`アップロードに失敗しました: ${data.error || xhr.status}`, "error");
       }

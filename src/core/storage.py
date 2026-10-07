@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core import db
+from core import db, notifications
 from core.config import Config
 from core.events import log_event
 
@@ -366,10 +366,12 @@ def change_root(
         log_event(config.paths.events_path, "storage_changed", mode=mode, source=str(old_root),
                   target=str(new_root), assets=changed, removed_source_files=removed)
         result = {"mode": mode, "root": str(new_root), "assets_updated": changed, "removed_source_files": removed}
+        notifications.add(conn, "storage", "ストレージの場所を変更しました", str(new_root), "success")
         _save_job(conn, state="done", message="完了しました", result=result)
         return result
     except Exception as exc:
         _save_job(conn, state="failed", message=str(exc))
+        notifications.add(conn, "storage", "ストレージの場所の変更に失敗しました", str(exc), "error")
         if isinstance(exc, StorageError):
             raise
         raise StorageError(f"ストレージの変更に失敗しました: {exc}") from exc

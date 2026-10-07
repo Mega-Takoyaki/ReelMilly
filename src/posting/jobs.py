@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core import db
+from core import db, notifications
 from core.config import Config
 from core.events import log_event
 from core.policy import can_auto_post
@@ -163,6 +163,9 @@ def run_fanvue_drop(
             updated_at=_now(),
         )
         db.add_tag_to_asset(conn, asset_id, FANVUE_POSTED_TAG)
+        notifications.add(
+            conn, "post", "Fanvueへ投稿しました", fanvue_url, "success", asset_id=asset_id
+        )
         log_event(
             config.paths.events_path,
             "drop_ok",
@@ -175,6 +178,7 @@ def run_fanvue_drop(
     except Exception as exc:  # noqa: BLE001 - 失敗理由をそのままDB/ログに残すのが目的
         db.set_post(conn, asset_id, FANVUE_CHANNEL, "failed", error=str(exc))
         db.update_asset(conn, asset_id, updated_at=_now())
+        notifications.add(conn, "post", "Fanvueへの投稿に失敗しました", str(exc), "error", asset_id=asset_id)
         log_event(config.paths.events_path, "fanvue_failed", asset_id=asset_id, error=str(exc))
         return DropResult(executed=False, asset_id=asset_id, error=str(exc))
 

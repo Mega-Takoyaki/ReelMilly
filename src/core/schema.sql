@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS assets (
     content_description TEXT,
     fanvue_caption_draft TEXT,
     analysis_error TEXT,
+    content_hash TEXT,  -- ファイルの中身のSHA-256(重複の検出用)
     width INTEGER,   -- 画像・動画の幅と高さ(一覧の「フル」表示で、縦横比どおりの枠を先に確保する)
     height INTEGER,
     is_broken INTEGER NOT NULL DEFAULT 0,  -- 破綻画像(AI生成特有の崩れ。キメラ)。既定の一覧・投稿から除外する
@@ -105,3 +106,25 @@ CREATE TABLE IF NOT EXISTS ai_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_tasks_status ON ai_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_ai_tasks_asset ON ai_tasks(asset_id, kind);
+
+-- 通知とその履歴(画面右上のベル・設定画面の「通知・ログ」)
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,      -- 'ai' | 'watermark' | 'post' | 'duplicates' | 'storage' | 'system'
+    level TEXT NOT NULL DEFAULT 'info',  -- 'info' | 'success' | 'warning' | 'error'
+    title TEXT NOT NULL,
+    body TEXT,
+    action TEXT,             -- クリックで開くポップアップ('duplicates'など)。無ければNULL
+    asset_id TEXT,           -- 関連する作品(詳細画面へのリンク)
+    read_at TEXT             -- 既読にした日時。NULL=未読
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(id);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at);
+
+-- (content_hashのインデックスは、既存DBに列を足したあとで作るため、db.pyの移行で作る)
+
+-- 「重複のまま残す」とユーザーが決めた中身のハッシュ(二度と通知しない)
+CREATE TABLE IF NOT EXISTS dup_ignores (
+    content_hash TEXT PRIMARY KEY
+);

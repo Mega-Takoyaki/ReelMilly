@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from core import analysis, db, generation, storage, watermark
+from core import analysis, db, generation, notifications, storage, watermark
 from core import settings as settings_module
 from core.config import Config
 from core.events import log_event
@@ -302,14 +302,20 @@ class AnalysisWorker:
         if not status.available:
             if getattr(self, "_storage_warned", None) != status.code:
                 log(f"[storage] {status.reason}。接続されるまで、AI処理を一時停止します")
+                notifications.add(conn, "storage", "ストレージを使えません", status.reason, "error")
+                db.set_setting(conn, "storage_was_unavailable", "1")
             self._storage_warned = status.code
             self._write_lock(conn, None, None)
             if not self._persistent:
                 self.close(conn)
             return 0, 0
         self._storage_warned = None
+        if db.get_setting(conn, "storage_was_unavailable") == "1":
+            db.set_setting(conn, "storage_was_unavailable", "0")
+            notifications.add(conn, "storage", "ストレージにつながりました", "AI処理を再開します", "success")
 
         done = failed = 0
+        summary: dict[str, dict] = {}  # 種別ごとの(成功・失敗の数、最初の失敗理由)。巡回の最後に、まとめて通知する
         try:
             queued = enqueue_scheduled(conn, self._config.timezone)
             if queued:
@@ -321,6 +327,13 @@ class AnalysisWorker:
                 self._write_lock(conn, task["asset_id"], task["kind"])
                 error = self._process(conn, task)
                 db.finish_ai_task(conn, task["id"], error)
+                entry = summary.setdefault(task["kind"], {"done": 0, "failed": 0, "error": None, "asset": None})
+                if error:
+                    entry["failed"] += 1
+                    entry["error"] = entry["error"] or f"{task['asset_id']}: {error}"
+                else:
+                    entry["done"] += 1
+                entry["asset"] = task["asset_id"]
                 if error:
                     failed += 1
                     db.update_asset(conn, task["asset_id"], analysis_error=error)
@@ -337,7 +350,18 @@ class AnalysisWorker:
                     db.update_asset(conn, task["asset_id"], analysis_error=None)
                     self._promote_if_complete(conn, task["asset_id"], log)
             self._write_lock(conn, None, None)
+            self._notify_summary(conn, summary)
         finally:
             if not self._persistent:
                 self.close(conn)
         return done, failed
+
+    def _notify_summary(self, conn: sqlite3.Connection, summary: dict) -> None:
+        """今回の巡回で処理した分を、種別ごとに1件の通知にまとめる(画面を見ていなくても、結果が残る)。"""
+        for kind, entry in summary.items():
+            label = settings_module.AI_KIND_LABELS.get(kind) or ("透かし挿入" if kind == "watermark" else kind)
+            title, body, level = notifications.summarize_tasks(label, entry["done"], entry["failed"], entry["error"])
+            single = entry["asset"] if entry["done"] + entry["failed"] == 1 else None
+            notifications.add(
+                conn, "watermark" if kind == "watermark" else "ai", title, body, level, asset_id=single
+            )
