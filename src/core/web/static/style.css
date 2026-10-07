@@ -1345,3 +1345,48 @@ dialog.wm-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .folder-pick-list .folder-item:hover { background: var(--surface-hover); }
 .folder-pick-list .hint { padding: 0.6rem 0.7rem; margin: 0; }
 .drive-btn { font-size: 0.8rem; }
+
+/* サムネイルの形状: コンパクト(既定=正方形) / フル(縦横比のまま。Grok Imagineのような並び) ------------*/
+
+.asset-grid { --grid-gap: 1.1rem; gap: var(--grid-gap); }
+@media (max-width: 640px) { .asset-grid { --grid-gap: 0.4rem; } }
+
+.grid-view-options { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.4rem; }
+
+.full-toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.78rem; color: var(--fg-muted); user-select: none; }
+.full-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.full-toggle .switch {
+  position: relative;
+  width: 2.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  transition: background 0.15s, border-color 0.15s;
+}
+.full-toggle .switch::after {
+  content: "";
+  position: absolute;
+  top: 0.12rem;
+  left: 0.15rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.full-toggle input:checked + .switch { background: color-mix(in srgb, var(--accent) 35%, var(--surface-alt)); border-color: var(--accent); }
+.full-toggle input:checked + .switch::after { transform: translateX(1rem); background: var(--accent); }
+.full-toggle input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+.full-toggle .ft-compact { color: var(--fg); font-weight: 600; }                    /* オフ(既定)のとき、コンパクトを強調 */
+.full-toggle input:checked ~ .ft-compact { color: var(--fg-muted); font-weight: 400; }
+.full-toggle .ft-full { color: var(--fg-muted); }
+.full-toggle input:checked ~ .ft-full { color: var(--fg); font-weight: 600; }
+
+/* フル: 列ごとに縦に積み、各サムネイルは作品の縦横比のまま(読み込み前から枠を確保する) */
+.asset-grid.is-full { display: block; column-width: var(--thumb-size); column-gap: var(--grid-gap); }
+.asset-grid.is-full .asset-card { break-inside: avoid; margin-bottom: var(--grid-gap); }
+.asset-grid.is-full .asset-media { aspect-ratio: var(--ar, auto); }
+.asset-grid.is-full .asset-card img,
+.asset-grid.is-full .asset-card video { aspect-ratio: auto; height: 100%; object-fit: cover; }
+.asset-grid.is-full .empty-state { column-span: all; }

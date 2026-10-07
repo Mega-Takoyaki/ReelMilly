@@ -343,6 +343,19 @@ def cmd_web(config: Config) -> int:
     conn.close()
     if status.available:
         cmd_migrate_filenames(config)  # 旧バージョンで取り込んだ作品のファイル名も、起動時にそろえる
+
+        def backfill() -> None:  # 旧バージョンで取り込んだ作品の幅・高さ(「フル」表示用)を、背景で補う
+            from core.dimensions import backfill_dimensions
+
+            bg = get_connection(config.paths.db_path)
+            try:
+                backfill_dimensions(bg)
+            finally:
+                bg.close()
+
+        import threading
+
+        threading.Thread(target=backfill, name="dimensions-backfill", daemon=True).start()
     else:
         print(f"[web] {status.reason}")
         print("[web] 画像なしで起動します。画面の設定「ストレージ」で場所を直せます")

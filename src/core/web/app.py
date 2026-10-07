@@ -16,6 +16,7 @@ from flask import Flask, abort, g, jsonify, redirect, render_template, request, 
 
 from core import db, env_settings, generation
 from core import storage, watermark
+from core.dimensions import read_dimensions
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
 from core.ingest import DEFAULT_CHANNELS as DEFAULT_POST_CHANNELS
@@ -166,6 +167,14 @@ def create_app(config: Config) -> Flask:
             q=q,
             limit=200,
         )
+        # 幅・高さが未記録の作品(旧バージョンで取り込んだもの)は、ファイルから読んで補う(「フル」表示の枠用)
+        if storage_status().available:
+            for a in [a for a in assets if not a.get("width")][:60]:
+                size = read_dimensions(Path(a["file_path"]), a["kind"])
+                if size:
+                    a["width"], a["height"] = size
+                    conn.execute("UPDATE assets SET width = ?, height = ? WHERE id = ?", (size[0], size[1], a["id"]))
+            conn.commit()
         asset_ids = [a["id"] for a in assets]
         posts = db.get_posts(conn, asset_ids)
         channels_map = db.get_channels_map(conn, asset_ids)

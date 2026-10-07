@@ -142,15 +142,23 @@
     <button type="button" id="select-all-toggle" class="btn-ghost-inline">表示中をすべて選択</button>
     {% endif %}
   </div>
-  <label class="grid-size-control">
-    サムネイルサイズ
-    <input type="range" id="thumb-size-slider" min="64" max="320" step="10" value="190">
-  </label>
+  <div class="grid-view-options">
+    <label class="grid-size-control">
+      サムネイルサイズ
+      <input type="range" id="thumb-size-slider" min="60" max="320" step="10" value="190">
+    </label>
+    <label class="full-toggle" title="オフ: コンパクト（正方形に切り抜いて並べます）／ オン: フル（画像・動画の縦横比のまま表示します）">
+      <span class="ft-label ft-compact">コンパクト</span>
+      <input type="checkbox" id="thumb-full-toggle" role="switch" aria-label="フル表示（縦横比のまま）">
+      <span class="switch" aria-hidden="true"></span>
+      <span class="ft-label ft-full">フル</span>
+    </label>
+  </div>
 </div>
 
 <section class="asset-grid">
   {% for asset in assets %}
-  <div class="asset-card" data-asset-id="{{ asset.id }}">
+  <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}"{% endif %}>
     <label class="asset-select">
       <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
     </label>
