@@ -51,6 +51,7 @@
     <button type="button" role="tab" data-tab="sec-telegram">Telegram</button>
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
     <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
+    <button type="button" role="tab" data-tab="sec-storage">ストレージ</button>
     <button type="button" role="tab" data-tab="sec-wm">透かし</button>
     <button type="button" role="tab" data-tab="sec-watch">自動取り込み</button>
   </nav>
@@ -211,6 +212,60 @@
     <button type="button" id="category-add" class="btn-ghost-inline">＋ カテゴリを追加</button>
   </section>
 
+  <section class="card settings-tab" id="sec-storage">
+    <h2 style="margin-top: 0;">ストレージ（画像・動画の置き場所）{{ info("取り込んだ画像・動画のファイルを置く場所です。任意のドライブ・フォルダ（USBメモリや外付けディスクなどのリムーバブルメディアも可）に変えられます。データベース（タグ・説明・投稿の記録など）は常にこのPC内にあるので、置き場所が見つからなくても、アプリは画像なしで起動し、ここで場所を直せます。") }}</h2>
+
+    <div class="card storage-now" id="storage-now">
+      <p><strong>現在の場所:</strong> <code id="storage-path">読み込み中…</code> <span id="storage-badge" class="job-chip"></span></p>
+      <p class="hint" id="storage-detail"></p>
+      <p class="storage-reason" id="storage-reason"></p>
+    </div>
+
+    <h3>場所を変更する</h3>
+    <div class="settings-form">
+      <label>新しい場所{{ info("画像・動画を置くフォルダの絶対パスです（例: E:\\Reelmilly、D:\\media\\library）。下の「フォルダを選ぶ」や、ドライブのボタンからも選べます。リムーバブルメディアは、差し込んだドライブ文字を指定します。") }}
+        <input type="text" id="storage-new" placeholder="例: E:\Reelmilly" autocomplete="off">
+      </label>
+      <div class="storage-actions">
+        <button type="button" id="storage-browse-btn" class="btn-ghost-inline">フォルダを選ぶ…</button>
+        <button type="button" id="storage-default" class="btn-ghost-inline">既定の場所を入れる</button>
+      </div>
+      <div class="storage-drives" id="storage-drives" aria-label="ドライブ"></div>
+
+      <fieldset class="storage-mode">
+        <legend>方法{{ info("「コピーして移す」: いまのファイルを新しい場所へコピーしてから、保存先を切り替えます（安全です。元のファイルは、希望すれば削除できます）。「この場所を使う」: すでに作品のファイルがある場所（ドライブ文字が変わった、バックアップを戻した、など）を指すだけで、コピーはしません。") }}</legend>
+        <label class="checkbox-label"><input type="radio" name="storage-mode" value="move" checked> コピーして移す（推奨）</label>
+        <label class="checkbox-label"><input type="radio" name="storage-mode" value="use"> すでにファイルがある場所を使う（コピーしない）</label>
+        <label class="checkbox-label" id="storage-delete-row"><input type="checkbox" id="storage-delete"> コピーが終わったら、元の場所のファイルを削除する（元に戻せません）</label>
+      </fieldset>
+
+      <div><button type="button" id="storage-apply" class="btn-primary">この内容で変更する</button></div>
+
+      <div id="storage-job" class="job-progress" hidden>
+        <div class="job-bar"><span></span></div>
+        <div class="job-detail" id="storage-job-text"></div>
+      </div>
+    </div>
+    <p class="hint">
+      取り外せるメディアに置く場合: 起動時や処理の途中でメディアが外れていても、アプリは壊れません。画像は表示されず、取り込み・AI処理・投稿は止まり（待機中の処理は残ります）、
+      つなぎ直すと再開します。ドライブ文字が変わったときは、「すでにファイルがある場所を使う」で新しい文字を指定してください。
+    </p>
+  </section>
+
+  <dialog id="storage-browser" class="wm-dialog">
+    <h2 style="margin-top: 0;">フォルダを選ぶ</h2>
+    <p><code id="storage-browse-path"></code></p>
+    <div class="storage-actions">
+      <button type="button" id="storage-browse-up" class="btn-ghost-inline">↑ 上のフォルダへ</button>
+      <button type="button" id="storage-browse-new" class="btn-ghost-inline">＋ 新しいフォルダ名にする</button>
+    </div>
+    <ul id="storage-browse-list" class="folder-pick-list"></ul>
+    <div class="confirm-actions">
+      <button type="button" class="btn-ghost" id="storage-browse-cancel">キャンセル</button>
+      <button type="button" class="btn-primary" id="storage-browse-pick">このフォルダを選ぶ</button>
+    </div>
+  </dialog>
+
   {% from "_wm_picker.html" import position_picker %}
   <section class="card settings-tab" id="sec-wm">
     <h2 style="margin-top: 0;">透かし（ウォーターマーク）の既定値{{ info("透かしを入れるダイアログを開いたときの初期値です。ダイアログで変えた値は、その画面を開いている間だけ引き継がれ、画面を開き直すと、ここで決めた既定値に戻ります。") }}</h2>
@@ -253,6 +308,7 @@
 </section>
 
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>
+<script src="{{ url_for('static', filename='storage.js') }}"></script>
 <script>
 (function () {
   const choices = {{ model_choices | tojson }};

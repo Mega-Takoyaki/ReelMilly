@@ -127,6 +127,14 @@ def run_fanvue_drop(
     if draft_result is not None:
         return draft_result
 
+    # ストレージが外れている等でファイルが見えないときは、投稿に失敗した記録を残さず、見送る
+    # (あとでつながれば、次回の投稿の対象にそのまま残る)
+    primary = Path(asset["wm_path"]) if asset.get("wm_path") and Path(asset["wm_path"]).exists() else Path(asset["file_path"])
+    if not primary.exists():
+        reason = f"ファイルが見つかりません（ストレージが接続されていない可能性があります）: {primary}"
+        log_event(config.paths.events_path, "drop_skipped", asset_id=asset_id, reason=reason)
+        return DropResult(executed=False, asset_id=asset_id, skipped_reason=reason)
+
     try:
         # 透かしを入れた作品は、透かし入りのファイルを投稿する(元のファイルは変えない)
         wm = asset.get("wm_path")

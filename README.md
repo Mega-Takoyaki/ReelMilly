@@ -241,6 +241,10 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現�
 
 手動で起動するときは`scripts\start-reelmilly.bat`（デスクトップのショートカットと同じ）です。外出先から使う場合は、PCの電源設定で「スリープしない」にしてください。
 
+### ストレージ（画像・動画の置き場所）を変える
+
+画像・動画のファイル（`data/library`）は、設定画面の「ストレージ」タブから、任意のドライブ・フォルダ（リムーバブルメディアも可）へ移せます（[ADR-0022](docs/adr/0022-configurable-storage-location.md)）。データベース・ログは常にこのPC内（`data/state`）にあるため、置き場所が見つからなくてもアプリは画像なしで起動し、設定画面で場所を直せます。見つからない間は、取り込み・AI処理・投稿を止め、待機中の処理は残します。
+
 ### テストの実行
 
 ```bash

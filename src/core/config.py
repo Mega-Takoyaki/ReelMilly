@@ -38,8 +38,28 @@ class Paths:
             screenshots_dir=base_dir / screenshots_dir,
         )
 
-    def all_dirs(self) -> list[Path]:
-        return [self.inbox, self.ready, self.posted, self.x_only, self.state_dir, self.screenshots_dir]
+    def with_library_root(self, library: Path) -> "Paths":
+        """ライブラリ(画像・動画)の場所だけを差し替えた`Paths`。DB・ログ・スクリーンショットの場所は変えない。"""
+        return Paths(
+            root=library,
+            inbox=library / "inbox",
+            ready=library / "ready",
+            posted=library / "posted",
+            x_only=library / "x_only",
+            state_dir=self.state_dir,
+            db_path=self.db_path,
+            events_path=self.events_path,
+            screenshots_dir=self.screenshots_dir,
+        )
+
+    def all_dirs(self, include_library: bool = True) -> list[Path]:
+        """作成するディレクトリ。ライブラリ以外(state・スクリーンショット)は常に、ライブラリは`include_library`のとき。
+
+        設定画面で別のドライブ等へ移したあとは、起動のたびにライブラリのフォルダを作らない
+        (リムーバブルメディアが外れているとき、別のドライブに空のフォルダを作ってしまうのを避ける)。
+        """
+        library = [self.inbox, self.ready, self.posted, self.x_only] if include_library else []
+        return library + [self.state_dir, self.screenshots_dir]
 
 
 @dataclass(frozen=True)
@@ -55,7 +75,7 @@ class WebConfig:
     port: int
 
 
-@dataclass(frozen=True)
+@dataclass
 class Config:
     timezone: str
     paths: Paths
@@ -65,9 +85,11 @@ class Config:
     web: WebConfig
     cadence: dict[str, str]
     env_path: Path
+    # config.yamlで決めたライブラリの場所。設定画面で場所を変えたあとも、「既定に戻す」ために持っておく
+    default_root: Path | None = None
 
 
-def load_config(base_dir: Path | None = None, config_filename: str = "config.yaml") -> Config:
+def load_config(base_dir: Path | None = None, config_filename: str = "config.yaml") -> Config:  # noqa: C901
     """base_dir/config.yaml と base_dir/.env を読み込みConfigを返す。"""
     base_dir = base_dir or Path.cwd()
     config_path = base_dir / config_filename
@@ -84,14 +106,17 @@ def load_config(base_dir: Path | None = None, config_filename: str = "config.yam
     nsfw_raw = raw.get("nsfw", {})
     web_raw = raw.get("web", {})
 
+    paths = Paths.from_base(
+        base_dir,
+        paths_raw.get("library_root", "data/library"),
+        paths_raw.get("state_dir", "data/state"),
+        paths_raw.get("screenshots_dir", "data/screenshots"),
+    )
+    default_root = paths.root
+
     return Config(
         timezone=raw.get("timezone", "Asia/Tokyo"),
-        paths=Paths.from_base(
-            base_dir,
-            paths_raw.get("library_root", "data/library"),
-            paths_raw.get("state_dir", "data/state"),
-            paths_raw.get("screenshots_dir", "data/screenshots"),
-        ),
+        paths=paths,
         nsfw=NsfwConfig(
             model=nsfw_raw.get("model", "marqo/nsfw-image-detection-384"),
             threshold=float(nsfw_raw.get("threshold", 0.5)),
@@ -105,13 +130,14 @@ def load_config(base_dir: Path | None = None, config_filename: str = "config.yam
         ),
         cadence=raw.get("cadence", {}),
         env_path=env_path,
+        default_root=default_root,
     )
 
 
 def ensure_directories(config: Config) -> list[Path]:
     """ディレクトリ契約に従いディレクトリを作成する。新規作成したパスの一覧を返す。"""
     created = []
-    for path in config.paths.all_dirs():
+    for path in config.paths.all_dirs(include_library=config.default_root is None or config.paths.root == config.default_root):
         if not path.exists():
             path.mkdir(parents=True, exist_ok=True)
             created.append(path)

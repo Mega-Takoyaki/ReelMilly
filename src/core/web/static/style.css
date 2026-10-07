@@ -1328,3 +1328,20 @@ dialog.wm-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 @media (max-width: 760px) {
   .asset-detail { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ストレージ設定 -----------------------------------------------------------*/
+
+.storage-now { background: var(--surface-alt); }
+.storage-now p { margin: 0.25rem 0; }
+.storage-reason { color: var(--danger); font-size: 0.85rem; }
+.storage-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.storage-drives { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0 0.8rem; }
+.storage-mode { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.5rem 0.8rem; margin: 0.4rem 0; }
+.storage-mode legend { font-size: 0.85rem; padding: 0 0.3rem; }
+.storage-mode label { flex-direction: row !important; align-items: center; gap: 0.5rem !important; margin: 0.25rem 0 !important; }
+.storage-mode input { width: auto; }
+.folder-pick-list { list-style: none; margin: 0.6rem 0; padding: 0; max-height: 16rem; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.folder-pick-list .folder-item { display: block; width: 100%; text-align: left; border: none; border-radius: 0; background: transparent; color: var(--fg); padding: 0.5rem 0.7rem; }
+.folder-pick-list .folder-item:hover { background: var(--surface-hover); }
+.folder-pick-list .hint { padding: 0.6rem 0.7rem; margin: 0; }
+.drive-btn { font-size: 0.8rem; }

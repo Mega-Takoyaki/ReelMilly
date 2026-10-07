@@ -12,10 +12,10 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from core import db, env_settings, generation
-from core import watermark
+from core import storage, watermark
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
 from core.ingest import DEFAULT_CHANNELS as DEFAULT_POST_CHANNELS
@@ -89,7 +89,26 @@ def create_app(config: Config) -> Flask:
     def get_conn():
         conn = db.get_connection(config.paths.db_path)
         db.init_db(conn)
+        storage.apply_override(config, conn)  # 設定画面で変えたストレージの場所を、このリクエストにも反映する
         return conn
+
+    def storage_status():
+        """このリクエストでのストレージの状態(リクエスト内では1回だけ調べる)。"""
+        if "storage_status" not in g:
+            conn = get_conn()
+            g.storage_status = storage.check(config, conn)
+            conn.close()
+        return g.storage_status
+
+    def require_storage():
+        """取り込み・削除など、ファイルを触る操作の前に呼ぶ。使えないときは、理由つきで中断する。"""
+        status = storage_status()
+        if not status.available:
+            abort(
+                app.response_class(
+                    json.dumps({"error": status.reason}, ensure_ascii=False), status=503, mimetype="application/json"
+                )
+            )
 
     app.add_template_filter(watermark.describe_positions, "wm_label")
 
@@ -240,6 +259,7 @@ def create_app(config: Config) -> Flask:
         wm_defaults = settings_module.get_watermark_defaults(conn)  # 設定画面で編集する既定値
         conn.close()
         return {
+            "storage": storage_status(),
             "trash_count": count,
             "wm_defaults": wm_defaults,
             "wm_positions": watermark.POSITIONS,
@@ -281,6 +301,7 @@ def create_app(config: Config) -> Flask:
         ids = payload.get("asset_ids")
         if not payload.get("all") and not ids:
             return jsonify({"error": "asset_ids or all is required"}), 400
+        require_storage()  # ファイルが見えない状態で記録だけ消さないように
         conn = get_conn()
         result = purge_assets(config, conn, None if payload.get("all") else ids)
         conn.close()
@@ -380,6 +401,7 @@ def create_app(config: Config) -> Flask:
 
     @app.route("/assets/upload", methods=["POST"])
     def upload_assets():
+        require_storage()
         files = request.files.getlist("files")
         if not files:
             return jsonify({"error": "no files provided"}), 400
@@ -480,6 +502,15 @@ def create_app(config: Config) -> Flask:
             abort(404)
         if request.args.get("variant") == "wm" and asset.get("wm_path") and Path(asset["wm_path"]).exists():
             return send_file(asset["wm_path"])  # 透かし入り(確認用)
+        if not Path(asset["file_path"]).exists():
+            # ストレージが外れている・ファイルが無いとき。画像は「見つかりません」の絵を返し、動画は404にする
+            if asset["kind"] == "image":
+                return app.response_class(
+                    (Path(app.static_folder) / "missing.svg").read_bytes(),
+                    mimetype="image/svg+xml",
+                    headers={"Cache-Control": "no-store", "X-Reelmilly-Missing": "1"},
+                )
+            abort(404)
         return send_file(asset["file_path"])
 
     @app.route("/assets/<asset_id>/download")
@@ -755,6 +786,43 @@ def create_app(config: Config) -> Flask:
     @app.route("/favicon.ico")
     def favicon():
         return redirect(url_for("static", filename="favicon.ico"))
+
+    # --- ストレージ(画像・動画の置き場所) ---
+
+    @app.route("/api/storage/status")
+    def api_storage_status():
+        conn = get_conn()
+        status = storage_status().as_dict()
+        status["default_root"] = str(config.default_root or config.paths.root)
+        if request.args.get("usage"):
+            status["usage"] = storage.usage_summary(conn, config.paths.root) if status["available"] else None
+        status["job"] = storage.current_job(conn)
+        conn.close()
+        return jsonify(status)
+
+    @app.route("/api/storage/drives")
+    def api_storage_drives():
+        return jsonify({"drives": storage.list_drives()})
+
+    @app.route("/api/storage/browse")
+    def api_storage_browse():
+        try:
+            return jsonify(storage.browse(request.args.get("path", "")))
+        except storage.StorageError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/storage/change", methods=["POST"])
+    def api_storage_change():
+        """ストレージの場所を変更する。時間がかかるので、別スレッドで始めて、進捗は/api/storage/statusで読む。"""
+        payload = request.get_json(silent=True) or {}
+        try:
+            storage.start_change_in_background(
+                config, config.paths.db_path, payload.get("path", ""), payload.get("mode", "move"),
+                bool(payload.get("delete_source")),
+            )
+        except storage.StorageError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"started": True})
 
     @app.route("/help")
     def help_page():

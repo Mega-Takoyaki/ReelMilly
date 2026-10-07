@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from core import db as db_module
+from core import storage
 from core import generation, settings
 from core.config import Config, ensure_directories, load_config
 from core.db import get_connection, init_db
@@ -94,9 +95,22 @@ def cmd_init(config: Config) -> int:
     return 0
 
 
+def _storage_ready(config: Config, conn, label: str) -> bool:
+    """ストレージが使える状態かを調べる。使えないときは理由を表示してFalseを返す。"""
+    status = storage.check(config, conn)
+    if not status.available:
+        print(f"[{label}] {status.reason}")
+        print(f"[{label}] 画面の設定「ストレージ」で、場所を直してください")
+    return status.available
+
+
 def cmd_ingest(config: Config, defer_analysis: bool = False) -> int:
     conn = get_connection(config.paths.db_path)
     init_db(conn)
+    storage.apply_override(config, conn)
+    if not _storage_ready(config, conn, "ingest"):
+        conn.close()
+        return 1
     if defer_analysis:
         results = ingest_inbox(config, conn, defer_analysis=True)
         conn.close()
@@ -288,7 +302,8 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
         while True:
             conn = get_connection(config.paths.db_path)
             init_db(conn)
-            auto_ingest = settings.get_auto_ingest(conn)
+            storage.apply_override(config, conn)
+            auto_ingest = settings.get_auto_ingest(conn) and storage.check(config, conn).available
             conn.close()
             if auto_ingest:
                 cmd_ingest(config, defer_analysis=True)
@@ -321,7 +336,16 @@ def cmd_migrate_filenames(config: Config) -> int:
 def cmd_web(config: Config) -> int:
     from core.web.app import create_app
 
-    cmd_migrate_filenames(config)  # 旧バージョンで取り込んだ作品のファイル名も、起動時にそろえる
+    conn = get_connection(config.paths.db_path)
+    init_db(conn)
+    storage.apply_override(config, conn)
+    status = storage.check(config, conn)
+    conn.close()
+    if status.available:
+        cmd_migrate_filenames(config)  # 旧バージョンで取り込んだ作品のファイル名も、起動時にそろえる
+    else:
+        print(f"[web] {status.reason}")
+        print("[web] 画像なしで起動します。画面の設定「ストレージ」で場所を直せます")
 
     app = create_app(config)
     print(f"[web] starting on http://{config.web.host}:{config.web.port} (Ctrl+Cで終了)")
@@ -364,6 +388,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     config = load_config(base_dir=Path.cwd())
+    if args.command != "init":
+        conn = get_connection(config.paths.db_path)
+        init_db(conn)
+        storage.apply_override(config, conn)  # 設定画面で変えたストレージの場所
+        conn.close()
 
     if args.command == "doctor":
         return cmd_doctor(config)

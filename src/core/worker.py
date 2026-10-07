@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from core import analysis, db, generation, watermark
+from core import analysis, db, generation, storage, watermark
 from core import settings as settings_module
 from core.config import Config
 from core.events import log_event
@@ -294,6 +294,20 @@ class AnalysisWorker:
         if not self._try_acquire(conn):
             log("[analyze] 別のワーカーが稼働中のためスキップします")
             return None
+
+        # ストレージ(画像・動画の置き場所)が見つからない間は、何も処理しない。待機中のタスクは失敗にせず、
+        # そのまま残す(つながったら、次の巡回で再開する)
+        storage.apply_override(self._config, conn)
+        status = storage.check(self._config, conn)
+        if not status.available:
+            if getattr(self, "_storage_warned", None) != status.code:
+                log(f"[storage] {status.reason}。接続されるまで、AI処理を一時停止します")
+            self._storage_warned = status.code
+            self._write_lock(conn, None, None)
+            if not self._persistent:
+                self.close(conn)
+            return 0, 0
+        self._storage_warned = None
 
         done = failed = 0
         try:

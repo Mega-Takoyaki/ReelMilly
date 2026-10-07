@@ -34,6 +34,13 @@
     </nav>
   </header>
   <main>
+    {% if storage and not storage.available %}
+    <div class="banner banner-error storage-banner" role="alert">
+      <strong>画像・動画のストレージを使えません。</strong>{{ storage.reason }}
+      {% if storage.code != 'migrating' %}<a href="{{ url_for('settings_page') }}#sec-storage">設定の「ストレージ」で、場所を直せます</a>{% endif %}
+      <span class="hint">（画像は表示されず、取り込み・AI処理・投稿は止まっています。待機中の処理は、つながると再開します）</span>
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
