@@ -162,9 +162,28 @@ window.confirmDialog = function confirmDialog(message) {
   document.addEventListener("click", (e) => {
     panels.forEach((d) => { if (d.open && !d.contains(e.target)) d.open = false; });
   });
+  // PC画面で、右寄りのフィルタの選択パネルが画面の右に切れないよう、はみ出す分だけ左へずらす
+  // (スマホでは、CSSで画面下に固定表示するので、何もしない)
+  function fitPanel(d) {
+    const panel = d.querySelector(".ms-panel");
+    if (!panel) return;
+    panel.style.left = "";
+    if (getComputedStyle(panel).position !== "absolute") return;
+    const rect = panel.getBoundingClientRect();
+    const margin = 8;
+    let shift = 0;
+    if (rect.right > window.innerWidth - margin) shift = window.innerWidth - margin - rect.right;
+    if (rect.left + shift < margin) shift = margin - rect.left; // 左にも切れないようにする(幅が足りない場合は左を優先)
+    if (shift) panel.style.left = `${shift}px`;
+  }
+
   panels.forEach((d) => d.addEventListener("toggle", () => {
-    if (d.open) panels.forEach((o) => { if (o !== d) o.open = false; });
+    if (d.open) {
+      panels.forEach((o) => { if (o !== d) o.open = false; });
+      fitPanel(d);
+    }
   }));
+  window.addEventListener("resize", () => panels.forEach((d) => { if (d.open) fitPanel(d); }));
   // 2階層(ファイルタイプ): 親(種別)のチェックで配下の拡張子をすべて入り切りし、
   // 配下がすべて選ばれたら親にもチェックを付ける。一部だけのときは親を「一部選択」表示にする
   function syncTree(ms, changed) {
