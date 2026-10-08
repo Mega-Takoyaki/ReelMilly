@@ -38,7 +38,7 @@ CONNECTION_HELP = {
     "FANVUE_OAUTH_REDIRECT_URI": (
         "Fanvueでログインを許可したあと、このアプリへ戻ってくるアドレスです。"
         "Fanvue側のOAuthアプリに登録した値と完全に同じである必要があります。"
-        "空欄なら http://127.0.0.1:8420/settings/fanvue/oauth/callback が使われます。通常は変更不要です。"
+        "空欄なら、設定のhost/portから決まる http://127.0.0.1:8420/settings/fanvue/oauth/callback が使われます(「Fanvue」タブに、いまの値を表示しています)。通常は変更不要です。"
     ),
     "FANVUE_HANDLE": (
         "Fanvueのプロフィールのアドレス https://www.fanvue.com/○○ の「○○」の部分（アカウント名）です。"

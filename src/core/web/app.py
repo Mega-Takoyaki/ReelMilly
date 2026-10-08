@@ -1012,6 +1012,7 @@ def create_app(config: Config) -> Flask:
             saved=request.args.get("saved") == "1",
             fanvue_connected=fanvue_connected,
             fanvue_just_connected=request.args.get("fanvue_connected") == "1",
+            fanvue_redirect_uri=fanvue_redirect_uri(),
             fanvue_error=request.args.get("fanvue_error"),
         )
 
@@ -1159,6 +1160,20 @@ def create_app(config: Config) -> Flask:
             conn.close()
         return jsonify({"models": models})
 
+    def fanvue_redirect_uri() -> str:
+        """FanvueのOAuthアプリに登録するリダイレクトURI。
+
+        環境変数`FANVUE_OAUTH_REDIRECT_URI`があればそれ。無ければ、画面を開いているアドレス(localhost・Tailscale名など)
+        によって変わらないよう、設定のhost/portから固定で組み立てる(Fanvue側に登録した値と、完全に一致させる必要があるため)。
+        """
+        configured = (os.environ.get("FANVUE_OAUTH_REDIRECT_URI") or "").strip()
+        if configured:
+            return configured
+        host = config.web.host
+        if host in ("0.0.0.0", "", "::"):
+            host = "127.0.0.1"
+        return f"http://{host}:{config.web.port}/settings/fanvue/oauth/callback"
+
     @app.route("/settings/fanvue/oauth/start")
     def fanvue_oauth_start():
         """Fanvue OAuth連携を開始する(ADR-0021)。認可ページへリダイレクトする。"""
@@ -1168,9 +1183,7 @@ def create_app(config: Config) -> Flask:
         if not client_id:
             return redirect(url_for("settings_page", fanvue_error="FANVUE_OAUTH_CLIENT_IDが未設定です"))
 
-        redirect_uri = os.environ.get("FANVUE_OAUTH_REDIRECT_URI") or url_for(
-            "fanvue_oauth_callback", _external=True
-        )
+        redirect_uri = fanvue_redirect_uri()
         pkce = fanvue_oauth.generate_pkce_pair()
         state = fanvue_oauth.generate_state()
 

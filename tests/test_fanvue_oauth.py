@@ -170,3 +170,33 @@ def test_token_store_clear_removes_file(tmp_path):
 
     assert not path.exists()
     assert store.load() is None
+
+
+def test_redirect_uri_is_fixed_regardless_of_the_address_used_to_open_the_page(tmp_path, monkeypatch):
+    """Fanvueに登録した値と完全一致させる必要があるため、画面を開いたアドレス(localhost・Tailscale名)で変わらない。"""
+    from urllib.parse import parse_qs, urlparse
+
+    from tests.test_duplicates import CONFIG_YAML
+    from core.cli import cmd_init
+    from core.config import load_config
+    from core.web.app import create_app
+
+    (tmp_path / "config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+    config = load_config(base_dir=tmp_path)
+    cmd_init(config)
+    monkeypatch.setenv("FANVUE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.delenv("FANVUE_OAUTH_REDIRECT_URI", raising=False)
+    client = create_app(config).test_client()
+    expected = "http://127.0.0.1:8420/settings/fanvue/oauth/callback"
+
+    for host in ("localhost:8420", "my-pc.tail1234.ts.net", "127.0.0.1:8420"):
+        res = client.get("/settings/fanvue/oauth/start", headers={"Host": host})
+        sent = parse_qs(urlparse(res.headers["Location"]).query)["redirect_uri"][0]
+        assert sent == expected, host
+
+    page = client.get("/settings", headers={"Host": "localhost:8420"}).get_data(as_text=True)
+    assert f'id="fanvue-redirect-uri">{expected}<' in page  # 登録すべき値を、設定画面に表示している
+
+    monkeypatch.setenv("FANVUE_OAUTH_REDIRECT_URI", "https://example.test/cb")  # 明示した値が優先
+    res = client.get("/settings/fanvue/oauth/start")
+    assert parse_qs(urlparse(res.headers["Location"]).query)["redirect_uri"][0] == "https://example.test/cb"

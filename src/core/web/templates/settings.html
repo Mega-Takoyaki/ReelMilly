@@ -80,6 +80,9 @@
         </div>
       </details>
     </div>
+    <h3 style="margin-top: 1rem;">リダイレクトURI（Fanvueに登録する値）{{ info("FanvueでOAuthアプリを作る(編集する)ときの「リダイレクトURL」に、下の値を、一字一句そのまま登録してください。1文字でも違うと、連携のときに「redirect_uri が登録済みのものと一致しない(invalid_request)」というエラーになります。この値は、どのアドレスで画面を開いていても変わりません。連携の操作は、このアプリが動いているPCのブラウザで行ってください。") }}</h3>
+    <p><code id="fanvue-redirect-uri">{{ fanvue_redirect_uri }}</code>
+      <button type="button" class="btn-ghost-inline" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('fanvue-redirect-uri').textContent).then(function(){ window.showToast('コピーしました', 'success'); })">コピー</button></p>
     <h3 style="margin-top: 1rem;">OAuth連携状態{{ info("このアプリがFanvueへ投稿してよいという許可（アクセストークン）を持っているかの状態です。「Fanvueと連携する」を押すとFanvueの許可画面に移り、許可すると連携済みになります。トークンは期限が切れる前に自動で更新されます。連携を解除すると保存したトークンを削除します。") }}</h3>
     {% if fanvue_connected %}
     <p><strong>連携済み</strong>（保存後に操作してください）</p>
