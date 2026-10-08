@@ -104,10 +104,14 @@ class XClient:
         if sensitive:
             # 成人向けのセンシティブなメディアとして、投稿前に指定する。
             # 形は、配列ではなく、真偽値の3項目のオブジェクト(実機で、配列は400になった。公式ドキュメントで確認)
-            self._request(
+            result = self._request(
                 "POST", "/2/media/metadata", retries=UPLOAD_RETRIES,
                 json={"id": media_id, "metadata": {"sensitive_media_warning": {"adult_content": True, "graphic_violence": False, "other": False}}},
             )
+            # Xが、指定を記録したかを、応答で確かめる(つけたつもりで、つかずに投稿してしまわないため)
+            recorded = (result.get("data", {}).get("associated_metadata", {}) or {}).get("sensitive_media_warning") or {}
+            if not recorded.get("adult_content"):
+                raise XApiError(f"センシティブ指定が、Xに記録されませんでした: {result}")
         return media_id
 
     def _upload_video(self, path: Path, size: int, mime: str) -> str:

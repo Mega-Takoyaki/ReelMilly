@@ -73,6 +73,10 @@ def test_x_token_store_refreshes_with_x_and_reports_x_messages(tmp_path):
 
 
 # ------------------------------------------------------------------ APIクライアント
+# 実機で確認した、センシティブ指定が記録されたときのXの応答
+META_OK = {"data": {"id": "111", "associated_metadata": {"sensitive_media_warning": {"adult_content": True, "graphic_violence": False, "other": False}}}}
+
+
 def test_media_set_rules():
     assert check_media_set(["image"] * 4) is None and check_media_set(["video"]) is None
     assert "4枚" in check_media_set(["image"] * 5)
@@ -89,7 +93,7 @@ def make_client(*responses):
 def test_image_upload_posts_multipart_and_sets_the_sensitive_flag(tmp_path):
     image = tmp_path / "a.png"
     image.write_bytes(b"png-bytes")
-    client, session = make_client(_resp({"data": {"id": "111"}}), _resp({"data": {}}))
+    client, session = make_client(_resp({"data": {"id": "111"}}), _resp(META_OK))
 
     assert client.upload_media(image, "image", sensitive=True) == "111"
 
@@ -360,7 +364,7 @@ def test_metadata_is_retried_on_503_and_then_succeeds(tmp_path):
         _resp({"data": {"id": "5"}}),
         _resp(ok=False, status=503, text="Service Unavailable"),
         _resp(ok=False, status=503, text="Service Unavailable"),
-        _resp({"data": {}}),
+        _resp(META_OK),
     )
     with patch("posting.x.time.sleep") as sleep:
         assert client.upload_media(image, "image", sensitive=True) == "5"
@@ -402,3 +406,12 @@ def test_create_post_is_never_retried(tmp_path):
         with pytest.raises(XApiError, match="503"):
             client.create_post("t", ["1"])
     assert session.request.call_count == 1 and not sleep.called
+
+
+def test_sensitive_flag_not_recorded_by_x_fails_instead_of_posting_unflagged(tmp_path):
+    """Xの応答に、指定が記録されていなければ、つけたつもりで投稿してしまわないよう、失敗にする。"""
+    image = tmp_path / "a.png"
+    image.write_bytes(b"png")
+    client, session = make_client(_resp({"data": {"id": "5"}}), _resp({"data": {"id": "5", "associated_metadata": {}}}))
+    with pytest.raises(XApiError, match="記録されませんでした"):
+        client.upload_media(image, "image", sensitive=True)
