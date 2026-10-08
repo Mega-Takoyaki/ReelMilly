@@ -349,3 +349,56 @@ def test_dialog_has_x_controls(env):
     js = client.get("/static/post-now.js").get_data(as_text=True)
     assert "/api/post-targets" in js and "X_MAX_WEIGHT" in js
     assert "box.disabled" not in js and "box.checked = true" not in js  # センシティブ指定は、外せる(開いたときに、既定でオンにするだけ)
+
+
+# ------------------------------------------------------------------ 一時的なサーバーの不調(503)
+def test_metadata_is_retried_on_503_and_then_succeeds(tmp_path):
+    """実機で、POST /2/media/metadata が503(Service Unavailable)になった。アップロード系は、やり直しても二重にならないので、再試行する。"""
+    image = tmp_path / "a.png"
+    image.write_bytes(b"png")
+    client, session = make_client(
+        _resp({"data": {"id": "5"}}),
+        _resp(ok=False, status=503, text="Service Unavailable"),
+        _resp(ok=False, status=503, text="Service Unavailable"),
+        _resp({"data": {}}),
+    )
+    with patch("posting.x.time.sleep") as sleep:
+        assert client.upload_media(image, "image", sensitive=True) == "5"
+    assert session.request.call_count == 4  # アップロード1回+メタデータ3回(2回失敗、1回成功)
+    assert [c.args[0] for c in sleep.call_args_list] == [2, 5]  # 待つ時間が、だんだん長くなる
+
+
+def test_retries_give_up_with_a_friendly_hint(tmp_path):
+    image = tmp_path / "a.png"
+    image.write_bytes(b"png")
+    client, session = make_client(_resp({"data": {"id": "5"}}), *[_resp(ok=False, status=503, text="Service Unavailable")] * 4)
+    with patch("posting.x.time.sleep"):
+        with pytest.raises(XApiError, match="503.*一時的に使えません"):
+            client.upload_media(image, "image", sensitive=True)
+    assert session.request.call_count == 1 + 1 + x_module.UPLOAD_RETRIES  # 最初+再試行3回
+
+
+def test_image_file_is_rewound_when_the_upload_is_retried(tmp_path):
+    image = tmp_path / "a.png"
+    image.write_bytes(b"png-data")
+    seen = []
+
+    def fake_request(method, url, headers=None, files=None, **kwargs):
+        if files:
+            seen.append(files["media"][1].read())  # 送る側が読み出す。再試行では、先頭から読み直せる必要がある
+        return _resp(ok=False, status=503, text="x") if len(seen) == 1 else _resp({"data": {"id": "9"}})
+
+    session = MagicMock()
+    session.request.side_effect = fake_request
+    with patch("posting.x.time.sleep"):
+        assert XClient("t", session=session).upload_media(image, "image") == "9"
+    assert seen == [b"png-data", b"png-data"]
+
+
+def test_create_post_is_never_retried(tmp_path):
+    """投稿そのものは、成功していて応答だけ失敗した場合の二重投稿を避けるため、再試行しない。"""
+    client, session = make_client(_resp(ok=False, status=503, text="Service Unavailable"))
+    with patch("posting.x.time.sleep") as sleep:
+        with pytest.raises(XApiError, match="503"):
+            client.create_post("t", ["1"])
+    assert session.request.call_count == 1 and not sleep.called
