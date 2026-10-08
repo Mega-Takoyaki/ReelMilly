@@ -1761,3 +1761,28 @@ dialog.post-now-dialog { width: min(94vw, 40rem); max-height: 92vh; overflow: au
 .pn-row { display: flex; flex-wrap: wrap; gap: 0.8rem; }
 .pn-row .pn-field { flex: 1 1 12rem; }
 .pn-error { color: var(--danger, #e5484d); }
+
+/* 投稿文の生成ボタン(テキストエリアの右上) / 投稿スケジュールの行 -------------------------*/
+.pn-textwrap { position: relative; }
+.pn-textwrap textarea { width: 100%; padding-right: 2.6rem; }
+.pn-generate {
+  position: absolute; top: 0.35rem; right: 0.35rem; width: 1.9rem; height: 1.9rem; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-alt); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.pn-generate:hover { border-color: var(--accent); }
+.pn-generate.is-busy svg { animation: pn-spin 1s linear infinite; }
+@keyframes pn-spin { to { transform: rotate(360deg); } }
+.pn-undo { align-self: flex-start; }
+.ps-row { flex-wrap: wrap; align-items: center; }
+.ps-days { display: inline-flex; gap: 0.25rem; }
+.ps-day { position: relative; display: inline-flex; }
+.ps-day input { position: absolute; opacity: 0; width: 0; height: 0; }
+.ps-day span {
+  display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--fg-muted);
+  cursor: pointer; user-select: none; font-size: 0.85rem;
+}
+.ps-day input:checked + span { background: color-mix(in srgb, var(--accent) 30%, var(--surface-alt)); border-color: var(--accent); color: var(--fg); font-weight: 600; }
+.ps-day input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ps-next { flex-basis: 100%; margin: 0; }

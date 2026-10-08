@@ -26,6 +26,14 @@ DEFAULT_CAPTION_SYSTEM_PROMPT = (
     "絵文字は控えめにし、内容説明にない事実を作り話しないでください。"
 )
 
+DEFAULT_X_CAPTION_SYSTEM_PROMPT = (
+    "あなたはX(旧Twitter)で人気のインフルエンサーです。与えられた画像の内容説明をもとに、フォロワーに向けた"
+    "魅力的で自然な日本語の投稿文を作成してください。"
+    "全体で100文字以内の短い1〜2文にし、絵文字を2〜3個、ハッシュタグを最大2個まで付けてください。"
+    "内容説明にない事実(持ち物・場所・出来事)は書かないでください。"
+    "出力は投稿文だけにし、引用符や説明は付けないでください。"
+)
+
 DEFAULT_GENERATION_PROVIDER = "claude"
 DEFAULT_GENERATION_MODEL = {
     "claude": "claude-opus-5",
@@ -54,6 +62,11 @@ _KEY_CAPTION_PROMPT = "caption_system_prompt"
 _KEY_PROVIDER = "generation_provider"
 _KEY_MODEL = "generation_model"
 _KEY_CAPTION_MODE = "caption_mode"
+_KEY_X_CAPTION_PROMPT = "x_caption_system_prompt"
+_KEY_CAPTION_PROVIDER = "caption_provider"  # 投稿文の生成に使うAI。"same"(既定)=画像内容説明と同じ
+_KEY_CAPTION_MODEL = "caption_model"
+CAPTION_PROVIDER_SAME = "same"
+DEFAULT_CAPTION_MODEL = {"claude": "claude-haiku-4-5-20251001", "openai": "gpt-4o-mini"}  # 投稿文は短いので、小さく安いモデルを既定に
 _KEY_AUTO_INGEST = "watch_auto_ingest"
 
 
@@ -63,6 +76,25 @@ def get_description_system_prompt(conn: sqlite3.Connection) -> str:
 
 def get_caption_system_prompt(conn: sqlite3.Connection) -> str:
     return db.get_setting(conn, _KEY_CAPTION_PROMPT) or DEFAULT_CAPTION_SYSTEM_PROMPT
+
+
+def set_caption_model(conn: sqlite3.Connection, provider: str | None, model: str | None) -> None:
+    """投稿文の生成に使うAIを保存する。モデル名は、空欄(=プロバイダーの既定)にもできる。"""
+    if provider in (CAPTION_PROVIDER_SAME, "claude", "openai", "local"):
+        db.set_setting(conn, _KEY_CAPTION_PROVIDER, provider)
+    db.set_setting(conn, _KEY_CAPTION_MODEL, (model or "").strip())
+
+
+def get_x_caption_system_prompt(conn: sqlite3.Connection) -> str:
+    return db.get_setting(conn, _KEY_X_CAPTION_PROMPT) or DEFAULT_X_CAPTION_SYSTEM_PROMPT
+
+
+def get_caption_provider(conn: sqlite3.Connection) -> str:
+    return db.get_setting(conn, _KEY_CAPTION_PROVIDER) or CAPTION_PROVIDER_SAME
+
+
+def get_caption_model(conn: sqlite3.Connection) -> str:
+    return db.get_setting(conn, _KEY_CAPTION_MODEL) or ""
 
 
 def get_generation_provider(conn: sqlite3.Connection) -> str:
@@ -93,10 +125,13 @@ def set_auto_ingest(conn: sqlite3.Connection, enabled: bool) -> None:
 
 
 # --- 投稿スケジュール(自動投稿) ---------------------------------------------------
-# 画面の設定で決める。一度でも保存されていれば、config.yamlのcadenceより、こちらを優先する
+# 画面の設定で決める。一度でも保存されていれば、config.yamlのcadenceより、こちらを優先する。
+# 「曜日(複数)+時刻+ランダム幅(上下N分)+件数」の組を、いくつでも登録できる
 _KEY_POST_SCHEDULE = "post_schedule"
-DEFAULT_POST_SCHEDULE = {"enabled": False, "time": "21:00", "count": 1}
+DEFAULT_POST_SCHEDULE = {"enabled": False, "entries": []}
 MAX_POST_SCHEDULE_COUNT = 10
+MAX_JITTER_MINUTES = 360
+WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"]  # datetime.weekday()の0=月曜
 
 
 def _valid_time(value) -> str | None:
@@ -108,8 +143,33 @@ def _valid_time(value) -> str | None:
     return f"{int(match.group(1)):02d}:{match.group(2)}"
 
 
+def _normalize_entry(raw: dict) -> dict | None:
+    """画面・保存値の1件を、正規化する。曜日が無い・時刻が不正なものは、捨てる(None)。"""
+    import uuid
+
+    days = sorted({int(d) for d in (raw.get("days") or []) if str(d).isdigit() and 0 <= int(d) <= 6})
+    time = _valid_time(raw.get("time"))
+    if not days or not time:
+        return None
+    try:
+        jitter = int(raw.get("jitter") or 0)
+    except (TypeError, ValueError):
+        jitter = 0
+    try:
+        count = int(raw.get("count") or 1)
+    except (TypeError, ValueError):
+        count = 1
+    return {
+        "id": str(raw.get("id") or "").strip() or uuid.uuid4().hex[:8],
+        "days": days,
+        "time": time,
+        "jitter": min(max(jitter, 0), MAX_JITTER_MINUTES),
+        "count": min(max(count, 1), MAX_POST_SCHEDULE_COUNT),
+    }
+
+
 def get_post_schedule(conn: sqlite3.Connection) -> dict | None:
-    """画面で設定された投稿スケジュール。一度も保存されていなければNone(その場合は、config.yamlのcadenceに従う)。"""
+    """画面で設定された投稿スケジュール({"enabled", "entries"})。一度も保存されていなければNone(config.yamlのcadenceに従う)。"""
     import json
 
     stored = db.get_setting(conn, _KEY_POST_SCHEDULE)
@@ -118,28 +178,55 @@ def get_post_schedule(conn: sqlite3.Connection) -> dict | None:
     try:
         data = json.loads(stored)
     except ValueError:
-        return dict(DEFAULT_POST_SCHEDULE)
-    return {
-        "enabled": bool(data.get("enabled")),
-        "time": _valid_time(data.get("time")) or DEFAULT_POST_SCHEDULE["time"],
-        "count": min(max(int(data.get("count") or 1), 1), MAX_POST_SCHEDULE_COUNT),
-    }
+        return {"enabled": False, "entries": []}
+    entries = data.get("entries")
+    if entries is None and data.get("time"):  # 旧形式(毎日1つの時刻)からの移行: 全曜日の1件にする
+        entries = [{"id": "legacy", "days": list(range(7)), "time": data.get("time"), "jitter": 0, "count": data.get("count")}]
+    normalized = [e for e in (_normalize_entry(r) for r in (entries or [])) if e]
+    return {"enabled": bool(data.get("enabled")), "entries": normalized}
 
 
-def set_post_schedule(conn: sqlite3.Connection, enabled: bool, time: str | None, count) -> None:
-    """投稿スケジュールを保存する。時刻・件数が不正なときは、いまの値(無ければ既定値)のまま。"""
+def set_post_schedule(conn: sqlite3.Connection, enabled: bool, entries: list[dict]) -> None:
+    """投稿スケジュールを保存する。曜日が無い・時刻が不正な行は、捨てる。"""
     import json
 
-    current = get_post_schedule(conn) or dict(DEFAULT_POST_SCHEDULE)
-    try:
-        number = int(count)
-    except (TypeError, ValueError):
-        number = current["count"]
-    db.set_setting(conn, _KEY_POST_SCHEDULE, json.dumps({
-        "enabled": bool(enabled),
-        "time": _valid_time(time) or current["time"],
-        "count": min(max(number, 1), MAX_POST_SCHEDULE_COUNT),
-    }))
+    normalized = [e for e in (_normalize_entry(r) for r in entries or []) if e]
+    db.set_setting(conn, _KEY_POST_SCHEDULE, json.dumps({"enabled": bool(enabled), "entries": normalized}))
+
+
+def planned_time(entry: dict, day, tz):
+    """その日(date)の、実際の実行予定の時刻。設定の時刻に、上下`jitter`分のランダムな幅を加える。
+
+    ランダムは、(スケジュールのID, 日付)から決まる。同じ日は、何度調べても同じ時刻になる(再起動しても変わらない)。
+    日をまたがないよう、その日の0:00〜23:59に収める。
+    """
+    import random
+    from datetime import datetime, time as dtime, timedelta
+
+    hour, minute = (int(x) for x in entry["time"].split(":"))
+    base = datetime.combine(day, dtime(hour, minute), tzinfo=tz)
+    jitter = int(entry.get("jitter") or 0)
+    offset = random.Random(f"{entry['id']}:{day.isoformat()}").randint(-jitter, jitter) if jitter else 0
+    planned = base + timedelta(minutes=offset)
+    start = datetime.combine(day, dtime(0, 0), tzinfo=tz)
+    end = datetime.combine(day, dtime(23, 59), tzinfo=tz)
+    return min(max(planned, start), end)
+
+
+def next_planned(entry: dict, now, tz, skip_date: str | None = None):
+    """次の実行予定(`now`以降で、一番近いもの)。曜日が1つも合わなければNone。"""
+    from datetime import timedelta
+
+    for offset in range(0, 8):
+        day = (now + timedelta(days=offset)).date()
+        if day.weekday() not in entry["days"]:
+            continue
+        if skip_date and day.isoformat() == skip_date:
+            continue  # その日は、実行済み
+        planned = planned_time(entry, day, tz)
+        if planned >= now:
+            return planned
+    return None
 
 
 def get_all_settings(conn: sqlite3.Connection) -> dict:
@@ -149,8 +236,11 @@ def get_all_settings(conn: sqlite3.Connection) -> dict:
         "generation_provider": get_generation_provider(conn),
         "generation_model": get_generation_model(conn),
         "caption_mode": get_caption_mode(conn),
+        "x_caption_system_prompt": get_x_caption_system_prompt(conn),
+        "caption_provider": get_caption_provider(conn),
+        "caption_model": get_caption_model(conn),
         "auto_ingest": get_auto_ingest(conn),
-        "post_schedule": get_post_schedule(conn) or dict(DEFAULT_POST_SCHEDULE),
+        "post_schedule": get_post_schedule(conn) or {"enabled": False, "entries": []},
     }
 
 
@@ -160,6 +250,9 @@ _KEY_MAP = {
     "generation_provider": _KEY_PROVIDER,
     "generation_model": _KEY_MODEL,
     "caption_mode": _KEY_CAPTION_MODE,
+    "x_caption_system_prompt": _KEY_X_CAPTION_PROMPT,
+    "caption_provider": _KEY_CAPTION_PROVIDER,
+    "caption_model": _KEY_CAPTION_MODEL,
 }
 
 

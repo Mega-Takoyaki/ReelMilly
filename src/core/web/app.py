@@ -674,6 +674,31 @@ def create_app(config: Config) -> Flask:
             "trashed": bool(asset.get("deleted_at")),
         })
 
+    @app.route("/api/captions/generate", methods=["POST"])
+    def api_generate_caption():
+        """作品(複数なら、まとめて1つの投稿として)の投稿文を、チャンネル(fanvue|x)のプロンプトで生成する。"""
+        from core import captions
+
+        payload = request.get_json(silent=True) or {}
+        channel = payload.get("channel", "fanvue")
+        if channel not in ("fanvue", "x"):
+            return jsonify({"error": "不明な投稿先です"}), 400
+        ids = [str(i) for i in (payload.get("asset_ids") or [])]
+        if not ids:
+            return jsonify({"error": "作品を選んでください"}), 400
+        conn = get_conn()
+        assets = [a for a in (db.get_asset(conn, i) for i in ids) if a]
+        if len(assets) != len(ids):
+            conn.close()
+            return jsonify({"error": "見つからない作品が含まれています"}), 404
+        try:
+            result = captions.generate(conn, assets, channel)
+        except captions.CaptionError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 422
+        conn.close()
+        return jsonify({"text": result.text, "attempts": result.attempts})
+
     @app.route("/api/post-now", methods=["POST"])
     def api_post_now():
         """作品とバージョンを指定して、いますぐ投稿する。複数の作品は、1つの投稿にまとめる。処理は非同期で、結果は通知に出る。"""
@@ -1062,13 +1087,23 @@ def create_app(config: Config) -> Flask:
                 generation_provider=request.form.get("generation_provider"),
                 generation_model=request.form.get("generation_model"),
                 caption_mode=request.form.get("caption_mode"),
+                x_caption_system_prompt=request.form.get("x_caption_system_prompt"),
             )
             settings_module.set_auto_ingest(conn, bool(request.form.get("auto_ingest")))
+            settings_module.set_caption_model(conn, request.form.get("caption_provider"), request.form.get("caption_model"))
             settings_module.set_post_schedule(
                 conn,
                 bool(request.form.get("post_schedule_enabled")),
-                request.form.get("post_schedule_time"),
-                request.form.get("post_schedule_count"),
+                [
+                    {"id": sid, "days": [d for d in days.split(",") if d], "time": time, "jitter": jitter, "count": count}
+                    for sid, days, time, jitter, count in zip(
+                        request.form.getlist("ps_id"),
+                        request.form.getlist("ps_days"),
+                        request.form.getlist("ps_time"),
+                        request.form.getlist("ps_jitter"),
+                        request.form.getlist("ps_count"),
+                    )
+                ],
             )
             settings_module.set_ai_schedules(
                 conn,
@@ -1113,8 +1148,20 @@ def create_app(config: Config) -> Flask:
         model_choices = settings_module.get_model_choices(conn)
         schedules = settings_module.get_ai_schedules(conn)
         tag_categories = settings_module.get_tag_categories(conn)
-        post_schedule_last_run = db.get_last_run_date(conn, "drop")
         post_schedule_from_yaml = settings_module.get_post_schedule(conn) is None and bool(config.cadence)
+        post_schedule = settings_module.get_post_schedule(conn) or {"enabled": False, "entries": []}
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(config.timezone)
+        now_local = datetime.now(tz)
+        post_schedule_next = {}
+        for entry in post_schedule["entries"]:
+            last = db.get_last_run_date(conn, f"drop:{entry['id']}")
+            planned = settings_module.next_planned(entry, now_local, tz, skip_date=last)  # 今日すでに実行したものは、次の曜日へ
+            post_schedule_next[entry["id"]] = (
+                f"{planned.month}/{planned.day}({settings_module.WEEKDAY_LABELS[planned.weekday()]}) {planned:%H:%M}" if planned else None
+            )
         conn.close()
 
         from posting.fanvue_oauth import FanvueTokenStore
@@ -1126,7 +1173,9 @@ def create_app(config: Config) -> Flask:
             settings=current_settings,
             model_choices=model_choices,
             schedules=schedules,
-            post_schedule_last_run=post_schedule_last_run,
+            post_schedule_next=post_schedule_next,
+            weekday_labels=settings_module.WEEKDAY_LABELS,
+            caption_model_choices=model_choices,
             post_schedule_from_yaml=post_schedule_from_yaml,
             schedule_labels=settings_module.AI_KIND_LABELS,
             tag_categories=tag_categories,

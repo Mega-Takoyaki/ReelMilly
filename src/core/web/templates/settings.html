@@ -146,30 +146,74 @@
         <textarea name="description_system_prompt" rows="4">{{ settings.description_system_prompt }}</textarea>
       </label>
 
+      <label>投稿文の生成に使うAI{{ info("投稿文(Fanvue・X)を作るAIです。「画像内容説明と同じ」なら、上のプロバイダー・モデルを使います。クラウド(Claude/OpenAI)は性的に露骨な内容に向かないため、承認済みのsfwの作品だけに使い、それ以外は自前ホスト型VLMで作ります。投稿文は短いので、小さく安いモデル(例: Claude Haiku)で十分です。作った文は、形式(Fanvue: 英語・---・日本語)を検査し、合わなければ最大3回、作り直します。") }}
+        <select name="caption_provider" id="caption-provider">
+          <option value="same" {% if settings.caption_provider == 'same' %}selected{% endif %}>画像内容説明と同じ</option>
+          <option value="claude" {% if settings.caption_provider == 'claude' %}selected{% endif %}>Claude API（sfwのみ。それ以外は自前VLM）</option>
+          <option value="openai" {% if settings.caption_provider == 'openai' %}selected{% endif %}>OpenAI API（sfwのみ。それ以外は自前VLM）</option>
+          <option value="local" {% if settings.caption_provider == 'local' %}selected{% endif %}>自前ホスト型VLM</option>
+        </select>
+      </label>
+      <label>投稿文用のモデル（空欄＝既定）{{ info("空欄なら、プロバイダーごとの既定（Claude: claude-haiku-4-5-20251001、OpenAI: gpt-4o-mini）です。モデル名を直接入力するか、候補から選びます。「画像内容説明と同じ」のときは、上のモデルが使われます。") }}
+        <input type="text" name="caption_model" list="caption-model-list" value="{{ settings.caption_model }}" placeholder="例: claude-haiku-4-5-20251001" autocomplete="off">
+        <datalist id="caption-model-list">
+          {% for provider, names in caption_model_choices.items() %}{% for name in names %}<option value="{{ name }}">{{ provider }}</option>{% endfor %}{% endfor %}
+        </datalist>
+      </label>
+
       <label>Fanvue投稿文生成のシステムプロンプト{{ info("画像の説明文をもとに、Fanvueの投稿文を作るときにAIへ渡す指示文です。文体・長さ・絵文字の量などをここで調整できます。") }}
         <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
+      </label>
+
+      <label>X投稿文生成のシステムプロンプト{{ info("Xの投稿文を作るときにAIへ渡す指示文です。Xは全角を2文字として280まで(日本語なら140字程度)なので、短くなるよう指示してください。作った文は、文字数の上限を超えていないか検査します。「今すぐ投稿」の生成ボタンで、投稿先をXにしたときに使われます(Xへの投稿そのものは、まだ使えません)。") }}
+        <textarea name="x_caption_system_prompt" rows="4">{{ settings.x_caption_system_prompt }}</textarea>
       </label>
     </div>
   </section>
 
   <section class="card settings-tab" id="sec-post">
-    <h2 style="margin-top: 0;">投稿スケジュール（自動投稿）{{ info("オンにすると、reelmilly watch が動いている間、毎日決めた時刻になったら、承認済み・Fanvueが投稿予定・未投稿の作品を、古いものから順に、指定した件数だけFanvueへ自動投稿します。投稿文が未設定の作品は、設定の「生成AI」の投稿文の生成モードに従います（auto: AIが作った文章をそのまま公開／draft: 下書きだけ保存して、投稿しない）。") }}</h2>
+    <h2 style="margin-top: 0;">投稿スケジュール（自動投稿）{{ info("「曜日」「時刻」「ランダム幅」「件数」の組を、いくつでも登録できます。登録した曜日の、決めた時刻の前後(ランダム幅の分)のどこかで、承認済み・Fanvueが投稿予定・未投稿の作品を、古いものから順に、件数ぶん自動投稿します。実行は reelmilly watch が動いている間です。投稿文が未設定の作品は、投稿文を生成して(形式が合うときだけ)投稿し、作れなければその作品の投稿を見送って通知します。") }}</h2>
     {% if post_schedule_from_yaml %}
     <div class="banner banner-error">この画面の設定はまだ保存されていないため、いまは <code>config.yaml</code> の <code>cadence</code> に従って自動投稿します。ここで保存すると、この画面の設定が優先されます。</div>
     {% endif %}
-    <div class="settings-form">
-      <label class="checkbox-label">
-        <input type="checkbox" name="post_schedule_enabled" {% if settings.post_schedule.enabled %}checked{% endif %}>
-        自動投稿を有効にする（オフの間は、手動で投稿する以外、何も投稿されません）
+    <label class="checkbox-label">
+      <input type="checkbox" name="post_schedule_enabled" {% if settings.post_schedule.enabled %}checked{% endif %}>
+      自動投稿を有効にする（オフの間は、下の予定があっても、何も自動投稿されません）
+    </label>
+
+    {% macro ps_row(e, next_text) %}
+    <div class="schedule-row ps-row">
+      <input type="hidden" name="ps_id" value="{{ e.id }}">
+      <input type="hidden" name="ps_days" value="{{ e.days | join(',') }}">
+      <div class="ps-days" role="group" aria-label="投稿する曜日">
+        {% for label in weekday_labels %}
+        <label class="ps-day"><input type="checkbox" data-day="{{ loop.index0 }}" {% if loop.index0 in e.days %}checked{% endif %}><span>{{ label }}</span></label>
+        {% endfor %}
+      </div>
+      <label>時刻{{ info("この時刻が、ランダム幅の中心になります。") }}
+        <input type="time" name="ps_time" value="{{ e.time }}" required>
       </label>
-      <label>投稿する時刻{{ info("毎日、この時刻を過ぎたら、その日の分を1回だけ実行します（reelmilly watch が動いていることが前提です）。この時刻より後にオンにした場合は、保存後すぐ（次の巡回で）実行されます。") }}
-        <input type="time" name="post_schedule_time" value="{{ settings.post_schedule.time }}" required>
+      <label>ランダム幅（上下{{ info("時刻の前後に、この分数までのランダムな幅を持たせます。例: 21:00・30分なら、20:30〜21:30のどこか。0なら、ぴったりの時刻です。実際の時刻は、その日ごとに決まり、1日のうちに変わりません。") }}
+        <input type="number" name="ps_jitter" min="0" max="360" value="{{ e.jitter }}"> 分）
       </label>
-      <label>1回に投稿する件数{{ info("1日1回の実行で、最大この件数を投稿します（1〜10）。途中で失敗したら、そこで止まります。") }}
-        <input type="number" name="post_schedule_count" min="1" max="10" value="{{ settings.post_schedule.count }}" required>
+      <label>件数{{ info("1回の実行で、最大この件数を投稿します（1〜10）。") }}
+        <input type="number" name="ps_count" min="1" max="10" value="{{ e.count }}">
       </label>
-      <p class="hint">最後に自動投稿を実行した日: {{ post_schedule_last_run or 'まだありません' }}</p>
+      <button type="button" class="btn-ghost-inline ps-remove">削除</button>
+      {% if next_text %}<span class="hint ps-next">次の予定: {{ next_text }}</span>{% endif %}
     </div>
+    {% endmacro %}
+
+    <div id="ps-list" class="settings-form">
+      {% for e in settings.post_schedule.entries %}{{ ps_row(e, post_schedule_next.get(e.id)) }}{% endfor %}
+      <p class="hint" id="ps-empty" {% if settings.post_schedule.entries %}hidden{% endif %}>投稿の予定はまだありません。「＋予定を追加」で登録できます。</p>
+    </div>
+    <template id="ps-template">{{ ps_row({'id': '', 'days': [0, 2, 4], 'time': '21:00', 'jitter': 30, 'count': 1}, None) }}</template>
+    <button type="button" id="ps-add" class="btn-ghost-inline">＋ 予定を追加</button>
+    <p class="hint">
+      例: 「月・水・金・土の 21:00、上下30分のランダム幅」と「火・水・土・日の 8:00、上下90分のランダム幅」を、両方登録できます。
+      同じ日に複数の予定が重なれば、それぞれ実行します。
+    </p>
   </section>
 
   <section class="card settings-tab" id="sec-auto">
@@ -450,6 +494,31 @@
     syncScheduleRow(row[row.length - 1]);
     syncScheduleEmpty();
   });
+
+  // 投稿スケジュール: 曜日のチェックを、保存用の隠し欄(カンマ区切り)に反映する。予定の追加・削除
+  const psList = document.getElementById("ps-list");
+  const psEmpty = document.getElementById("ps-empty");
+  function syncPsDays(row) {
+    const days = Array.from(row.querySelectorAll(".ps-day input:checked")).map((c) => c.dataset.day);
+    row.querySelector('input[name="ps_days"]').value = days.join(",");
+  }
+  psList.addEventListener("change", (e) => {
+    if (e.target.closest(".ps-day")) syncPsDays(e.target.closest(".ps-row"));
+  });
+  psList.addEventListener("click", (e) => {
+    if (e.target.classList.contains("ps-remove")) {
+      e.target.closest(".ps-row").remove();
+      psEmpty.hidden = psList.querySelector(".ps-row") !== null;
+    }
+  });
+  document.getElementById("ps-add").addEventListener("click", () => {
+    const fragment = document.getElementById("ps-template").content.cloneNode(true);
+    psList.insertBefore(fragment, psEmpty);
+    const rows = psList.querySelectorAll(".ps-row");
+    syncPsDays(rows[rows.length - 1]);
+    psEmpty.hidden = true;
+  });
+  psList.querySelectorAll(".ps-row").forEach(syncPsDays);
 
   // タブ切り替え(全セクションは同一フォーム内にあり、非表示でも保存時に送信される)
   const tabButtons = document.querySelectorAll(".settings-nav button");

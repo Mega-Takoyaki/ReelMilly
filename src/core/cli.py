@@ -213,8 +213,9 @@ def cmd_run_drop(
     kind: str | None = None,
     rating: str | None = None,
     asset_id: str | None = None,
+    run_key: str = "drop",
 ) -> int:
-    """Fanvueへの本編投稿を最大`count`件実行する(`asset_id`指定時は、その作品だけ)(CLAUDE_HANDOFF.md 6章のdropジョブ、X投稿部分は未実装)。
+    """Fanvueへの本編投稿を最大`count`件実行する(`asset_id`指定時は、その作品だけ)。`run_key`は「本日実行済み」の記録の名前(CLAUDE_HANDOFF.md 6章のdropジョブ、X投稿部分は未実装)。
 
     `kind`/`rating`で投稿対象を絞り込める(ADR-0015)。同日の実行有無は
     ジョブ全体(`drop`)単位で判定する(1回の実行でcount件まとめて投稿する)。
@@ -224,7 +225,7 @@ def cmd_run_drop(
 
     today = _today_str(config.timezone)
     # 作品を指定した投稿は、定期の投稿(1日1回)とは別の手動の操作なので、「本日実行済み」の判定にも記録にも関与しない
-    if asset_id is None and db_module.get_last_run_date(conn, "drop") == today:
+    if asset_id is None and db_module.get_last_run_date(conn, run_key) == today:
         print(f"[run drop] 本日（{today}）は既に実行済みのためスキップします")
         conn.close()
         return 0
@@ -242,7 +243,7 @@ def cmd_run_drop(
     handle = os.environ.get("FANVUE_HANDLE", "")
     url_template = os.environ.get("FANVUE_POST_URL_TEMPLATE", "https://www.fanvue.com/{handle}")
 
-    generator = generation.try_create_generator(conn)
+    generator = None  # 投稿文は、設定の「投稿文の生成に使うモデル」で、必要になったときに作る(core/captions.py)
     results = run_fanvue_drop_batch(
         config,
         conn,
@@ -257,7 +258,7 @@ def cmd_run_drop(
     )
 
     if asset_id is None:
-        db_module.set_last_run_date(conn, "drop", today)
+        db_module.set_last_run_date(conn, run_key, today)
     conn.close()
 
     exit_code = 0
@@ -295,6 +296,35 @@ def _parse_cadence_entry(entry) -> tuple[str, dict]:
     raise ValueError(f"invalid cadence entry: {entry!r}")
 
 
+def _run_post_schedule(config: Config, schedule: dict) -> int:
+    """画面で設定した投稿スケジュール(曜日+時刻+ランダム幅の組)のうち、時刻が来ていて、今日まだのものを実行する。"""
+    entries = schedule["entries"]
+    if not entries:
+        print("[run-due] 投稿スケジュールが登録されていません（設定の「投稿スケジュール」で追加できます）")
+        return 0
+    tz = ZoneInfo(config.timezone)
+    now = datetime.now(tz)
+    today = now.strftime("%Y-%m-%d")
+    for entry in entries:
+        if now.weekday() not in entry["days"]:
+            continue
+        planned = settings.planned_time(entry, now.date(), tz)
+        if now < planned:
+            print(f"[run-due] {entry['id']}: まだ実行時刻前です（今日の予定 {planned.strftime('%H:%M')}、現在 {now.strftime('%H:%M')}）")
+            continue
+        key = f"drop:{entry['id']}"
+        conn = get_connection(config.paths.db_path)
+        try:
+            already = db_module.get_last_run_date(conn, key) == today
+        finally:
+            conn.close()
+        if already:
+            continue
+        print(f"[run-due] {entry['id']}: 自動投稿を実行します（予定 {planned.strftime('%H:%M')}）")
+        cmd_run_drop(config, count=entry["count"], kind=None, rating=None, run_key=key)
+    return 0
+
+
 def cmd_run_due(config: Config) -> int:
     """config.yamlの`cadence`設定を見て、時刻が来ていて未実行のジョブを実行する。
 
@@ -312,7 +342,7 @@ def cmd_run_due(config: Config) -> int:
         if not schedule["enabled"]:
             print("[run-due] 自動投稿はオフです（設定の「投稿スケジュール」でオンにできます）")
             return 0
-        cadence = {"drop": {"time": schedule["time"], "count": schedule["count"]}}
+        return _run_post_schedule(config, schedule)
 
     if not cadence:
         print("[run-due] config.yamlにcadence設定がありません（何もしません）")

@@ -243,6 +243,7 @@ def test_drop_skips_without_recording_failure_when_file_is_missing(env):
 
     config, conn, _ = env
     path = _asset(config, conn)
+    db.update_asset(conn, "a1", fanvue_text="テストの投稿文")  # 投稿文が無い作品は、投稿を見送るため
     path.unlink()  # ストレージが外れている状態と同じ(ファイルが見えない)
     client = MagicMock()
 

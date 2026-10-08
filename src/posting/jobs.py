@@ -44,22 +44,25 @@ def _resolve_caption(config: Config, conn: sqlite3.Connection, asset: dict, gene
     2要素目で返す(呼び出し元はNoneでなければ即returnすること)。
     """
     caption_text = asset.get("fanvue_text") or asset.get("caption") or ""
-    if caption_text or generator is None or not asset.get("content_description"):
+    if caption_text:
         return caption_text, None
 
+    from core import captions
     from core import settings as settings_module
 
     asset_id = asset["id"]
+    # 投稿文が未設定なら、生成する。形式の検査(英語/---/日本語)に通る文だけを使い、作れなければ、
+    # 空の文や、形式に合わない文を公開せず、この作品の投稿を見送って通知する(手で書いてもらう)
     try:
-        generated = generator.generate_caption(
-            asset["content_description"], settings_module.get_caption_system_prompt(conn)
-        )
-    except Exception as exc:  # noqa: BLE001 - 生成失敗は投稿を止めず手動キャプション待ちにする
+        generated = captions.generate(conn, [asset], "fanvue", generator=generator).text
+    except captions.CaptionError as exc:
         log_event(config.paths.events_path, "caption_generation_failed", asset_id=asset_id, error=str(exc))
-        return "", None
-
-    if not generated:
-        return "", None
+        notifications.add(
+            conn, "post", "投稿文を作れず、自動投稿を見送りました", f"{asset_id}: {exc}", "warning", asset_id=asset_id
+        )
+        return "", DropResult(
+            executed=False, asset_id=asset_id, skipped_reason=f"投稿文を作れませんでした（手で書くか、もう一度試してください）: {exc}"
+        )
 
     if settings_module.get_caption_mode(conn) == "draft":
         db.update_asset(conn, asset_id, fanvue_caption_draft=generated, updated_at=_now())

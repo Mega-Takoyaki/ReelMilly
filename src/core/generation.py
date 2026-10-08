@@ -457,6 +457,58 @@ def list_available_models(provider: str, api_key: str = "", query: str = "") -> 
     return sorted(set(ids))
 
 
+def _create_for(provider: str, model: str):
+    """プロバイダー名とモデル名から、Generatorを作る。APIキー未設定/未インストールならNone。"""
+    if provider == "claude":
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return None
+        try:
+            return ClaudeGenerator(api_key, model or DEFAULT_CLAUDE_MODEL)
+        except ImportError:
+            return None
+    if provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return None
+        try:
+            return OpenAiGenerator(api_key, model or DEFAULT_OPENAI_MODEL)
+        except ImportError:
+            return None
+    if provider == "local":
+        try:
+            return LocalVlmGenerator(model or DEFAULT_LOCAL_VLM_MODEL)
+        except ImportError:
+            return None
+    return None
+
+
+_CLOUD_PROVIDERS = ("claude", "openai")
+
+
+def try_create_caption_generator(conn: sqlite3.Connection, ratings: list[str | None] | None = None):
+    """投稿文の生成に使うGeneratorを返す(設定の「投稿文の生成に使うモデル」)。
+
+    クラウド(Claude/OpenAI)のモデルは、利用ポリシー上、性的に露骨な内容に向かないため、対象の作品が
+    **すべて承認済みのsfw**のときだけ使う。それ以外(suggestive/explicit・未承認)は、自前ホスト型VLMで作る。
+    """
+    from core import settings as settings_module
+
+    provider = settings_module.get_caption_provider(conn)
+    model = settings_module.get_caption_model(conn)
+    if provider == settings_module.CAPTION_PROVIDER_SAME:
+        provider = settings_module.get_generation_provider(conn)
+        model = model or settings_module.get_generation_model(conn)
+    else:
+        model = model or settings_module.DEFAULT_CAPTION_MODEL.get(provider, "")
+    if provider in _CLOUD_PROVIDERS and ratings is not None and not all(r == "sfw" for r in ratings):
+        local_model = (
+            settings_module.get_generation_model(conn) if settings_module.get_generation_provider(conn) == "local" else ""
+        )
+        return _create_for("local", local_model)  # 使えなければNone(sfwでない作品を、クラウドへは送らない)
+    return _create_for(provider, model)
+
+
 def try_create_generator(conn: sqlite3.Connection):
     """`settings`の設定に基づきGeneratorを返す。APIキー未設定/未インストールならNoneを返す。"""
     from core import settings as settings_module

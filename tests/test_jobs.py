@@ -230,7 +230,7 @@ def test_run_fanvue_drop_generates_caption_when_missing_in_auto_mode(setup):
     _make_ready_asset(config, conn, caption=None, content_description="赤いドレスの女性が微笑んでいる")
     client = _mock_fanvue_client()
     generator = MagicMock()
-    generator.generate_caption.return_value = "今日の一枚です"
+    generator.generate_caption.return_value = "A red dress and a smile for you 💋✨\n---\n赤いドレスで、あなたに向けてにっこり💋✨"
 
     result = run_fanvue_drop(
         config, conn, client, fanvue_handle="creator", post_url_template="https://f.com/{handle}",
@@ -240,10 +240,10 @@ def test_run_fanvue_drop_generates_caption_when_missing_in_auto_mode(setup):
     assert result.executed is True
     assert generator.generate_caption.call_args[0][0] == "赤いドレスの女性が微笑んでいる"
     client.create_post.assert_called_once()
-    assert client.create_post.call_args.kwargs["text"] == "今日の一枚です"
+    assert client.create_post.call_args.kwargs["text"] == "A red dress and a smile for you 💋✨\n---\n赤いドレスで、あなたに向けてにっこり💋✨"
 
     asset = db.get_asset(conn, "a1")
-    assert asset["fanvue_text"] == "今日の一枚です"
+    assert asset["fanvue_text"] == "A red dress and a smile for you 💋✨\n---\n赤いドレスで、あなたに向けてにっこり💋✨"
 
 
 def test_run_fanvue_drop_draft_mode_saves_draft_without_posting(setup):
@@ -252,7 +252,7 @@ def test_run_fanvue_drop_draft_mode_saves_draft_without_posting(setup):
     db.set_setting(conn, "caption_mode", "draft")
     client = _mock_fanvue_client()
     generator = MagicMock()
-    generator.generate_caption.return_value = "今日の一枚です"
+    generator.generate_caption.return_value = "A red dress and a smile for you 💋✨\n---\n赤いドレスで、あなたに向けてにっこり💋✨"
 
     result = run_fanvue_drop(
         config, conn, client, fanvue_handle="creator", post_url_template="https://f.com/{handle}",
@@ -266,10 +266,11 @@ def test_run_fanvue_drop_draft_mode_saves_draft_without_posting(setup):
     asset = db.get_asset(conn, "a1")
     assert asset["status"] == "ready"
     assert asset["fanvue_text"] is None
-    assert asset["fanvue_caption_draft"] == "今日の一枚です"
+    assert asset["fanvue_caption_draft"] == "A red dress and a smile for you 💋✨\n---\n赤いドレスで、あなたに向けてにっこり💋✨"
 
 
-def test_run_fanvue_drop_does_not_generate_caption_without_content_description(setup):
+def test_run_fanvue_drop_skips_when_caption_cannot_be_made_without_content_description(setup):
+    """投稿文も内容説明も無い作品は、空の文で公開せず、見送る(以前は、空の投稿文で投稿していた)。"""
     config, conn = setup
     _make_ready_asset(config, conn, caption=None)
     client = _mock_fanvue_client()
@@ -280,9 +281,32 @@ def test_run_fanvue_drop_does_not_generate_caption_without_content_description(s
         generator=generator,
     )
 
-    assert result.executed is True
+    assert result.executed is False and "投稿文を作れませんでした" in result.skipped_reason
     generator.generate_caption.assert_not_called()
-    assert client.create_post.call_args.kwargs["text"] == ""
+    client.upload_media.assert_not_called()
+
+
+def test_run_fanvue_drop_skips_and_notifies_when_generated_caption_keeps_failing_the_format_check(setup):
+    """形式に合わない文(英日併記になっていない等)は公開せず、その作品の投稿を見送って、通知する。"""
+    from core import notifications
+
+    config, conn = setup
+    _make_ready_asset(config, conn, caption=None, content_description="赤いドレスの女性が微笑んでいる")
+    client = _mock_fanvue_client()
+    generator = MagicMock()
+    generator.generate_caption.return_value = '"夜の街を歩く女性の魅力。手に握るリング。"'  # 実機で出た、形式に合わない文
+
+    result = run_fanvue_drop(
+        config, conn, client, fanvue_handle="creator", post_url_template="https://f.com/{handle}",
+        generator=generator,
+    )
+
+    assert result.executed is False and "投稿文を作れませんでした" in result.skipped_reason
+    assert generator.generate_caption.call_count == 3  # 作り直して、3回まで試す
+    client.upload_media.assert_not_called()
+    assert db.get_posts(conn, ["a1"]) == {} or "fanvue" not in db.get_posts(conn, ["a1"]).get("a1", {})
+    item = notifications.list_notifications(conn, 1)[0]
+    assert item["level"] == "warning" and "見送りました" in item["title"]
 
 
 def test_run_fanvue_drop_batch_posts_up_to_count(setup):

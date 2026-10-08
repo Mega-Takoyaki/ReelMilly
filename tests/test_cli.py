@@ -1,5 +1,7 @@
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -452,19 +454,87 @@ def test_run_due_follows_the_saved_post_schedule_over_config_yaml(tmp_path, caps
     config = _load_with_cadence(tmp_path)  # config.yamlには、cadenceがある
     cmd_init(config)
     conn = db.get_connection(config.paths.db_path)
-    settings.set_post_schedule(conn, enabled=False, time="09:30", count=3)
+    every_day = [{"id": "s1", "days": list(range(7)), "time": "09:30", "jitter": 0, "count": 3}]
+    settings.set_post_schedule(conn, enabled=False, entries=every_day)
     capsys.readouterr()
 
-    with patch("core.cli._is_job_due", return_value=True), patch("core.cli.cmd_run_drop") as mocked:
+    with patch("core.cli.cmd_run_drop") as mocked:
         assert cmd_run_due(config) == 0
     assert "自動投稿はオフです" in capsys.readouterr().out
     mocked.assert_not_called()
 
-    settings.set_post_schedule(conn, enabled=True, time="09:30", count=3)
-    with patch("core.cli._is_job_due", return_value=True) as due, patch("core.cli.cmd_run_drop") as mocked:
+    settings.set_post_schedule(conn, enabled=True, entries=every_day)
+    with patch("core.cli.datetime") as fake_dt, patch("core.cli.cmd_run_drop") as mocked:
+        fake_dt.now.return_value = datetime(2026, 10, 12, 9, 29, tzinfo=ZoneInfo("Asia/Tokyo"))  # 予定の1分前
         cmd_run_due(config)
-    mocked.assert_called_once_with(config, count=3, kind=None, rating=None)
-    assert due.call_args.args[1] == "09:30"  # 画面の時刻で判定する
+        mocked.assert_not_called()
+        fake_dt.now.return_value = datetime(2026, 10, 12, 9, 31, tzinfo=ZoneInfo("Asia/Tokyo"))  # 予定を過ぎた
+        cmd_run_due(config)
+    mocked.assert_called_once_with(config, count=3, kind=None, rating=None, run_key="drop:s1")  # 予定ごとに、実行済みの記録を持つ
+
+
+def test_run_due_runs_each_entry_on_its_own_weekdays_and_once_per_day(tmp_path, capsys):
+    from core import db, settings
+
+    config = _load(tmp_path)
+    cmd_init(config)
+    conn = db.get_connection(config.paths.db_path)
+    settings.set_post_schedule(conn, True, [
+        {"id": "mwf", "days": [0, 2, 4], "time": "21:00", "jitter": 0, "count": 1},   # 月・水・金
+        {"id": "tsu", "days": [1, 6], "time": "08:00", "jitter": 0, "count": 2},      # 火・日
+    ])
+    jst = ZoneInfo("Asia/Tokyo")
+
+    def run(when):
+        with patch("core.cli.datetime") as fake_dt, patch("core.cli.cmd_run_drop") as mocked:
+            fake_dt.now.return_value = when
+            cmd_run_due(config)
+        return [c.kwargs["run_key"] for c in mocked.call_args_list]
+
+    assert run(datetime(2026, 10, 12, 22, 0, tzinfo=jst)) == ["drop:mwf"]  # 月曜: mwfだけ
+    assert run(datetime(2026, 10, 13, 9, 0, tzinfo=jst)) == ["drop:tsu"]   # 火曜: tsuだけ
+    assert run(datetime(2026, 10, 14, 7, 0, tzinfo=jst)) == []             # 水曜の朝: mwfの時刻前、tsuは曜日が違う
+    db.set_last_run_date(conn, "drop:mwf", "2026-10-12")
+    assert run(datetime(2026, 10, 12, 23, 0, tzinfo=jst)) == []            # 今日は、実行済み
+
+
+def test_planned_time_jitter_is_random_but_stable_within_a_day(tmp_path):
+    from datetime import date
+
+    from core import settings
+
+    jst = ZoneInfo("Asia/Tokyo")
+    entry = {"id": "s1", "days": [0], "time": "21:00", "jitter": 30, "count": 1}
+    day = date(2026, 10, 12)
+    first = settings.planned_time(entry, day, jst)
+    assert all(settings.planned_time(entry, day, jst) == first for _ in range(5))  # 同じ日は、何度調べても同じ(再起動しても変わらない)
+    assert 20 * 60 + 30 <= first.hour * 60 + first.minute <= 21 * 60 + 30         # 上下30分の範囲
+
+    times = {settings.planned_time(entry, date(2026, 10, 1) + __import__("datetime").timedelta(days=i), jst).strftime("%H:%M") for i in range(20)}
+    assert len(times) > 5  # 日ごとに、ばらける
+
+    exact = dict(entry, jitter=0)
+    assert settings.planned_time(exact, day, jst).strftime("%H:%M") == "21:00"
+    # 日をまたがない: 0:20に上下90分でも、前日・翌日にはならず、その日の中に収まる
+    early = {"id": "e", "days": [0], "time": "00:20", "jitter": 90, "count": 1}
+    for i in range(30):
+        planned = settings.planned_time(early, date(2026, 10, 1) + __import__("datetime").timedelta(days=i), jst)
+        assert planned.date() == date(2026, 10, 1) + __import__("datetime").timedelta(days=i)
+
+
+def test_next_planned_picks_the_nearest_matching_weekday(tmp_path):
+    from datetime import date
+
+    from core import settings
+
+    jst = ZoneInfo("Asia/Tokyo")
+    entry = {"id": "s1", "days": [2, 5], "time": "21:00", "jitter": 0, "count": 1}  # 水・土
+    now = datetime(2026, 10, 12, 10, 0, tzinfo=jst)  # 月曜
+    assert settings.next_planned(entry, now, jst).date() == date(2026, 10, 14)  # 水
+    now = datetime(2026, 10, 14, 22, 0, tzinfo=jst)  # 水曜の夜(時刻は過ぎた)
+    assert settings.next_planned(entry, now, jst).date() == date(2026, 10, 17)  # 土
+    now = datetime(2026, 10, 14, 10, 0, tzinfo=jst)
+    assert settings.next_planned(entry, now, jst, skip_date="2026-10-14").date() == date(2026, 10, 17)  # 今日は実行済み
 
 
 def test_post_schedule_settings_validation_and_page(tmp_path):
@@ -475,15 +545,30 @@ def test_post_schedule_settings_validation_and_page(tmp_path):
     cmd_init(config)
     conn = db.get_connection(config.paths.db_path)
     assert settings.get_post_schedule(conn) is None  # 一度も保存していなければ、config.yamlに従う
-    settings.set_post_schedule(conn, True, "25:99", "999")  # 不正な値は、既定値/範囲内に
-    assert settings.get_post_schedule(conn) == {"enabled": True, "time": "21:00", "count": 10}
-    settings.set_post_schedule(conn, False, "7:05", "x")
-    assert settings.get_post_schedule(conn) == {"enabled": False, "time": "07:05", "count": 10}
+    settings.set_post_schedule(conn, True, [
+        {"id": "ok", "days": ["0", "2", "9"], "time": "7:05", "jitter": "999", "count": "99"},  # 範囲外の値は、範囲内に
+        {"id": "no-days", "days": [], "time": "21:00"},       # 曜日が無い行は、捨てる
+        {"id": "bad-time", "days": [1], "time": "25:99"},     # 時刻が不正な行は、捨てる
+    ])
+    assert settings.get_post_schedule(conn) == {
+        "enabled": True,
+        "entries": [{"id": "ok", "days": [0, 2], "time": "07:05", "jitter": 360, "count": 10}],
+    }
+    # 旧形式(毎日1つの時刻)の保存値は、全曜日の1件として読む
+    db.set_setting(conn, "post_schedule", '{"enabled": true, "time": "20:00", "count": 2}')
+    legacy = settings.get_post_schedule(conn)
+    assert legacy["entries"][0]["days"] == list(range(7)) and legacy["entries"][0]["time"] == "20:00" and legacy["entries"][0]["count"] == 2
 
     client = create_app(config).test_client()
+    client.post("/settings", data={
+        "post_schedule_enabled": "on",
+        "ps_id": ["a", "b"], "ps_days": ["0,2,4,5", "1,2,5,6"], "ps_time": ["21:00", "08:00"], "ps_jitter": ["30", "90"], "ps_count": ["1", "2"],
+    })
+    saved = settings.get_post_schedule(conn)
+    assert saved["enabled"] and [e["days"] for e in saved["entries"]] == [[0, 2, 4, 5], [1, 2, 5, 6]]
+    assert [(e["time"], e["jitter"]) for e in saved["entries"]] == [("21:00", 30), ("08:00", 90)]  # 複数の予定を、登録できる
     page = client.get("/settings").get_data(as_text=True)
-    assert 'id="sec-post"' in page and 'name="post_schedule_time" value="07:05"' in page
-    client.post("/settings", data={"post_schedule_enabled": "on", "post_schedule_time": "20:15", "post_schedule_count": "2"})
-    assert settings.get_post_schedule(conn) == {"enabled": True, "time": "20:15", "count": 2}
-    client.post("/settings", data={"post_schedule_time": "20:15", "post_schedule_count": "2"})  # チェックを外して保存
+    assert 'id="sec-post"' in page and page.count('class="schedule-row ps-row"') == 3  # 2件+追加用のひな型
+    assert "次の予定:" in page
+    client.post("/settings", data={"ps_id": ["a"], "ps_days": ["1"], "ps_time": ["10:00"], "ps_jitter": ["0"], "ps_count": ["1"]})  # チェックを外して保存
     assert settings.get_post_schedule(conn)["enabled"] is False

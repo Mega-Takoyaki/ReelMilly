@@ -52,8 +52,11 @@ def test_get_all_settings_returns_dict(conn):
         "generation_provider": "claude",
         "generation_model": "claude-opus-5",
         "caption_mode": "auto",
+        "x_caption_system_prompt": settings.DEFAULT_X_CAPTION_SYSTEM_PROMPT,
+        "caption_provider": "same",  # 投稿文の生成に使うAI: 既定は、画像内容説明と同じ
+        "caption_model": "",
         "auto_ingest": False,
-        "post_schedule": {"enabled": False, "time": "21:00", "count": 1},  # 未設定のときの既定: 自動投稿はオフ
+        "post_schedule": {"enabled": False, "entries": []},  # 未設定のときの既定: 自動投稿はオフ
     }
 
 

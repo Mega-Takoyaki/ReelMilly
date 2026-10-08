@@ -12,9 +12,19 @@
 
     <div class="pn-items" id="pn-items" aria-live="polite"></div>
 
-    <label class="pn-field">投稿文
-      <textarea id="pn-text" rows="5" placeholder="投稿文（未入力でも投稿できます）"></textarea>
-    </label>
+    <div class="pn-field">
+      <label for="pn-text">投稿文</label>
+      <div class="pn-textwrap">
+        <textarea id="pn-text" rows="5" placeholder="投稿文（未入力でも投稿できます）"></textarea>
+        <button type="button" class="pn-generate" id="pn-generate" aria-label="投稿文を生成する" data-tip="投稿文を生成する（設定のプロンプトとAIで、都度つくります）">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path>
+            <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path>
+          </svg>
+        </button>
+      </div>
+      <button type="button" class="btn-ghost-inline pn-undo" id="pn-undo" hidden>生成前の文に戻す</button>
+    </div>
     <div class="pn-row">
       <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
         <select id="pn-audience">

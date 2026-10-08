@@ -136,7 +136,7 @@ def test_fanvue_drop_uploads_the_watermarked_file(tmp_path):
 
     config, conn = _setup(tmp_path)
     src = _asset(config, conn)
-    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1)
+    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1, fanvue_text="テストの投稿文")
     db.set_channels(conn, "a1", ["fanvue"])
     out = watermark.apply_to_file(src, "@ai_hiyo", "center", 16, 3)
     db.update_asset(conn, "a1", wm_path=str(out))

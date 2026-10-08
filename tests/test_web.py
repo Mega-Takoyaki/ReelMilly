@@ -1351,7 +1351,7 @@ def test_worker_and_drop_leave_notifications(tmp_path):
     assert "1件完了" in items[0]["title"] and "1件失敗" in items[0]["title"] and items[0]["level"] == "warning"
     assert "boom" in items[0]["body"]
 
-    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1, status="ready")
+    db.update_asset(conn, "a1", content_rating="sfw", content_rating_confirmed=1, status="ready", fanvue_text="テストの投稿文")
     db.set_channels(conn, "a1", ["fanvue"])
     client = MagicMock()
     client.upload_media.side_effect = RuntimeError("upload failed")

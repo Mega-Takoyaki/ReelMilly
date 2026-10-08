@@ -64,10 +64,44 @@
     $("pn-audience").value = first.audience || "subscribers";
     $("pn-price").value = first.price_cents ? (first.price_cents / 100).toString() : "";
     $("pn-submit").disabled = false;
+    beforeGenerate = null;
+    $("pn-undo").hidden = true;
     if (!dialog.open) dialog.showModal();
   };
 
   $("pn-cancel").addEventListener("click", () => dialog.close());
+
+  // 投稿文の生成(設定のプロンプトとAIで、都度つくる)。生成前の文は、「戻す」で復元できる
+  let beforeGenerate = null;
+  $("pn-generate").addEventListener("click", async () => {
+    const button = $("pn-generate");
+    const channel = (dialog.querySelector('input[name="pn-channel"]:checked') || {}).value || "fanvue";
+    showError("");
+    button.disabled = true;
+    button.classList.add("is-busy");
+    try {
+      const res = await fetch("/api/captions/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_ids: assets.map((a) => a.asset_id), channel }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `生成できませんでした (${res.status})`);
+      beforeGenerate = $("pn-text").value;
+      $("pn-text").value = data.text;
+      $("pn-undo").hidden = !beforeGenerate;
+      window.showToast(data.attempts > 1 ? `投稿文を生成しました（${data.attempts}回目で形式に合いました）` : "投稿文を生成しました", "success");
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-busy");
+    }
+  });
+  $("pn-undo").addEventListener("click", () => {
+    if (beforeGenerate !== null) $("pn-text").value = beforeGenerate;
+    $("pn-undo").hidden = true;
+  });
 
   $("post-now-form").addEventListener("submit", async (e) => {
     e.preventDefault();
