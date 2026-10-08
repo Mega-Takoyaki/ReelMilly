@@ -57,5 +57,5 @@ where = ["src"]
 core = ["schema.sql", "web/templates/*.html", "web/static/*.css", "web/static/*.js"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
