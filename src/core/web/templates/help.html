@@ -134,6 +134,37 @@
     <li>承認していないものは、Fanvueへ自動投稿されません。</li>
   </ul>
 
+  <h3 id="rating-guide">3つの区分の選びかた</h3>
+  <p>区分は、<strong>「その作品を、どの投稿先に、どう出してよいか」</strong>を決めるための印です。次の目安で選んでください。</p>
+  <table>
+    <tr><th>区分</th><th>目安</th><th>例</th></tr>
+    <tr><td><strong>sfw</strong></td><td>一般の人が見る場にそのまま出せる。性的な印象を意図していない。</td><td>日常の服装、ふつうのポートレート、風景</td></tr>
+    <tr><td><strong>suggestive</strong></td><td>性的な雰囲気や魅力を強調しているが、<strong>性的な部位の露出や性行為の描写はない</strong>。</td><td>下着・水着、体のラインや胸元・脚を強調したポーズ、透け感</td></tr>
+    <tr><td><strong>explicit</strong></td><td><strong>性的な部位が露出している</strong>、または性行為・それを直接想起させる描写がある。</td><td>乳首・性器の露出、性行為の描写</td></tr>
+  </table>
+  <p class="help-note"><strong>迷ったときは、重いほうを選んでください。</strong>sfw か suggestive か迷ったら suggestive、suggestive か explicit か迷ったら explicit です。軽く付けて投稿先の規約に触れると、アカウントに影響が出るおそれがあります。重く付けた場合の損失は、投稿先が絞られるだけです。</p>
+
+  <h3>AIの判定との関係</h3>
+  <ul>
+    <li>AIの自動判定は <strong>sfw / nsfw の2通りだけ</strong>です。そのため、<strong>suggestive かどうかは人が決めます</strong>。</li>
+    <li>AIが nsfw と判定した作品は、初期値が explicit になります。下着・水着など境界のものであれば、<strong>suggestive に下げて</strong>ください。</li>
+    <li>AIが sfw と判定しても、境界に見えるなら <strong>suggestive に上げて</strong>ください。AIは境界付近の判定が不安定なことがあります。</li>
+    <li>AIの判定はあくまで参考です。最終的な判断は人が行ってください。</li>
+  </ul>
+
+  <h3>区分で何が変わるか</h3>
+  <ul>
+    <li><strong>投稿先ごとの許可</strong>: 投稿先ごとに、受け付ける区分が決まっています。初期設定では、Fanvue と X は3区分すべて、Instagram（将来用）は sfw のみです。</li>
+    <li><strong>自動投稿してよいか</strong>: 「許可」とは別に、自動で投稿してよい区分も決まっています。初期設定では、Fanvue は3区分すべて、X は sfw のみです（X で suggestive・explicit は、許可されていても自動では出さず、人が確認します）。X・Instagram への投稿機能は未実装で、導入時に使われる設定です。</li>
+    <li><strong>AIの使い分け</strong>: explicit の作品は、Claude / OpenAI に画像を送らず、<strong>自前ホスト型VLM</strong>で処理してください。sfw / suggestive は Claude / OpenAI でも使えます（拒否されたら自前ホスト型VLMへ）。</li>
+    <li><strong>対象の絞り込み</strong>: 一覧の絞り込みや、自動投稿の <code>--rating</code> オプションで、区分ごとに対象を選べます。</li>
+    <li>許可・自動投稿の区分は、<code>config.yaml</code> の <code>platform_content_rules</code>（許可）と <code>platform_auto_post_ratings</code>（自動投稿してよい区分）で変えられます。</li>
+  </ul>
+
+  <h3>なぜ「sfw / nsfw」の2つではなく3つなのか</h3>
+  <p>下着・水着のような「中間」の作品は、2つだけだとどちらにも入れられません。sfw にすると投稿先の規約に触れるおそれがあり、nsfw にすると、X などでの宣伝用の投稿に使えなくなります。中間の <strong>suggestive</strong> があることで、「許可はするが自動では出さず、人が確認する」といった細かい扱いを、投稿先ごとに設定できます。</p>
+  <p class="help-note">区分は<strong>露出の度合い</strong>を表すものです。AI生成であることの明示や、登場人物が18歳未満に見えないかの確認は、区分とは別に毎回目視で行ってください（<a href="#post">10. Fanvueへ投稿</a> を参照）。投稿先の規約は変わることがあるので、実際の最新の規約も確認してください。</p>
+
   <h2 id="detail">7b. 作品の詳細画面</h2>
   <ul>
     <li><strong>操作メニュー</strong>（右上の「操作 ▾」）: 画像への操作をまとめています。AI処理（sfw/nsfw判定・説明文とタグの生成）、透かし（入れる・見る・外す）、ダウンロード、破綻画像のマーク、ごみ箱への移動です。</li>
