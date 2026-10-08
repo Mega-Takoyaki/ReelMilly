@@ -66,6 +66,13 @@
             </div>
             {% endif %}
 
+            {% if not asset.deleted_at %}
+            <div class="menu-group">
+              <div class="menu-title">投稿{{ info("いますぐ投稿します(自動投稿のスケジュールとは別)。元のファイル・透かし入り・編集した動画のどれを投稿するか、選べます。") }}</div>
+              <button type="button" class="menu-item" role="menuitem" id="post-now-open">今すぐ投稿…</button>
+            </div>
+            {% endif %}
+
             <div class="menu-group">
               <div class="menu-title">ダウンロード{{ info("元のファイル名で保存されます。透かし入りは「元の名前_watermarked」になります。") }}</div>
               <a class="menu-item" role="menuitem" href="{{ url_for('asset_download', asset_id=asset.id) }}" download>元のファイル</a>
@@ -260,6 +267,7 @@
 </dialog>
 
 {% include "_lightbox.html" %}
+{% if not asset.deleted_at %}{% include "_post_now_dialog.html" %}{% endif %}
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='detail.js') }}"></script>
@@ -269,5 +277,6 @@
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 {% if asset.kind == 'video' and not asset.deleted_at %}<script src="{{ url_for('static', filename='video-edit.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='post-actions.js') }}"></script>
+{% if not asset.deleted_at %}<script src="{{ url_for('static', filename='post-now.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='esc-back.js') }}"></script>
 {% endblock %}

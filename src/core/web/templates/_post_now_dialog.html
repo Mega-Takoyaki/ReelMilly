@@ -1,0 +1,35 @@
+{# 今すぐ投稿のダイアログ(一覧・詳細画面で共通)。post-now.jsが動かす #}
+{% from "_info.html" import info %}
+<dialog id="post-now-dialog" class="wm-dialog post-now-dialog">
+  <form method="dialog" id="post-now-form">
+    <h2 style="margin-top: 0;">今すぐ投稿{{ info("選んだ作品を、いますぐ1つの投稿として投稿します(自動投稿のスケジュールとは別の操作です)。作品が複数あるときは、複数のメディアを1つの投稿にまとめます。作品ごとに、元のファイル・透かし入り・編集した動画のどれを投稿するか選べます。処理は裏で行われ、結果は右上のベルの通知に出ます。投稿すると、公開されます。") }}</h2>
+
+    <fieldset class="pn-channels">
+      <legend>投稿先</legend>
+      <label><input type="radio" name="pn-channel" value="fanvue" checked> Fanvue</label>
+      <label class="pn-disabled" data-tip="Xの投稿APIの審査待ちのため、まだ使えません"><input type="radio" name="pn-channel" value="x" disabled> X（未対応）</label>
+    </fieldset>
+
+    <div class="pn-items" id="pn-items" aria-live="polite"></div>
+
+    <label class="pn-field">投稿文
+      <textarea id="pn-text" rows="5" placeholder="投稿文（未入力でも投稿できます）"></textarea>
+    </label>
+    <div class="pn-row">
+      <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
+        <select id="pn-audience">
+          <option value="subscribers">購読者のみ</option>
+          <option value="followers-and-subscribers">フォロワーと購読者</option>
+        </select>
+      </label>
+      <label class="pn-field">価格（ドル、任意）{{ info("入れると有料の投稿になります(3ドル以上)。空欄なら、無料です。") }}
+        <input type="number" id="pn-price" min="3" step="0.01" placeholder="空欄=無料" inputmode="decimal">
+      </label>
+    </div>
+    <p class="hint pn-error" id="pn-error" hidden></p>
+    <div class="confirm-actions">
+      <button type="button" class="btn-ghost" id="pn-cancel">キャンセル</button>
+      <button type="submit" class="btn-primary" id="pn-submit">投稿する</button>
+    </div>
+  </form>
+</dialog>

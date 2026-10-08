@@ -225,6 +225,8 @@
 
 {% include "_watermark_dialog.html" %}
 
+{% include "_post_now_dialog.html" %}
+
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
   <span id="bulk-count" class="bulk-count"></span>
   <button type="button" id="bulk-toggle" class="bulk-toggle" aria-expanded="false">操作 ▾</button>
@@ -264,6 +266,10 @@
   </span>
 
   <span class="bulk-group">
+    <button type="button" id="bulk-post-now" class="btn-primary" data-tip="選んだ作品を、いますぐ1つの投稿として投稿します">今すぐ投稿…</button>
+  </span>
+
+  <span class="bulk-group">
     <button type="button" id="bulk-hide">非表示にする</button>
     <button type="button" id="bulk-unhide" class="btn-ghost-inline">表示に戻す</button>
   </span>
@@ -290,6 +296,7 @@
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
 <script>window.POST_CHANNELS = {{ post_channels | tojson }}; window.WM_POSITIONS = {{ wm_positions | tojson }};</script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
+<script src="{{ url_for('static', filename='post-now.js') }}"></script>
 <script src="{{ url_for('static', filename='drag-select.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='infinite-scroll.js') }}"></script>

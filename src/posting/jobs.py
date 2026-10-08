@@ -227,3 +227,69 @@ def run_fanvue_drop_batch(
         if not result.executed:
             break
     return results
+
+
+MAX_POST_NOW_ITEMS = 10  # 1つの投稿にまとめられる作品(メディア)の上限
+MIN_PRICE_CENTS = 300  # Fanvueの有料投稿の最低価格(3ドル)
+FANVUE_AUDIENCES = {"subscribers": "購読者のみ", "followers-and-subscribers": "フォロワーと購読者"}
+
+
+@dataclass
+class PostNowResult:
+    ok: bool
+    asset_ids: list[str]
+    fanvue_url: str | None = None
+    error: str | None = None
+
+
+def run_fanvue_post_now(
+    config: Config,
+    conn: sqlite3.Connection,
+    fanvue_client: FanvueClient,
+    fanvue_handle: str,
+    post_url_template: str,
+    items: list[tuple[dict, Path, str]],
+    text: str,
+    audience: str,
+    price_cents: int | None = None,
+) -> PostNowResult:
+    """作品とバージョン(ファイル)を指定して、いますぐ1つの投稿としてFanvueへ投稿する。
+
+    `items`は[(作品, 投稿するファイル, "image"|"video")]。複数ならば、複数のメディアを1つの投稿にまとめる。
+    成功したら、すべての作品を「投稿済み」として記録し(二重投稿の防止)、失敗したら、すべて「失敗」として記録する
+    (自動投稿の対象から外れる。詳細画面から、再投稿の対象に戻せる)。結果は通知に残す。
+    """
+    asset_ids = [asset["id"] for asset, _path, _type in items]
+    try:
+        media_uuids = []
+        for _asset, path, media_type in items:
+            media_uuid = fanvue_client.upload_media(path, media_type=media_type)
+            if not fanvue_client.wait_for_media_ready(media_uuid):
+                raise TimeoutError(f"media {media_uuid} did not become ready in time")
+            media_uuids.append(media_uuid)
+        fanvue_client.create_post(audience=audience, text=text, media_uuids=media_uuids, price_cents=price_cents)
+    except Exception as exc:  # noqa: BLE001 - 失敗理由をそのまま記録・通知するのが目的
+        for asset_id in asset_ids:
+            db.set_post(conn, asset_id, FANVUE_CHANNEL, "failed", error=str(exc))
+        notifications.add(
+            conn, "post", "Fanvueへの投稿に失敗しました", f"{len(asset_ids)}件: {exc}", "error",
+            asset_id=asset_ids[0] if len(asset_ids) == 1 else None,
+        )
+        log_event(config.paths.events_path, "post_now_failed", asset_ids=asset_ids, error=str(exc))
+        return PostNowResult(ok=False, asset_ids=asset_ids, error=str(exc))
+
+    fanvue_url = build_post_url(post_url_template, fanvue_handle, media_uuids[0])
+    for (asset, _path, _type), media_uuid in zip(items, media_uuids):
+        db.set_post(conn, asset["id"], FANVUE_CHANNEL, "posted", url=fanvue_url, external_id=media_uuid)
+        db.update_asset(
+            conn, asset["id"], fanvue_url=fanvue_url, fanvue_uuid=media_uuid, fanvue_text=text,
+            audience=audience, price_cents=price_cents, updated_at=_now(),
+        )
+        db.add_tag_to_asset(conn, asset["id"], FANVUE_POSTED_TAG)
+    label = FANVUE_AUDIENCES.get(audience, audience)
+    notifications.add(
+        conn, "post", "Fanvueへ投稿しました", f"{len(asset_ids)}件（公開範囲: {label}）", "success",
+        asset_id=asset_ids[0] if len(asset_ids) == 1 else None,
+    )
+    log_event(config.paths.events_path, "post_now_ok", asset_ids=asset_ids, audience=audience, fanvue_url=fanvue_url)
+    return PostNowResult(ok=True, asset_ids=asset_ids, fanvue_url=fanvue_url)

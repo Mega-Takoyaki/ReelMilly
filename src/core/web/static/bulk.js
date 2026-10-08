@@ -80,6 +80,15 @@
     });
   });
 
+  // 今すぐ投稿: 選んだ作品を、1つの投稿にまとめて投稿する(ダイアログで、作品ごとのバージョンなどを選ぶ)
+  const postNowButton = document.getElementById("bulk-post-now");
+  if (postNowButton) {
+    postNowButton.addEventListener("click", () => {
+      if (selected.size === 0) return;
+      if (window.openPostNow) window.openPostNow(Array.from(selected));
+    });
+  }
+
   // 非表示: 既定の一覧に出さないだけ(フィルタで表示できる)
   [["bulk-hide", true], ["bulk-unhide", false]].forEach(([id, hidden]) => {
     document.getElementById(id).addEventListener("click", async () => {

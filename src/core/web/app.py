@@ -16,6 +16,7 @@ from flask import Flask, abort, g, jsonify, redirect, render_template, request, 
 
 from core import db, env_settings, generation
 from core import duplicates, edits, ffmpeg, notifications, storage, watermark
+from core import versions as versions_module
 from core.dimensions import read_dimensions
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
@@ -641,6 +642,117 @@ def create_app(config: Config) -> Flask:
         if not path.exists():
             abort(404)
         return send_file(path, as_attachment=True, download_name=name)
+
+    # --- 今すぐ投稿(作品とバージョンを選んで、いますぐ1つの投稿として行う) ---
+
+    posting_now: set[str] = set()  # 投稿の処理中の作品(二重に投稿しないため)
+
+    @app.route("/api/assets/<asset_id>/versions")
+    def api_asset_versions(asset_id):
+        """投稿に使えるバージョン(元のファイル・透かし入り・編集した動画)と、投稿ダイアログに出す作品の情報。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        from posting.jobs import FANVUE_AUDIENCES  # coreはpostingに依存しない方針(ADR-0013)のため、使う場所で読み込む
+
+        versions = versions_module.list_versions(conn, asset)
+        fanvue = db.get_posts(conn, [asset_id]).get(asset_id, {}).get("fanvue")
+        conn.close()
+        return jsonify({
+            "asset_id": asset_id,
+            "kind": asset["kind"],
+            "name": asset.get("original_name") or asset_id,
+            "rating": asset.get("content_rating") if asset.get("content_rating_confirmed") else None,
+            "text": asset.get("fanvue_text") or asset.get("caption") or "",
+            "audience": asset.get("audience") if asset.get("audience") in FANVUE_AUDIENCES else "subscribers",
+            "price_cents": asset.get("price_cents"),
+            "fanvue_status": fanvue["status"] if fanvue else None,
+            "versions": versions,
+            "default": versions_module.default_version(versions),
+            "trashed": bool(asset.get("deleted_at")),
+        })
+
+    @app.route("/api/post-now", methods=["POST"])
+    def api_post_now():
+        """作品とバージョンを指定して、いますぐ投稿する。複数の作品は、1つの投稿にまとめる。処理は非同期で、結果は通知に出る。"""
+        from posting.jobs import FANVUE_AUDIENCES, MAX_POST_NOW_ITEMS, MIN_PRICE_CENTS, run_fanvue_post_now
+
+        payload = request.get_json(silent=True) or {}
+        channel = payload.get("channel", "fanvue")
+        if channel == "x":
+            return jsonify({"error": "Xへの投稿は、まだできません(Xの投稿APIの審査待ちです)"}), 400
+        if channel != "fanvue":
+            return jsonify({"error": "不明な投稿先です"}), 400
+        raw_items = payload.get("items") or []
+        if not raw_items:
+            return jsonify({"error": "投稿する作品を選んでください"}), 400
+        if len(raw_items) > MAX_POST_NOW_ITEMS:
+            return jsonify({"error": f"1つの投稿にまとめられるのは{MAX_POST_NOW_ITEMS}件までです"}), 400
+        audience = payload.get("audience") or "subscribers"
+        if audience not in FANVUE_AUDIENCES:
+            return jsonify({"error": "公開範囲が正しくありません"}), 400
+        price = payload.get("price_cents")
+        if price in ("", None):
+            price = None
+        else:
+            try:
+                price = int(price)
+            except (TypeError, ValueError):
+                return jsonify({"error": "価格が正しくありません"}), 400
+            if price < MIN_PRICE_CENTS:
+                return jsonify({"error": f"有料投稿の価格は、{MIN_PRICE_CENTS / 100:g}ドル以上にしてください"}), 400
+        text = str(payload.get("text") or "").strip()
+
+        require_storage()
+        from core.cli import _try_create_fanvue_client
+
+        client, reason = _try_create_fanvue_client(config)
+        if client is None:
+            return jsonify({"error": reason}), 503
+
+        conn = get_conn()
+        items = []
+        seen = set()
+        for raw in raw_items:
+            asset_id = str(raw.get("asset_id") or "")
+            asset = db.get_asset(conn, asset_id)
+            if asset is None or asset.get("deleted_at") or asset_id in seen:
+                conn.close()
+                return jsonify({"error": f"投稿できない作品が含まれています: {asset_id}"}), 400
+            seen.add(asset_id)
+            try:
+                path, media_type = versions_module.resolve(conn, asset, raw.get("version"))
+            except versions_module.VersionError as exc:
+                conn.close()
+                return jsonify({"error": f"{asset_id}: {exc}"}), 400
+            items.append((asset, path, media_type))
+        conn.close()
+        if posting_now & seen:
+            return jsonify({"error": "投稿の処理中の作品が含まれています。終わってからやり直してください"}), 409
+        posting_now.update(seen)
+
+        handle = os.environ.get("FANVUE_HANDLE", "")
+        url_template = os.environ.get("FANVUE_POST_URL_TEMPLATE", "https://www.fanvue.com/{handle}")
+
+        def work():
+            work_conn = get_conn()
+            try:
+                return run_fanvue_post_now(
+                    config, work_conn, client, handle, url_template, items, text, audience, price
+                )
+            finally:
+                work_conn.close()
+                posting_now.difference_update(seen)
+
+        if app.config.get("POST_NOW_SYNC"):  # テスト用: 完了まで待つ
+            result = work()
+            return jsonify({"started": True, "count": len(items), "ok": result.ok, "error": result.error}), 202
+        import threading
+
+        threading.Thread(target=work, name="post-now", daemon=True).start()
+        return jsonify({"started": True, "count": len(items)}), 202
 
     # --- 動画の編集(切り出しなど)。結果は、サブ動画として作品に複数登録する ---
 
