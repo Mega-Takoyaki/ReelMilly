@@ -298,3 +298,49 @@ def run_fanvue_post_now(
     )
     log_event(config.paths.events_path, "post_now_ok", asset_ids=asset_ids, audience=audience, fanvue_url=fanvue_url)
     return PostNowResult(ok=True, asset_ids=asset_ids, fanvue_url=fanvue_url)
+
+
+X_CHANNEL = "x"
+
+
+def run_x_post_now(
+    config: Config,
+    conn: sqlite3.Connection,
+    x_client,
+    items: list[tuple[dict, Path, str]],
+    text: str,
+    sensitive: bool = False,
+    made_with_ai: bool = True,
+) -> PostNowResult:
+    """作品とバージョン(ファイル)を指定して、いますぐ1つの投稿としてXへ投稿する(画像は4枚まで、動画は1本)。
+
+    `sensitive`なら、すべてのメディアを、成人向けのセンシティブなメディアとして指定してから投稿する。
+    `made_with_ai`なら、AI生成のメディアを含むことを、投稿に表示する。成功したら、作品を「Xに投稿済み」として記録する。
+    """
+    from posting.x import build_post_url as build_x_post_url
+
+    asset_ids = [asset["id"] for asset, _path, _type in items]
+    try:
+        media_ids = [x_client.upload_media(path, media_type=media_type, sensitive=sensitive) for _asset, path, media_type in items]
+        created = x_client.create_post(text, media_ids, made_with_ai=made_with_ai)
+        post_id = created.get("id") or ""
+    except Exception as exc:  # noqa: BLE001 - 失敗理由をそのまま記録・通知するのが目的
+        for asset_id in asset_ids:
+            db.set_post(conn, asset_id, X_CHANNEL, "failed", error=str(exc))
+        notifications.add(
+            conn, "post", "Xへの投稿に失敗しました", f"{len(asset_ids)}件: {exc}", "error",
+            asset_id=asset_ids[0] if len(asset_ids) == 1 else None,
+        )
+        log_event(config.paths.events_path, "x_post_now_failed", asset_ids=asset_ids, error=str(exc))
+        return PostNowResult(ok=False, asset_ids=asset_ids, error=str(exc))
+
+    url = build_x_post_url(post_id) if post_id else None
+    for asset, _path, _type in items:
+        db.set_post(conn, asset["id"], X_CHANNEL, "posted", url=url, external_id=post_id)
+        db.update_asset(conn, asset["id"], status="ready", updated_at=_now())
+    notifications.add(
+        conn, "post", "Xへ投稿しました", f"{len(asset_ids)}件{'（センシティブ指定）' if sensitive else ''}", "success",
+        asset_id=asset_ids[0] if len(asset_ids) == 1 else None,
+    )
+    log_event(config.paths.events_path, "x_post_now_ok", asset_ids=asset_ids, sensitive=sensitive, url=url)
+    return PostNowResult(ok=True, asset_ids=asset_ids, fanvue_url=url)

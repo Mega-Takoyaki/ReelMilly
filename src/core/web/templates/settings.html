@@ -48,6 +48,7 @@
 
   <nav class="settings-nav" role="tablist">
     <button type="button" role="tab" data-tab="sec-fanvue">Fanvue</button>
+    <button type="button" role="tab" data-tab="sec-x">X</button>
     <button type="button" role="tab" data-tab="sec-telegram">Telegram</button>
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
     <button type="button" role="tab" data-tab="sec-post">投稿スケジュール</button>
@@ -97,6 +98,57 @@
     {% else %}
     <p>未連携（Client ID/Secretを保存してから連携してください）</p>
     <a href="{{ url_for('fanvue_oauth_start') }}"><button type="button">Fanvueと連携する</button></a>
+    {% endif %}
+  </section>
+
+  <section class="card settings-tab" id="sec-x">
+    <h2 style="margin-top: 0;">X（旧Twitter）{{ info("画像・動画をXへ投稿するための設定です。XのDeveloper Consoleで、アプリを作り、OAuth 2.0のクライアントID/シークレットを取得してください。成人向けのメディアは、投稿ごとにセンシティブ指定をつけます(explicitな作品は、Xには投稿しません)。X APIは従量課金(Pay Per Use)で、投稿やアップロードのたびに、料金がかかります。") }}</h2>
+    {% if x_just_connected %}
+    <div class="banner banner-success">Xとの連携が完了しました</div>
+    {% endif %}
+    {% if x_error %}
+    <div class="banner banner-error">{{ x_error }}</div>
+    {% endif %}
+    <p class="hint">
+      OAuth 2.0（認可コード+PKCE）で連携します。クライアントID・クライアントシークレットを保存してから、「Xと連携する」を押してください。
+      秘密情報は<code>.env</code>に保存され、空欄のまま保存すると既存の値は変更されません。
+    </p>
+    <div class="settings-form">
+      {% for key, field in connections.items() if key.startswith('X_OAUTH_') and key != 'X_OAUTH_REDIRECT_URI' %}
+      {{ field_input(key, field) }}
+      {% endfor %}
+      <details>
+        <summary>詳細設定（通常は変更不要）</summary>
+        <div class="settings-form">
+          {{ field_input('X_OAUTH_REDIRECT_URI', connections['X_OAUTH_REDIRECT_URI']) }}
+        </div>
+      </details>
+    </div>
+
+    <h3 style="margin-top: 1rem;">Xのアプリに設定する内容{{ info("XのDeveloper Consoleの、アプリの「設定」→「ユーザー認証設定」で、次のように設定します。コールバックURIは、1文字でも違うと、連携のときにエラーになります。") }}</h3>
+    <ol class="hint x-steps">
+      <li>アプリの権限: <strong>読み取りと書き込み</strong>（Read and write）</li>
+      <li>アプリの種類: <strong>Web App, Automated App or Bot</strong>（機密クライアント。クライアントシークレットが出るほう）</li>
+      <li>コールバックURI / リダイレクトURL（下の値を、そのまま）:
+        <code id="x-redirect-uri">{{ x_redirect_uri }}</code>
+        <button type="button" class="btn-ghost-inline" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('x-redirect-uri').textContent).then(function(){ window.showToast('コピーしました', 'success'); })">コピー</button>
+      </li>
+      <li>ウェブサイトのURL: 任意（例: <code>http://127.0.0.1:8420</code>）</li>
+    </ol>
+
+    <h3 style="margin-top: 1rem;">OAuth連携状態{{ info("このアプリがXへ投稿してよいという許可(アクセストークン)を持っているかの状態です。アクセストークンは約2時間で切れますが、更新用トークンで自動更新します。連携のときの許可(スコープ)に offline.access を含めているため、更新用トークンが発行されます。") }}</h3>
+    {% if x_connected and x_needs_reconnect %}
+    <div class="banner banner-error">
+      <strong>Xの連携が切れています。</strong>アクセストークンの期限が切れていて、更新もできない状態です。
+      いったん「連携を解除する」を押して、もう一度「Xと連携する」で連携し直してください。
+    </div>
+    <button type="submit" form="x-disconnect-form" class="btn-ghost-inline">連携を解除する</button>
+    {% elif x_connected %}
+    <p><strong>連携済み</strong>（保存後に操作してください）</p>
+    <button type="submit" form="x-disconnect-form" class="btn-ghost-inline">連携を解除する</button>
+    {% else %}
+    <p>未連携（クライアントID/シークレットを保存してから連携してください）</p>
+    <a href="{{ url_for('x_oauth_start') }}"><button type="button">Xと連携する</button></a>
     {% endif %}
   </section>
 
@@ -400,6 +452,7 @@
   </form>
 
   <form id="fanvue-disconnect-form" method="post" action="{{ url_for('fanvue_oauth_disconnect') }}"></form>
+  <form id="x-disconnect-form" method="post" action="{{ url_for('x_oauth_disconnect') }}"></form>
 </section>
 
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>

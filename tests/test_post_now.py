@@ -108,7 +108,7 @@ def test_post_now_api_validations(env):
     _insert(conn, config.paths.ready, "a1")
     ok_items = [{"asset_id": "a1", "version": "original"}]
 
-    assert post(client, channel="x", items=ok_items).status_code == 400 and "審査待ち" in post(client, channel="x", items=ok_items).get_json()["error"]
+    assert post(client, channel="instagram", items=ok_items).status_code == 400
     assert post(client, channel="nope", items=ok_items).status_code == 400
     assert post(client, items=[]).status_code == 400
     assert post(client, items=ok_items, audience="everyone").status_code == 400
@@ -158,7 +158,7 @@ def test_versions_api_and_ui_hooks(env):
     assert 'id="bulk-post-now"' in listing and 'id="post-now-dialog"' in listing and "post-now.js" in listing
     detail = client.get("/assets/a1").get_data(as_text=True)
     assert 'id="post-now-open"' in detail and 'id="post-now-dialog"' in detail
-    assert 'value="x" disabled' in detail  # Xは、選択肢だけ見せて、使えない
+    assert 'value="x" disabled' in detail  # Xは、連携するまで、選べない(画面を開いたときに、連携済みなら選べるようにする)
 
 
 def test_post_now_works_for_any_status_and_marks_the_asset_ready(env):

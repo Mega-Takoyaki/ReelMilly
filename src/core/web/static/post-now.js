@@ -1,6 +1,8 @@
 // 今すぐ投稿: 一覧(選択した作品)・詳細画面(その作品)から、作品とバージョンを選んで、いますぐ1つの投稿として投稿する。
 // - window.openPostNow(assetIds) でダイアログを開く
+// - 投稿先: Fanvue / X(連携済みのときだけ選べる)
 // - 作品ごとに、元のファイル・透かし入り・編集した動画のどれを投稿するかを選べる
+// - Xは、画像4枚まで/動画1本・文字数(全角は2)・センシティブ指定(sfw以外は必須。explicitは投稿しない)を、投稿前に検査する
 // - 投稿は非同期で、結果は通知(右上のベル)に出る
 (function () {
   const dialog = document.getElementById("post-now-dialog");
@@ -8,7 +10,10 @@
   const $ = (id) => document.getElementById(id);
   const itemsBox = $("pn-items");
   const errorEl = $("pn-error");
+  const X_MAX_WEIGHT = 280;
+  const X_MAX_IMAGES = 4;
   let assets = [];
+  let beforeGenerate = null;
 
   function el(tag, props, ...children) {
     const e = document.createElement(tag);
@@ -22,29 +27,71 @@
     return e;
   }
 
+  const currentChannel = () => (dialog.querySelector('input[name="pn-channel"]:checked') || {}).value || "fanvue";
+  const xWeight = (text) => Array.from(text).reduce((n, ch) => n + (ch.codePointAt(0) < 0x2e80 ? 1 : 2), 0);
+
   function showError(text) {
     errorEl.hidden = !text;
     errorEl.textContent = text || "";
+  }
+
+  function postedStatus(a) {
+    return currentChannel() === "x" ? a.x_status : a.fanvue_status;
   }
 
   function row(a) {
     const media = a.kind === "video"
       ? el("video", { src: `/assets/${a.asset_id}/media`, muted: true, preload: "metadata" })
       : el("img", { src: `/assets/${a.asset_id}/media`, alt: "", loading: "lazy" });
-    const notes = [];
-    notes.push(a.rating ? `区分: ${a.rating}（承認済み）` : "区分: 未承認");
-    if (a.fanvue_status === "posted") notes.push("Fanvueに投稿済み");
-    if (a.fanvue_status === "failed") notes.push("Fanvueへの前回の投稿は失敗");
-    if (a.status && a.status !== "ready") notes.push(`状態: ${a.status}（投稿すると、readyにします）`);
     const select = el("select", { class: "pn-version", "aria-label": `${a.name}の投稿するバージョン` });
-    a.versions.forEach((v) => select.append(el("option", { value: v.key, textContent: v.label, selected: v.key === a.default })));
-    const warn = !a.rating || a.fanvue_status === "posted";
+    a.versions.forEach((v) => select.append(el("option", { value: v.key, textContent: v.label, selected: v.key === a.default, dataset: { mediaType: v.media_type } })));
+    select.addEventListener("change", applyChannel);
     return el("div", { class: "pn-item", dataset: { assetId: a.asset_id } },
       el("div", { class: "pn-thumb" }, media),
       el("div", { class: "pn-info" },
         el("div", { class: "pn-name", title: a.name, textContent: a.name }),
-        el("div", { class: `hint${warn ? " pn-warn" : ""}`, textContent: notes.join(" ／ ") }),
+        el("div", { class: "hint pn-note" }),
         select));
+  }
+
+  // 選んでいる投稿先に合わせて、表示・注意書き・検査を更新する
+  function applyChannel() {
+    const channel = currentChannel();
+    const isX = channel === "x";
+    $("pn-fanvueonly").hidden = isX;
+    $("pn-xonly").hidden = !isX;
+    const label = isX ? "X" : "Fanvue";
+    itemsBox.querySelectorAll(".pn-item").forEach((r) => {
+      const a = assets.find((x) => x.asset_id === r.dataset.assetId);
+      const notes = [a.rating ? `区分: ${a.rating}（承認済み）` : "区分: 未承認"];
+      const status = postedStatus(a);
+      if (status === "posted") notes.push(`${label}に投稿済み`);
+      if (status === "failed") notes.push(`${label}への前回の投稿は失敗`);
+      if (a.status && a.status !== "ready") notes.push(`状態: ${a.status}（投稿すると、readyにします）`);
+      const note = r.querySelector(".pn-note");
+      note.textContent = notes.join(" ／ ");
+      note.classList.toggle("pn-warn", !a.rating || status === "posted");
+    });
+
+    let problem = "";
+    if (isX) {
+      const types = Array.from(itemsBox.querySelectorAll(".pn-version")).map((s) => s.selectedOptions[0].dataset.mediaType);
+      const videos = types.filter((t) => t === "video").length;
+      if (videos > 0 && !(videos === 1 && types.length === 1)) problem = "Xでは、動画は1本だけで、画像とは一緒に投稿できません";
+      else if (videos === 0 && types.length > X_MAX_IMAGES) problem = `Xでは、1つの投稿に付けられる画像は${X_MAX_IMAGES}枚までです`;
+      const ratings = assets.map((a) => a.rating);
+      if (ratings.includes("explicit")) problem = problem || "区分がexplicit(成人向け)の作品は、Xには投稿しません";
+      const needSensitive = ratings.some((r) => r !== "sfw");
+      const box = $("pn-sensitive");
+      if (needSensitive) box.checked = true;       // sfwと承認されていない作品は、センシティブ指定が必須
+      box.disabled = needSensitive;
+      const weight = xWeight($("pn-text").value);
+      $("pn-count").textContent = `Xの文字数: ${weight} / ${X_MAX_WEIGHT}（全角は2文字）`;
+      $("pn-count").classList.toggle("pn-warn", weight > X_MAX_WEIGHT);
+      if (!problem && weight > X_MAX_WEIGHT) problem = `Xの文字数の上限を超えています（${weight} / ${X_MAX_WEIGHT}）`;
+    }
+    showError(problem);
+    $("pn-submit").disabled = !!problem;
   }
 
   window.openPostNow = async function (ids) {
@@ -52,10 +99,19 @@
     if (ids.length === 0) return;
     showError("");
     try {
-      assets = await Promise.all(ids.map((id) => fetch(`/api/assets/${id}/versions`).then((r) => {
-        if (!r.ok) throw new Error(`作品を取得できませんでした (${r.status})`);
-        return r.json();
-      })));
+      const [loaded, targets] = await Promise.all([
+        Promise.all(ids.map((id) => fetch(`/api/assets/${id}/versions`).then((r) => {
+          if (!r.ok) throw new Error(`作品を取得できませんでした (${r.status})`);
+          return r.json();
+        }))),
+        fetch("/api/post-targets").then((r) => r.json()).catch(() => ({})),
+      ]);
+      assets = loaded;
+      const xRadio = dialog.querySelector('input[name="pn-channel"][value="x"]');
+      xRadio.disabled = !targets.x;
+      $("pn-x-note").textContent = targets.x ? "" : " （未連携。設定の「X」タブで連携）";
+      dialog.querySelector('input[name="pn-channel"][value="fanvue"]').checked = true;
+      dialog.querySelector('input[name="pn-channel"][value="fanvue"]').disabled = targets.fanvue === false;
     } catch (err) {
       window.showToast(err.message, "error");
       return;
@@ -65,19 +121,21 @@
     $("pn-text").value = first.text || "";
     $("pn-audience").value = first.audience || "subscribers";
     $("pn-price").value = first.price_cents ? (first.price_cents / 100).toString() : "";
-    $("pn-submit").disabled = false;
+    $("pn-sensitive").checked = false;
+    $("pn-ai").checked = true;
     beforeGenerate = null;
     $("pn-undo").hidden = true;
+    applyChannel();
     if (!dialog.open) dialog.showModal();
   };
 
   $("pn-cancel").addEventListener("click", () => dialog.close());
+  dialog.querySelectorAll('input[name="pn-channel"]').forEach((r) => r.addEventListener("change", applyChannel));
+  $("pn-text").addEventListener("input", applyChannel);
 
-  // 投稿文の生成(設定のプロンプトとAIで、都度つくる)。生成前の文は、「戻す」で復元できる
-  let beforeGenerate = null;
+  // 投稿文の生成(設定のプロンプトとAIで、都度つくる。投稿先に合わせて、FanvueまたはX用)。生成前の文は、「戻す」で復元できる
   $("pn-generate").addEventListener("click", async () => {
     const button = $("pn-generate");
-    const channel = (dialog.querySelector('input[name="pn-channel"]:checked') || {}).value || "fanvue";
     showError("");
     button.disabled = true;
     button.classList.add("is-busy");
@@ -85,13 +143,14 @@
       const res = await fetch("/api/captions/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ asset_ids: assets.map((a) => a.asset_id), channel }),
+        body: JSON.stringify({ asset_ids: assets.map((a) => a.asset_id), channel: currentChannel() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `生成できませんでした (${res.status})`);
       beforeGenerate = $("pn-text").value;
       $("pn-text").value = data.text;
       $("pn-undo").hidden = !beforeGenerate;
+      applyChannel();
       window.showToast(data.attempts > 1 ? `投稿文を生成しました（${data.attempts}回目で形式に合いました）` : "投稿文を生成しました", "success");
     } catch (err) {
       showError(err.message);
@@ -103,33 +162,42 @@
   $("pn-undo").addEventListener("click", () => {
     if (beforeGenerate !== null) $("pn-text").value = beforeGenerate;
     $("pn-undo").hidden = true;
+    applyChannel();
   });
 
   $("post-now-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     showError("");
+    const channel = currentChannel();
     const items = Array.from(itemsBox.querySelectorAll(".pn-item")).map((r) => ({
       asset_id: r.dataset.assetId,
       version: r.querySelector(".pn-version").value,
     }));
-    const audience = $("pn-audience").value;
-    const priceText = $("pn-price").value.trim();
-    const price_cents = priceText ? Math.round(parseFloat(priceText) * 100) : null;
-    const audienceLabel = $("pn-audience").selectedOptions[0].textContent;
-    const already = assets.filter((a) => a.fanvue_status === "posted").length;
-    const message =
-      `${items.length}件を、Fanvueの「${audienceLabel}」に、1つの投稿として投稿します。公開されます。` +
-      (price_cents ? `（有料: ${(price_cents / 100).toFixed(2)}ドル）` : "") +
-      (already ? `\n※ ${already}件は、Fanvueに投稿済みです（二重の投稿になります）。` : "") +
-      "\nよろしいですか？";
+    const already = assets.filter((a) => postedStatus(a) === "posted").length;
+    let body;
+    let message;
+    if (channel === "x") {
+      const sensitive = $("pn-sensitive").checked;
+      body = { channel, items, text: $("pn-text").value, sensitive, made_with_ai: $("pn-ai").checked };
+      message = `${items.length}件を、Xに、1つの投稿として投稿します。公開されます。` +
+        (sensitive ? "（センシティブ指定あり）" : "") +
+        "\n※ X APIは従量課金のため、投稿・アップロードに料金がかかります。" +
+        (already ? `\n※ ${already}件は、Xに投稿済みです（二重の投稿になります）。` : "") +
+        "\nよろしいですか？";
+    } else {
+      const audience = $("pn-audience").value;
+      const priceText = $("pn-price").value.trim();
+      const price_cents = priceText ? Math.round(parseFloat(priceText) * 100) : null;
+      body = { channel, items, text: $("pn-text").value, audience, price_cents };
+      message = `${items.length}件を、Fanvueの「${$("pn-audience").selectedOptions[0].textContent}」に、1つの投稿として投稿します。公開されます。` +
+        (price_cents ? `（有料: ${(price_cents / 100).toFixed(2)}ドル）` : "") +
+        (already ? `\n※ ${already}件は、Fanvueに投稿済みです（二重の投稿になります）。` : "") +
+        "\nよろしいですか？";
+    }
     if (!(await window.confirmDialog(message))) return;
     $("pn-submit").disabled = true;
     try {
-      const res = await fetch("/api/post-now", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: "fanvue", items, text: $("pn-text").value, audience, price_cents }),
-      });
+      const res = await fetch("/api/post-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `投稿できませんでした (${res.status})`);
       dialog.close();

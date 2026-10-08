@@ -16,6 +16,7 @@ from flask import Flask, abort, g, jsonify, redirect, render_template, request, 
 
 from core import db, env_settings, generation
 from core import duplicates, edits, ffmpeg, notifications, storage, watermark
+from core import captions as captions_module
 from core import versions as versions_module
 from core.dimensions import read_dimensions
 from core import worker as worker_module
@@ -658,7 +659,8 @@ def create_app(config: Config) -> Flask:
         from posting.jobs import FANVUE_AUDIENCES  # coreはpostingに依存しない方針(ADR-0013)のため、使う場所で読み込む
 
         versions = versions_module.list_versions(conn, asset)
-        fanvue = db.get_posts(conn, [asset_id]).get(asset_id, {}).get("fanvue")
+        posts = db.get_posts(conn, [asset_id]).get(asset_id, {})
+        fanvue, x_post = posts.get("fanvue"), posts.get("x")
         conn.close()
         return jsonify({
             "asset_id": asset_id,
@@ -669,6 +671,7 @@ def create_app(config: Config) -> Flask:
             "audience": asset.get("audience") if asset.get("audience") in FANVUE_AUDIENCES else "subscribers",
             "price_cents": asset.get("price_cents"),
             "fanvue_status": fanvue["status"] if fanvue else None,
+            "x_status": x_post["status"] if x_post else None,
             "status": asset["status"],
             "versions": versions,
             "default": versions_module.default_version(versions),
@@ -700,41 +703,56 @@ def create_app(config: Config) -> Flask:
         conn.close()
         return jsonify({"text": result.text, "attempts": result.attempts})
 
+    @app.route("/api/post-targets")
+    def api_post_targets():
+        """今すぐ投稿で選べる投稿先(連携済みかどうか)。"""
+        from core.cli import _try_create_fanvue_client, _try_create_x_client
+
+        return jsonify({
+            "fanvue": _try_create_fanvue_client(config)[0] is not None,
+            "x": _try_create_x_client(config)[0] is not None,
+        })
+
     @app.route("/api/post-now", methods=["POST"])
     def api_post_now():
-        """作品とバージョンを指定して、いますぐ投稿する。複数の作品は、1つの投稿にまとめる。処理は非同期で、結果は通知に出る。"""
-        from posting.jobs import FANVUE_AUDIENCES, MAX_POST_NOW_ITEMS, MIN_PRICE_CENTS, run_fanvue_post_now
+        """作品とバージョンを指定して、いますぐ投稿する(Fanvue・X)。複数の作品は、1つの投稿にまとめる。処理は非同期で、結果は通知に出る。"""
+        from posting.jobs import (
+            FANVUE_AUDIENCES, MAX_POST_NOW_ITEMS, MIN_PRICE_CENTS, run_fanvue_post_now, run_x_post_now,
+        )
+        from posting import x as x_module
 
         payload = request.get_json(silent=True) or {}
         channel = payload.get("channel", "fanvue")
-        if channel == "x":
-            return jsonify({"error": "Xへの投稿は、まだできません(Xの投稿APIの審査待ちです)"}), 400
-        if channel != "fanvue":
+        if channel not in ("fanvue", "x"):
             return jsonify({"error": "不明な投稿先です"}), 400
         raw_items = payload.get("items") or []
         if not raw_items:
             return jsonify({"error": "投稿する作品を選んでください"}), 400
         if len(raw_items) > MAX_POST_NOW_ITEMS:
             return jsonify({"error": f"1つの投稿にまとめられるのは{MAX_POST_NOW_ITEMS}件までです"}), 400
-        audience = payload.get("audience") or "subscribers"
-        if audience not in FANVUE_AUDIENCES:
-            return jsonify({"error": "公開範囲が正しくありません"}), 400
-        price = payload.get("price_cents")
-        if price in ("", None):
-            price = None
-        else:
-            try:
-                price = int(price)
-            except (TypeError, ValueError):
-                return jsonify({"error": "価格が正しくありません"}), 400
-            if price < MIN_PRICE_CENTS:
-                return jsonify({"error": f"有料投稿の価格は、{MIN_PRICE_CENTS / 100:g}ドル以上にしてください"}), 400
         text = str(payload.get("text") or "").strip()
+        audience, price = "subscribers", None
+        if channel == "fanvue":
+            audience = payload.get("audience") or "subscribers"
+            if audience not in FANVUE_AUDIENCES:
+                return jsonify({"error": "公開範囲が正しくありません"}), 400
+            price = payload.get("price_cents")
+            if price in ("", None):
+                price = None
+            else:
+                try:
+                    price = int(price)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "価格が正しくありません"}), 400
+                if price < MIN_PRICE_CENTS:
+                    return jsonify({"error": f"有料投稿の価格は、{MIN_PRICE_CENTS / 100:g}ドル以上にしてください"}), 400
+        elif captions_module.x_weight(text) > captions_module.X_MAX_WEIGHT:
+            return jsonify({"error": f"Xの文字数の上限を超えています（全角は2文字として数え、{captions_module.X_MAX_WEIGHT}まで。いま{captions_module.x_weight(text)}）"}), 400
 
         require_storage()
-        from core.cli import _try_create_fanvue_client
+        from core.cli import _try_create_fanvue_client, _try_create_x_client
 
-        client, reason = _try_create_fanvue_client(config)
+        client, reason = (_try_create_x_client if channel == "x" else _try_create_fanvue_client)(config)
         if client is None:
             return jsonify({"error": reason}), 503
 
@@ -755,6 +773,17 @@ def create_app(config: Config) -> Flask:
                 return jsonify({"error": f"{asset_id}: {exc}"}), 400
             items.append((asset, path, media_type))
         conn.close()
+
+        sensitive = bool(payload.get("sensitive"))
+        if channel == "x":
+            problem = x_module.check_media_set([media_type for _a, _p, media_type in items])
+            if problem:
+                return jsonify({"error": problem}), 400
+            ratings = [a.get("content_rating") if a.get("content_rating_confirmed") else None for a, _p, _t in items]
+            if "explicit" in ratings:
+                return jsonify({"error": "区分がexplicit(成人向け)の作品は、Xには投稿しません"}), 400
+            if not sensitive and any(r != "sfw" for r in ratings):
+                return jsonify({"error": "sfwと承認されていない作品(suggestive・未承認)は、センシティブ指定をつけて投稿してください"}), 400
         if posting_now & seen:
             return jsonify({"error": "投稿の処理中の作品が含まれています。終わってからやり直してください"}), 409
         posting_now.update(seen)
@@ -765,6 +794,11 @@ def create_app(config: Config) -> Flask:
         def work():
             work_conn = get_conn()
             try:
+                if channel == "x":
+                    return run_x_post_now(
+                        config, work_conn, client, items, text,
+                        sensitive=sensitive, made_with_ai=bool(payload.get("made_with_ai", True)),
+                    )
                 return run_fanvue_post_now(
                     config, work_conn, client, handle, url_template, items, text, audience, price
                 )
@@ -1170,6 +1204,11 @@ def create_app(config: Config) -> Flask:
         token_store = FanvueTokenStore(_fanvue_token_store_path(config))
         fanvue_connected = token_store.load() is not None
         fanvue_needs_reconnect = token_store.needs_reconnect()
+        from posting.x_oauth import XTokenStore
+
+        x_store = XTokenStore(config.paths.state_dir / "x_oauth_tokens.json")
+        x_connected = x_store.load() is not None
+        x_needs_reconnect = x_store.needs_reconnect()
 
         return render_template(
             "settings.html",
@@ -1186,6 +1225,11 @@ def create_app(config: Config) -> Flask:
             saved=request.args.get("saved") == "1",
             fanvue_connected=fanvue_connected,
             fanvue_needs_reconnect=fanvue_needs_reconnect,
+            x_connected=x_connected,
+            x_needs_reconnect=x_needs_reconnect,
+            x_redirect_uri=x_redirect_uri(),
+            x_error=request.args.get("x_error"),
+            x_just_connected=request.args.get("x_connected") == "1",
             fanvue_just_connected=request.args.get("fanvue_connected") == "1",
             fanvue_redirect_uri=fanvue_redirect_uri(),
             fanvue_error=request.args.get("fanvue_error"),
@@ -1413,6 +1457,73 @@ def create_app(config: Config) -> Flask:
 
         fanvue_oauth.FanvueTokenStore(_fanvue_token_store_path(config)).save(tokens)
         return redirect(url_for("settings_page", fanvue_connected="1"))
+
+    def x_redirect_uri() -> str:
+        """XのOAuthアプリ(ユーザー認証設定)に登録するコールバックURI。画面を開いたアドレスによらず固定する。"""
+        configured = (os.environ.get("X_OAUTH_REDIRECT_URI") or "").strip()
+        if configured:
+            return configured
+        host = config.web.host
+        if host in ("0.0.0.0", "", "::"):
+            host = "127.0.0.1"
+        return f"http://{host}:{config.web.port}/settings/x/oauth/callback"
+
+    @app.route("/settings/x/oauth/start")
+    def x_oauth_start():
+        """X連携を開始する(OAuth 2.0 認可コード+PKCE)。Xの認可ページへリダイレクトする。"""
+        from posting import x_oauth
+
+        client_id = os.environ.get("X_OAUTH_CLIENT_ID")
+        if not client_id:
+            return redirect(url_for("settings_page", x_error="X_OAUTH_CLIENT_IDが未設定です（先に保存してください）") + "#sec-x")
+        redirect_uri = x_redirect_uri()
+        pkce = x_oauth.generate_pkce_pair()
+        state = x_oauth.generate_state()
+        conn = get_conn()
+        db.set_setting(conn, "_x_oauth_pending_state", state)
+        db.set_setting(conn, "_x_oauth_pending_verifier", pkce.verifier)
+        db.set_setting(conn, "_x_oauth_pending_redirect_uri", redirect_uri)
+        conn.close()
+        return redirect(x_oauth.build_authorization_url(
+            client_id=client_id, redirect_uri=redirect_uri, state=state, code_challenge=pkce.challenge,
+        ))
+
+    @app.route("/settings/x/oauth/callback")
+    def x_oauth_callback():
+        """Xからの認可コードを受け取り、アクセストークン・更新用トークンと交換する。"""
+        from posting import x_oauth
+
+        if request.args.get("error"):
+            return redirect(url_for("settings_page", x_error=request.args.get("error_description") or request.args["error"]) + "#sec-x")
+        code, state = request.args.get("code"), request.args.get("state")
+        conn = get_conn()
+        pending_state = db.get_setting(conn, "_x_oauth_pending_state")
+        verifier = db.get_setting(conn, "_x_oauth_pending_verifier")
+        pending_redirect_uri = db.get_setting(conn, "_x_oauth_pending_redirect_uri")
+        for key in ("_x_oauth_pending_state", "_x_oauth_pending_verifier", "_x_oauth_pending_redirect_uri"):
+            db.delete_setting(conn, key)
+        conn.close()
+        if not code or not state or not pending_state or state != pending_state:
+            return redirect(url_for("settings_page", x_error="連携状態が確認できませんでした。もう一度お試しください") + "#sec-x")
+        try:
+            tokens = x_oauth.exchange_code_for_tokens(
+                client_id=os.environ.get("X_OAUTH_CLIENT_ID", ""),
+                client_secret=os.environ.get("X_OAUTH_CLIENT_SECRET", ""),
+                redirect_uri=pending_redirect_uri,
+                code=code,
+                code_verifier=verifier,
+            )
+        except x_oauth.XOAuthError as exc:
+            return redirect(url_for("settings_page", x_error=str(exc)) + "#sec-x")
+        x_oauth.XTokenStore(config.paths.state_dir / "x_oauth_tokens.json").save(tokens)
+        return redirect(url_for("settings_page", x_connected="1") + "#sec-x")
+
+    @app.route("/settings/x/disconnect", methods=["POST"])
+    def x_oauth_disconnect():
+        from posting import x_oauth
+
+        x_oauth.XTokenStore(config.paths.state_dir / "x_oauth_tokens.json").clear()
+        return redirect(url_for("settings_page") + "#sec-x")
 
     @app.route("/settings/fanvue/disconnect", methods=["POST"])
     def fanvue_oauth_disconnect():

@@ -255,6 +255,10 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現�
 - 「今すぐ投稿」は、詳細画面（その作品）・一覧（複数選択→1つの投稿にまとめる）から、作品ごとにバージョン（元のファイル・透かし入り・編集した動画）を選んで、いますぐ投稿します。公開範囲（`subscribers`／`followers-and-subscribers`）・価格・投稿文を指定でき、処理は裏で行って結果を通知に残します。Xは未対応です。
 - 作品を指定した投稿は、コマンドでもできます: `reelmilly run drop --asset-id <作品ID>`。
 
+### Xへの投稿
+
+設定の「X」タブで、OAuth 2.0（認可コード+PKCE、機密クライアント）で連携します（`X_OAUTH_CLIENT_ID`/`X_OAUTH_CLIENT_SECRET`、コールバックURIは画面に表示。スコープは`tweet.read tweet.write users.read media.write offline.access`）。投稿は「今すぐ投稿」から（画像4枚まで、または動画1本）。**成人向けは投稿しません**: 区分がexplicitの作品は拒否し、suggestive・未承認の作品は、メディアのセンシティブ指定（`sensitive_media_warning: adult_content`）をつけたときだけ投稿できます。`made_with_ai`（AI生成の申告）もつけられます。X APIは従量課金です。
+
 ### 通知・履歴と重複の検出
 
 - 画面右上のベルに、処理の完了通知（AI処理・透かし・投稿・ストレージ・重複）が届きます。未読があると点滅し、クリックで最新10件、設定の「通知・ログ」タブで全履歴を見られます（`notifications`テーブル）。

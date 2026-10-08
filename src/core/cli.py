@@ -47,6 +47,21 @@ def _try_create_fanvue_client(config: Config):
     return FanvueClient(token_provider, base_url=base_url, api_version=api_version), None
 
 
+def _try_create_x_client(config: Config):
+    """X連携済み(OAuth 2.0)の場合のみXClientを返す。未連携なら`(None, 理由)`。"""
+    from posting.x import XClient
+    from posting.x_oauth import XTokenStore
+
+    client_id = os.environ.get("X_OAUTH_CLIENT_ID")
+    client_secret = os.environ.get("X_OAUTH_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return None, "X_OAUTH_CLIENT_ID/X_OAUTH_CLIENT_SECRETが未設定です（設定画面の「X」タブで保存してください）"
+    store = XTokenStore(config.paths.state_dir / "x_oauth_tokens.json")
+    if store.load() is None:
+        return None, "Xと未連携です（設定画面の「X」タブから連携してください）"
+    return XClient(lambda: store.get_access_token(client_id, client_secret)), None
+
+
 def cmd_doctor(config: Config) -> int:
     ok = True
     print(f"[doctor] timezone: {config.timezone}")

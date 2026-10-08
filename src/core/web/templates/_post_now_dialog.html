@@ -7,7 +7,7 @@
     <fieldset class="pn-channels">
       <legend>投稿先</legend>
       <label><input type="radio" name="pn-channel" value="fanvue" checked> Fanvue</label>
-      <label class="pn-disabled" data-tip="Xの投稿APIの審査待ちのため、まだ使えません"><input type="radio" name="pn-channel" value="x" disabled> X（未対応）</label>
+      <label id="pn-x-label" data-tip="設定の「X」タブで連携すると、使えます"><input type="radio" name="pn-channel" value="x" disabled> X<span class="hint" id="pn-x-note"> （未連携）</span></label>
     </fieldset>
 
     <div class="pn-items" id="pn-items" aria-live="polite"></div>
@@ -25,7 +25,12 @@
       </div>
       <button type="button" class="btn-ghost-inline pn-undo" id="pn-undo" hidden>生成前の文に戻す</button>
     </div>
-    <div class="pn-row">
+    <div class="pn-xonly" id="pn-xonly" hidden>
+      <label class="checkbox-label"><input type="checkbox" id="pn-sensitive"> センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。sfwと承認されていない作品(suggestive・未承認)は、必ずつけます。explicitな作品は、Xには投稿できません。") }}</label>
+      <label class="checkbox-label"><input type="checkbox" id="pn-ai" checked> AI生成のメディアを含む、と表示する{{ info("Xの「AI生成」の申告(made_with_ai)を、投稿につけます。") }}</label>
+      <p class="hint" id="pn-count">Xの文字数: 0 / 280（全角は2文字）</p>
+    </div>
+    <div class="pn-row" id="pn-fanvueonly">
       <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
         <select id="pn-audience">
           <option value="subscribers">購読者のみ</option>

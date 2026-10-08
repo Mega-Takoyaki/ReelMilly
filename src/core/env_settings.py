@@ -19,6 +19,9 @@ CONNECTION_FIELDS = [
     ("FANVUE_POST_URL_TEMPLATE", "Fanvue投稿URLテンプレート", False),
     ("FANVUE_API_BASE_URL", "Fanvue APIベースURL（既定のままで通常は変更不要）", False),
     ("FANVUE_API_VERSION", "Fanvue APIバージョン（既定のままで通常は変更不要）", False),
+    ("X_OAUTH_CLIENT_ID", "X OAuth 2.0のクライアントID", False),
+    ("X_OAUTH_CLIENT_SECRET", "X OAuth 2.0のクライアントシークレット", True),
+    ("X_OAUTH_REDIRECT_URI", "X OAuthリダイレクトURI（既定のままで通常は変更不要）", False),
     ("TELEGRAM_BOT_TOKEN", "Telegram Botトークン（Telegram連携は未実装、値の保存のみ可能）", True),
     ("TELEGRAM_ALLOWED_CHAT_ID", "Telegram許可チャットID", False),
     ("ANTHROPIC_API_KEY", "Anthropic(Claude) APIキー", True),
@@ -39,6 +42,20 @@ CONNECTION_HELP = {
         "Fanvueでログインを許可したあと、このアプリへ戻ってくるアドレスです。"
         "Fanvue側のOAuthアプリに登録した値と完全に同じである必要があります。"
         "空欄なら、設定のhost/portから決まる http://127.0.0.1:8420/settings/fanvue/oauth/callback が使われます(「Fanvue」タブに、いまの値を表示しています)。通常は変更不要です。"
+    ),
+    "X_OAUTH_CLIENT_ID": (
+        "X開発者ポータルのアプリの「Keys & Tokens」にある、OAuth 2.0の「クライアントID」です。"
+        "（OAuth 1.0のコンシューマーキーや、ベアラートークンではありません）"
+    ),
+    "X_OAUTH_CLIENT_SECRET": (
+        "同じ画面の、OAuth 2.0の「クライアントシークレット」です。アプリのパスワードにあたるので、他人に見せないでください。"
+        "画面には表示されず、空欄のまま保存すると今の値は変わりません。"
+    ),
+    "X_OAUTH_REDIRECT_URI": (
+        "Xでログインを許可したあと、このアプリへ戻ってくるアドレスです。"
+        "Xのアプリの「ユーザー認証設定」に登録したコールバックURIと、完全に同じである必要があります。"
+        "空欄なら、設定のhost/portから決まる http://127.0.0.1:8420/settings/x/oauth/callback が使われます"
+        "（「X」タブに、いまの値を表示しています）。通常は変更不要です。"
     ),
     "FANVUE_HANDLE": (
         "Fanvueのプロフィールのアドレス https://www.fanvue.com/○○ の「○○」の部分（アカウント名）です。"

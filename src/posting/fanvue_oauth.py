@@ -201,9 +201,7 @@ class FanvueTokenStore:
         """
         tokens = self.load()
         if tokens is None:
-            raise FanvueOAuthError(
-                "Fanvueと連携していません。本体UIの設定画面から連携してください。"
-            )
+            raise FanvueOAuthError(self._not_connected_message())
         if not tokens.is_expired():
             return tokens.access_token
         with self._refresh_lock():
@@ -215,7 +213,7 @@ class FanvueTokenStore:
             if not tokens.refresh_token:
                 raise FanvueTokenExpired(self.RECONNECT_MESSAGE + "（更新用トークンがありません）")
             try:
-                tokens = refresh_tokens(client_id, client_secret, tokens.refresh_token)
+                tokens = self._refresh(client_id, client_secret, tokens.refresh_token)
             except FanvueOAuthError as exc:
                 if "invalid_grant" in str(exc):
                     raise FanvueTokenExpired(self.RECONNECT_MESSAGE) from exc
@@ -224,6 +222,13 @@ class FanvueTokenStore:
         return tokens.access_token
 
     RECONNECT_MESSAGE = "Fanvueの連携が切れています。設定の「Fanvue」タブで、連携し直してください"
+
+    # 連携先ごとに違う部分(Xは、`x_oauth.XTokenStore`が引き継いで、置き換える)
+    def _refresh(self, client_id: str, client_secret: str, refresh_token: str) -> TokenSet:
+        return refresh_tokens(client_id, client_secret, refresh_token)
+
+    def _not_connected_message(self) -> str:
+        return "Fanvueと連携していません。本体UIの設定画面から連携してください。"
 
     def needs_reconnect(self) -> bool:
         """連携はしているが、期限が切れていて、更新もできない(連携し直しが必要)状態か。"""

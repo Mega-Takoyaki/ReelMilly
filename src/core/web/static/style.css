@@ -1786,3 +1786,9 @@ dialog.post-now-dialog { width: min(94vw, 40rem); max-height: 92vh; overflow: au
 .ps-day input:checked + span { background: color-mix(in srgb, var(--accent) 30%, var(--surface-alt)); border-color: var(--accent); color: var(--fg); font-weight: 600; }
 .ps-day input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ps-next { flex-basis: 100%; margin: 0; }
+
+/* X連携 / 投稿ダイアログのX用の欄 -------------------------------------------------*/
+.x-steps { padding-left: 1.2rem; margin: 0.3rem 0 0.8rem; }
+.x-steps li { margin-bottom: 0.3rem; }
+.pn-xonly { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.6rem; }
+.pn-xonly[hidden], .pn-row[hidden] { display: none; }
