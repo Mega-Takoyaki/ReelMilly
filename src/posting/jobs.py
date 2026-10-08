@@ -284,9 +284,11 @@ def run_fanvue_post_now(
     fanvue_url = build_post_url(post_url_template, fanvue_handle, media_uuids[0])
     for (asset, _path, _type), media_uuid in zip(items, media_uuids):
         db.set_post(conn, asset["id"], FANVUE_CHANNEL, "posted", url=fanvue_url, external_id=media_uuid)
+        # 「今すぐ投稿」は人の操作なので、AI処理中(analyzing)や承認待ちの作品でも投稿でき、投稿した事実をもって、
+        # 準備状態をreadyにする。区分(content_rating)の承認は変えない(自動投稿は、承認済みの作品だけが対象のまま)
         db.update_asset(
             conn, asset["id"], fanvue_url=fanvue_url, fanvue_uuid=media_uuid, fanvue_text=text,
-            audience=audience, price_cents=price_cents, updated_at=_now(),
+            audience=audience, price_cents=price_cents, status="ready", updated_at=_now(),
         )
         db.add_tag_to_asset(conn, asset["id"], FANVUE_POSTED_TAG)
     label = FANVUE_AUDIENCES.get(audience, audience)

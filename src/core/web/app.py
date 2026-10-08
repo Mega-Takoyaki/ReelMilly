@@ -669,6 +669,7 @@ def create_app(config: Config) -> Flask:
             "audience": asset.get("audience") if asset.get("audience") in FANVUE_AUDIENCES else "subscribers",
             "price_cents": asset.get("price_cents"),
             "fanvue_status": fanvue["status"] if fanvue else None,
+            "status": asset["status"],
             "versions": versions,
             "default": versions_module.default_version(versions),
             "trashed": bool(asset.get("deleted_at")),

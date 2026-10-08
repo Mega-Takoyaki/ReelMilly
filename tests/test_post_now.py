@@ -159,3 +159,26 @@ def test_versions_api_and_ui_hooks(env):
     detail = client.get("/assets/a1").get_data(as_text=True)
     assert 'id="post-now-open"' in detail and 'id="post-now-dialog"' in detail
     assert 'value="x" disabled' in detail  # Xは、選択肢だけ見せて、使えない
+
+
+def test_post_now_works_for_any_status_and_marks_the_asset_ready(env):
+    """人の操作なので、analyzing等の作品でも投稿でき、成功した事実をもって、readyにする(区分の承認は変えない)。"""
+    config, conn, client = env
+    _insert(conn, config.paths.ready, "a1")  # statusは、analyzing
+    assert db.get_asset(conn, "a1")["status"] == "analyzing"
+    assert client.get("/api/assets/a1/versions").get_json()["status"] == "analyzing"
+    fanvue = fake_client(("m1",))
+
+    with patch("core.cli._try_create_fanvue_client", return_value=(fanvue, None)):
+        res = client.post("/api/post-now", json={"items": [{"asset_id": "a1", "version": "original"}], "text": "t"})
+
+    assert res.status_code == 202 and res.get_json()["ok"]
+    asset = db.get_asset(conn, "a1")
+    assert asset["status"] == "ready" and not asset["content_rating_confirmed"]  # 準備状態だけ。区分の承認は、そのまま
+    # 失敗したときは、状態を変えない
+    _insert(conn, config.paths.ready, "a2")
+    bad = fake_client(("m2",))
+    bad.create_post.side_effect = RuntimeError("boom")
+    with patch("core.cli._try_create_fanvue_client", return_value=(bad, None)):
+        client.post("/api/post-now", json={"items": [{"asset_id": "a2", "version": "original"}]})
+    assert db.get_asset(conn, "a2")["status"] == "analyzing"

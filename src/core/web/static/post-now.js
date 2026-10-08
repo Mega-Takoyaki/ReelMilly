@@ -34,6 +34,7 @@
     notes.push(a.rating ? `区分: ${a.rating}（承認済み）` : "区分: 未承認");
     if (a.fanvue_status === "posted") notes.push("Fanvueに投稿済み");
     if (a.fanvue_status === "failed") notes.push("Fanvueへの前回の投稿は失敗");
+    if (a.status && a.status !== "ready") notes.push(`状態: ${a.status}（投稿すると、readyにします）`);
     const select = el("select", { class: "pn-version", "aria-label": `${a.name}の投稿するバージョン` });
     a.versions.forEach((v) => select.append(el("option", { value: v.key, textContent: v.label, selected: v.key === a.default })));
     const warn = !a.rating || a.fanvue_status === "posted";
