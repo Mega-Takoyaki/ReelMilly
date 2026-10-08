@@ -61,6 +61,10 @@
     $("pn-fanvueonly").hidden = isX;
     $("pn-xonly").hidden = !isX;
     const label = isX ? "X" : "Fanvue";
+    // この作品を、すでに予約している場合は、知らせる(二重の予約を避ける)
+    const reserved = assets.flatMap((a) => (a.scheduled || []).filter((s) => s.channel === channel).map((s) => `${a.name} → ${s.run_at_label}`));
+    $("pn-scheduled-note").hidden = reserved.length === 0;
+    $("pn-scheduled-note").textContent = reserved.length ? `${label}へ、すでに予約されています: ${reserved.join(" ／ ")}` : "";
     itemsBox.querySelectorAll(".pn-item").forEach((r) => {
       const a = assets.find((x) => x.asset_id === r.dataset.assetId);
       const notes = [a.rating ? `区分: ${a.rating}（承認済み）` : "区分: 未承認"];
@@ -122,11 +126,32 @@
     $("pn-ai").checked = true;
     beforeGenerate = null;
     $("pn-undo").hidden = true;
+    dialog.querySelector('input[name="pn-when"][value="now"]').checked = true;
+    applyWhen();
     applyChannel();
     if (!dialog.open) dialog.showModal();
   };
 
   $("pn-cancel").addEventListener("click", () => dialog.close());
+
+  // 投稿のタイミング(今すぐ/予約)。予約を選ぶと、日時の欄を出し、ボタンを「予約する」にする
+  const isLater = () => (dialog.querySelector('input[name="pn-when"]:checked') || {}).value === "later";
+  function localInputValue(date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+  function applyWhen() {
+    const later = isLater();
+    $("pn-run-at").hidden = !later;
+    $("pn-submit").textContent = later ? "予約する" : "投稿する";
+    if (later && !$("pn-run-at").value) {
+      const soon = new Date(Date.now() + 60 * 60 * 1000);   // 既定: 1時間後(5分単位)
+      soon.setMinutes(Math.ceil(soon.getMinutes() / 5) * 5, 0, 0);
+      $("pn-run-at").value = localInputValue(soon);
+    }
+    if (later) $("pn-run-at").min = localInputValue(new Date());
+  }
+  dialog.querySelectorAll('input[name="pn-when"]').forEach((r) => r.addEventListener("change", applyWhen));
   dialog.querySelectorAll('input[name="pn-channel"]').forEach((r) => r.addEventListener("change", applyChannel));
   $("pn-text").addEventListener("input", applyChannel);
 
@@ -191,14 +216,26 @@
         (already ? `\n※ ${already}件は、Fanvueに投稿済みです（二重の投稿になります）。` : "") +
         "\nよろしいですか？";
     }
+    let url = "/api/post-now";
+    let doneMessage = "投稿を開始しました。結果は、右上のベルの通知に出ます";
+    if (isLater()) {
+      const value = $("pn-run-at").value;
+      if (!value || Number.isNaN(new Date(value).getTime())) { showError("予約する日時を入れてください"); return; }
+      const when = new Date(value);
+      if (when.getTime() <= Date.now()) { showError("予約の日時は、これから先の日時にしてください"); return; }
+      body.run_at = when.toISOString();
+      url = "/api/scheduled-posts";
+      message = message.replace("に、1つの投稿として投稿します。公開されます。", `に、${when.getMonth() + 1}/${when.getDate()} ${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")} に、1つの投稿として予約します。時間になると、自動で公開されます（reelmilly watch が動いている間）。`);
+      doneMessage = "予約しました。設定の「投稿スケジュール」タブで、確認・取り消しができます";
+    }
     if (!(await window.confirmDialog(message))) return;
     $("pn-submit").disabled = true;
     try {
-      const res = await fetch("/api/post-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `投稿できませんでした (${res.status})`);
       dialog.close();
-      window.showToast("投稿を開始しました。結果は、右上のベルの通知に出ます", "success");
+      window.showToast(doneMessage, "success");
     } catch (err) {
       showError(err.message);
       $("pn-submit").disabled = false;

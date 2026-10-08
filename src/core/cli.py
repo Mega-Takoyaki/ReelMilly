@@ -398,6 +398,7 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
     print(f"[watch] {interval_seconds}秒間隔でanalyze/run-dueを実行します（Ctrl+Cで終了）")
     worker = AnalysisWorker(config, persistent=True)
     _start_edit_thread(config)
+    _start_scheduled_post_thread(config)
     try:
         while True:
             conn = get_connection(config.paths.db_path)
@@ -432,6 +433,33 @@ def cmd_migrate_filenames(config: Config) -> int:
     for message in result.skipped:
         print(f"[migrate-filenames] スキップ: {message}")
     return 0
+
+
+def _start_scheduled_post_thread(config: Config) -> None:
+    """予約投稿を、時刻が来たら実行するスレッド(数秒おきに調べる)。投稿は時間がかかるため、AI処理とは別のスレッドで動かす。"""
+    import threading
+
+    from posting import scheduled
+
+    def loop() -> None:
+        conn = get_connection(config.paths.db_path)
+        try:
+            init_db(conn)
+            scheduled.mark_interrupted(conn)  # 前回、実行の途中で止まった分は、再実行せずに、失敗として残す
+        finally:
+            conn.close()
+        while True:
+            try:
+                conn = get_connection(config.paths.db_path)
+                try:
+                    scheduled.run_due(conn, config, log=print)
+                finally:
+                    conn.close()
+            except Exception as exc:  # noqa: BLE001  スレッドが止まらないように、続ける
+                print(f"[scheduled] 予期しないエラー: {exc}")
+            time.sleep(10)
+
+    threading.Thread(target=loop, name="scheduled-post-runner", daemon=True).start()
 
 
 def _start_edit_thread(config: Config) -> None:

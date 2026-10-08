@@ -1792,3 +1792,13 @@ dialog.post-now-dialog { width: min(94vw, 40rem); max-height: 92vh; overflow: au
 .x-steps li { margin-bottom: 0.3rem; }
 .pn-xonly { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.6rem; }
 .pn-xonly[hidden], .pn-row[hidden] { display: none; }
+
+/* 予約投稿 -----------------------------------------------------------------------*/
+.pn-when { align-items: center; flex-wrap: wrap; margin-top: 0.4rem; }
+.pn-when input[type="datetime-local"] { width: auto; }
+.sp-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+.sp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-alt); }
+.sp-main { flex: 1 1 14rem; min-width: 0; }
+.sp-done, .sp-cancelled { opacity: 0.65; }
+.sp-error { color: var(--danger, #e5484d); }
+.sp-badge-failed { background: color-mix(in srgb, var(--danger, #e5484d) 30%, var(--surface-alt)); }

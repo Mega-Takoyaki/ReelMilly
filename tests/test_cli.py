@@ -257,6 +257,7 @@ def test_run_due_skips_unsupported_job_name(tmp_path, capsys, monkeypatch):
 def _no_edit_thread(monkeypatch):
     """`watch`の動画編集用スレッドは、ここでは動かさない(巡回のテストに、余計なsleepが混ざらないように)。"""
     monkeypatch.setattr("core.cli._start_edit_thread", lambda config: None)
+    monkeypatch.setattr("core.cli._start_scheduled_post_thread", lambda config: None)
 
 
 def test_watch_loops_run_due_until_interrupted(tmp_path, monkeypatch):

@@ -648,6 +648,14 @@ def create_app(config: Config) -> Flask:
 
     posting_now: set[str] = set()  # 投稿の処理中の作品(二重に投稿しないため)
 
+    def _scheduled_for(asset_id: str) -> list[dict]:
+        from posting import scheduled
+
+        conn = get_conn()
+        rows = scheduled.pending_for_asset(conn, asset_id)
+        conn.close()
+        return [{"id": r["id"], "channel": r["channel"], "run_at_label": _scheduled_view(r)["run_at_label"]} for r in rows]
+
     @app.route("/api/assets/<asset_id>/versions")
     def api_asset_versions(asset_id):
         """投稿に使えるバージョン(元のファイル・透かし入り・編集した動画)と、投稿ダイアログに出す作品の情報。"""
@@ -673,6 +681,7 @@ def create_app(config: Config) -> Flask:
             "fanvue_status": fanvue["status"] if fanvue else None,
             "x_status": x_post["status"] if x_post else None,
             "status": asset["status"],
+            "scheduled": _scheduled_for(asset_id),
             "versions": versions,
             "default": versions_module.default_version(versions),
             "trashed": bool(asset.get("deleted_at")),
@@ -716,99 +725,119 @@ def create_app(config: Config) -> Flask:
     @app.route("/api/post-now", methods=["POST"])
     def api_post_now():
         """作品とバージョンを指定して、いますぐ投稿する(Fanvue・X)。複数の作品は、1つの投稿にまとめる。処理は非同期で、結果は通知に出る。"""
-        from posting.jobs import (
-            FANVUE_AUDIENCES, MAX_POST_NOW_ITEMS, MIN_PRICE_CENTS, run_fanvue_post_now, run_x_post_now,
-        )
-        from posting import x as x_module
+        from posting import post_now
 
         payload = request.get_json(silent=True) or {}
-        channel = payload.get("channel", "fanvue")
-        if channel not in ("fanvue", "x"):
-            return jsonify({"error": "不明な投稿先です"}), 400
-        raw_items = payload.get("items") or []
-        if not raw_items:
-            return jsonify({"error": "投稿する作品を選んでください"}), 400
-        if len(raw_items) > MAX_POST_NOW_ITEMS:
-            return jsonify({"error": f"1つの投稿にまとめられるのは{MAX_POST_NOW_ITEMS}件までです"}), 400
-        text = str(payload.get("text") or "").strip()
-        audience, price = "subscribers", None
-        if channel == "fanvue":
-            audience = payload.get("audience") or "subscribers"
-            if audience not in FANVUE_AUDIENCES:
-                return jsonify({"error": "公開範囲が正しくありません"}), 400
-            price = payload.get("price_cents")
-            if price in ("", None):
-                price = None
-            else:
-                try:
-                    price = int(price)
-                except (TypeError, ValueError):
-                    return jsonify({"error": "価格が正しくありません"}), 400
-                if price < MIN_PRICE_CENTS:
-                    return jsonify({"error": f"有料投稿の価格は、{MIN_PRICE_CENTS / 100:g}ドル以上にしてください"}), 400
-        elif captions_module.x_weight(text) > captions_module.X_MAX_WEIGHT:
-            return jsonify({"error": f"Xの文字数の上限を超えています（全角は2文字として数え、{captions_module.X_MAX_WEIGHT}まで。いま{captions_module.x_weight(text)}）"}), 400
-
         require_storage()
-        from core.cli import _try_create_fanvue_client, _try_create_x_client
-
-        client, reason = (_try_create_x_client if channel == "x" else _try_create_fanvue_client)(config)
-        if client is None:
-            return jsonify({"error": reason}), 503
-
         conn = get_conn()
-        items = []
-        seen = set()
-        for raw in raw_items:
-            asset_id = str(raw.get("asset_id") or "")
-            asset = db.get_asset(conn, asset_id)
-            if asset is None or asset.get("deleted_at") or asset_id in seen:
-                conn.close()
-                return jsonify({"error": f"投稿できない作品が含まれています: {asset_id}"}), 400
-            seen.add(asset_id)
-            try:
-                path, media_type = versions_module.resolve(conn, asset, raw.get("version"))
-            except versions_module.VersionError as exc:
-                conn.close()
-                return jsonify({"error": f"{asset_id}: {exc}"}), 400
-            items.append((asset, path, media_type))
+        try:
+            prepared = post_now.prepare(config, conn, payload)
+        except post_now.PostRequestError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), exc.status
         conn.close()
 
-        sensitive = bool(payload.get("sensitive"))
-        if channel == "x":
-            problem = x_module.check_media_set([media_type for _a, _p, media_type in items])
-            if problem:
-                return jsonify({"error": problem}), 400
-            # 区分による制限は、設けない。センシティブ指定をつけるかは、人が決める
+        seen = set(prepared.asset_ids)
         if posting_now & seen:
             return jsonify({"error": "投稿の処理中の作品が含まれています。終わってからやり直してください"}), 409
         posting_now.update(seen)
 
-        handle = os.environ.get("FANVUE_HANDLE", "")
-        url_template = os.environ.get("FANVUE_POST_URL_TEMPLATE", "https://www.fanvue.com/{handle}")
-
         def work():
             work_conn = get_conn()
             try:
-                if channel == "x":
-                    return run_x_post_now(
-                        config, work_conn, client, items, text,
-                        sensitive=sensitive, made_with_ai=bool(payload.get("made_with_ai", True)),
-                    )
-                return run_fanvue_post_now(
-                    config, work_conn, client, handle, url_template, items, text, audience, price
-                )
+                return post_now.execute(config, work_conn, prepared)
             finally:
                 work_conn.close()
                 posting_now.difference_update(seen)
 
         if app.config.get("POST_NOW_SYNC"):  # テスト用: 完了まで待つ
             result = work()
-            return jsonify({"started": True, "count": len(items), "ok": result.ok, "error": result.error}), 202
+            return jsonify({"started": True, "count": len(prepared.items), "ok": result.ok, "error": result.error}), 202
         import threading
 
         threading.Thread(target=work, name="post-now", daemon=True).start()
-        return jsonify({"started": True, "count": len(items)}), 202
+        return jsonify({"started": True, "count": len(prepared.items)}), 202
+
+    # --- 予約投稿(時刻になったら、reelmilly watchが投稿する) ---
+
+    def _scheduled_view(row: dict) -> dict:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        local = datetime.fromisoformat(row["run_at"]).astimezone(ZoneInfo(config.timezone))
+        conn = get_conn()
+        names = []
+        for asset_id in row["asset_ids"]:
+            asset = db.get_asset(conn, asset_id)
+            names.append((asset.get("original_name") if asset else None) or asset_id)
+        conn.close()
+        payload = row["payload"]
+        detail = []
+        if row["channel"] == "fanvue":
+            from posting.jobs import FANVUE_AUDIENCES
+
+            detail.append(FANVUE_AUDIENCES.get(payload.get("audience"), ""))
+            if payload.get("price_cents"):
+                detail.append(f"{payload['price_cents'] / 100:.2f}ドル")
+        elif payload.get("sensitive"):
+            detail.append("センシティブ指定")
+        return {
+            "id": row["id"], "channel": row["channel"], "summary": row["summary"], "status": row["status"],
+            "error": row["error"], "run_at_local": local.strftime("%Y-%m-%d %H:%M"),
+            "run_at_label": f"{local.month}/{local.day}({'月火水木金土日'[local.weekday()]}) {local:%H:%M}",
+            "assets": names, "detail": "・".join(d for d in detail if d), "text": payload.get("text", ""),
+        }
+
+    @app.route("/api/scheduled-posts")
+    def api_scheduled_list():
+        from posting import scheduled
+
+        conn = get_conn()
+        rows = scheduled.list_posts(conn)
+        conn.close()
+        return jsonify({"posts": [_scheduled_view(r) for r in rows]})
+
+    @app.route("/api/scheduled-posts", methods=["POST"])
+    def api_scheduled_create():
+        """投稿を予約する(「今すぐ投稿」と同じ依頼に、`run_at`(日時)を足したもの)。予約するときにも、検査する。"""
+        from datetime import datetime, timezone
+
+        from posting import post_now, scheduled
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            run_at = scheduled.parse_run_at(payload.pop("run_at", None))
+        except ValueError:
+            return jsonify({"error": "予約の日時が正しくありません"}), 400
+        if run_at <= datetime.now(timezone.utc):
+            return jsonify({"error": "予約の日時は、これから先の日時にしてください"}), 400
+        conn = get_conn()
+        try:
+            post_now.prepare(config, conn, payload)  # いま投稿できない依頼(未連携・存在しない作品・Xの制限など)は、予約させない
+        except post_now.PostRequestError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), exc.status
+        scheduled_id = scheduled.create(conn, payload, run_at)
+        conn.close()
+        return jsonify({"id": scheduled_id}), 201
+
+    @app.route("/api/scheduled-posts/<int:scheduled_id>/cancel", methods=["POST"])
+    def api_scheduled_cancel(scheduled_id):
+        from posting import scheduled
+
+        conn = get_conn()
+        ok = scheduled.cancel(conn, scheduled_id)
+        conn.close()
+        return jsonify({"cancelled": ok}), (200 if ok else 409)
+
+    @app.route("/api/scheduled-posts/<int:scheduled_id>/run-now", methods=["POST"])
+    def api_scheduled_run_now(scheduled_id):
+        from posting import scheduled
+
+        conn = get_conn()
+        ok = scheduled.run_now(conn, scheduled_id)
+        conn.close()
+        return jsonify({"scheduled": ok}), (200 if ok else 409)
 
     # --- 動画の編集(切り出しなど)。結果は、サブ動画として作品に複数登録する ---
 

@@ -42,6 +42,13 @@
         <input type="number" id="pn-price" min="3" step="0.01" placeholder="空欄=無料" inputmode="decimal">
       </label>
     </div>
+    <fieldset class="pn-channels pn-when">
+      <legend>投稿のタイミング{{ info("今すぐ: すぐに投稿します。予約: 決めた日時に、ReelMilly(reelmilly watch)が自動で投稿します。FanvueやXの予約機能は使わないため、予約は、設定の「投稿スケジュール」タブで、確認・取り消しができます。") }}</legend>
+      <label><input type="radio" name="pn-when" value="now" checked> 今すぐ</label>
+      <label><input type="radio" name="pn-when" value="later"> 予約する</label>
+      <input type="datetime-local" id="pn-run-at" hidden aria-label="予約する日時">
+    </fieldset>
+    <p class="hint pn-warn" id="pn-scheduled-note" hidden></p>
     <p class="hint pn-error" id="pn-error" hidden></p>
     <div class="confirm-actions">
       <button type="button" class="btn-ghost" id="pn-cancel">キャンセル</button>

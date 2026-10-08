@@ -234,6 +234,11 @@
     {% if post_schedule_from_yaml %}
     <div class="banner banner-error">この画面の設定はまだ保存されていないため、いまは <code>config.yaml</code> の <code>cadence</code> に従って自動投稿します。ここで保存すると、この画面の設定が優先されます。</div>
     {% endif %}
+    <h3 style="margin-top: 0;">予約中の投稿{{ info("「今すぐ投稿」で「予約する」を選んだ投稿です。決めた日時に、reelmilly watch が自動で投稿します(FanvueやXの予約機能は使いません)。ここで、取り消したり、いますぐ実行したりできます。下の「自動投稿」(曜日と時刻で、古い作品から順に投稿)とは、別のものです。") }}</h3>
+    <div id="sp-list" class="sp-list" aria-live="polite"><p class="hint">読み込み中…</p></div>
+    <button type="button" class="btn-ghost-inline" id="sp-refresh">更新</button>
+
+    <h3 style="margin-top: 1.4rem;">自動投稿（曜日と時刻で、古い作品から順に）</h3>
     <label class="checkbox-label">
       <input type="checkbox" name="post_schedule_enabled" {% if settings.post_schedule.enabled %}checked{% endif %}>
       自動投稿を有効にする（オフの間は、下の予定があっても、何も自動投稿されません）
@@ -553,6 +558,53 @@
     syncScheduleRow(row[row.length - 1]);
     syncScheduleEmpty();
   });
+
+  // 予約中の投稿の一覧(取り消し・いますぐ実行)
+  const spList = document.getElementById("sp-list");
+  const SP_STATUS = { running: "実行中", done: "投稿済み", failed: "失敗", cancelled: "取り消し" };
+  async function loadScheduledPosts() {
+    try {
+      const res = await fetch("/api/scheduled-posts");
+      const data = await res.json();
+      if (!data.posts.length) { spList.innerHTML = '<p class="hint">予約中の投稿は、ありません。</p>'; return; }
+      spList.replaceChildren(...data.posts.map((p) => {
+        const row = document.createElement("div");
+        row.className = `sp-row sp-${p.status}`;
+        const main = document.createElement("div");
+        main.className = "sp-main";
+        const title = document.createElement("strong");
+        title.textContent = `${p.run_at_label}　${p.summary}${p.detail ? `（${p.detail}）` : ""}`;
+        const names = document.createElement("div");
+        names.className = "hint";
+        names.textContent = p.assets.join(" ／ ") + (p.text ? `　「${p.text.replace(/\s+/g, " ").slice(0, 40)}${p.text.length > 40 ? "…" : ""}」` : "");
+        main.append(title, names);
+        row.append(main);
+        if (p.status === "scheduled") {
+          const run = Object.assign(document.createElement("button"), { type: "button", className: "btn-ghost-inline", textContent: "いますぐ実行" });
+          const cancel = Object.assign(document.createElement("button"), { type: "button", className: "btn-ghost-inline", textContent: "取り消す" });
+          run.addEventListener("click", async () => { await fetch(`/api/scheduled-posts/${p.id}/run-now`, { method: "POST" }); window.showToast("まもなく実行します（数秒〜1分ほど）", "success"); loadScheduledPosts(); });
+          cancel.addEventListener("click", async () => {
+            if (!(await window.confirmDialog(`${p.run_at_label}の予約を取り消します。よろしいですか？`))) return;
+            await fetch(`/api/scheduled-posts/${p.id}/cancel`, { method: "POST" });
+            loadScheduledPosts();
+          });
+          row.append(run, cancel);
+        } else {
+          const badge = document.createElement("span");
+          badge.className = `badge sp-badge-${p.status}`;
+          badge.textContent = SP_STATUS[p.status] || p.status;
+          row.append(badge);
+          if (p.error) { const err = document.createElement("div"); err.className = "hint sp-error"; err.textContent = p.error; main.append(err); }
+        }
+        return row;
+      }));
+    } catch (e) {
+      spList.innerHTML = '<p class="hint">予約の一覧を読み込めませんでした。</p>';
+    }
+  }
+  document.getElementById("sp-refresh").addEventListener("click", loadScheduledPosts);
+  loadScheduledPosts();
+  setInterval(() => { if (!document.hidden && !document.getElementById("sec-post").hidden) loadScheduledPosts(); }, 20000);
 
   // 投稿スケジュール: 曜日のチェックを、保存用の隠し欄(カンマ区切り)に反映する。予定の追加・削除
   const psList = document.getElementById("ps-list");

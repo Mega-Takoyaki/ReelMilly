@@ -147,3 +147,18 @@ CREATE TABLE IF NOT EXISTS asset_edits (
 );
 CREATE INDEX IF NOT EXISTS idx_asset_edits_asset ON asset_edits(asset_id);
 CREATE INDEX IF NOT EXISTS idx_asset_edits_status ON asset_edits(status);
+
+-- 予約投稿(Fanvue・X)。時刻になったら、reelmilly watchが投稿する
+CREATE TABLE IF NOT EXISTS scheduled_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,       -- 'fanvue' | 'x'
+    payload TEXT NOT NULL,       -- 投稿の依頼(JSON): 作品・バージョン・投稿文・公開範囲など
+    summary TEXT NOT NULL,       -- 画面に出す説明(例: Fanvue 2件)
+    asset_ids TEXT NOT NULL,     -- 対象の作品ID(JSON)。作品ごとの予約の確認用
+    run_at TEXT NOT NULL,        -- 実行の予定(UTC)
+    status TEXT NOT NULL,        -- 'scheduled' | 'running' | 'done' | 'failed' | 'cancelled'
+    error TEXT,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_posts_status ON scheduled_posts(status, run_at);

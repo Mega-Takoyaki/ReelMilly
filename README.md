@@ -255,6 +255,10 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現�
 - 「今すぐ投稿」は、詳細画面（その作品）・一覧（複数選択→1つの投稿にまとめる）から、作品ごとにバージョン（元のファイル・透かし入り・編集した動画）を選んで、いますぐ投稿します。公開範囲（`subscribers`／`followers-and-subscribers`）・価格・投稿文を指定でき、処理は裏で行って結果を通知に残します。Xは未対応です。
 - 作品を指定した投稿は、コマンドでもできます: `reelmilly run drop --asset-id <作品ID>`。
 
+### 予約投稿
+
+「今すぐ投稿」のダイアログで「予約する」を選ぶと、日時を決めて予約できます（Fanvue・X）。先方の予約機能は使わず、予約の内容を`scheduled_posts`テーブルに保存して、時刻になったら`reelmilly watch`の予約実行用スレッド（10秒おきに確認）が、その時点の状態で、もう一度検査して投稿します。失敗しても再試行せず（二重投稿を避ける）、失敗として残して通知します。`watch`が止まっていた間に過ぎた予約は、再開後に遅れて実行します。確認・取り消し・いますぐ実行は、設定の「投稿スケジュール」タブで行います。
+
 ### Xへの投稿
 
 設定の「X」タブで、OAuth 2.0（認可コード+PKCE、機密クライアント）で連携します（`X_OAUTH_CLIENT_ID`/`X_OAUTH_CLIENT_SECRET`、コールバックURIは画面に表示。スコープは`tweet.read tweet.write users.read media.write offline.access`）。投稿は「今すぐ投稿」から（画像4枚まで、または動画1本）。センシティブ指定（`sensitive_media_warning: {adult_content: true}`）は人が決めます（sfwと承認されていない作品は、既定でオン。外せます）。区分による投稿の制限はありません。`made_with_ai`（AI生成の申告）もつけられます。X APIは従量課金です。
