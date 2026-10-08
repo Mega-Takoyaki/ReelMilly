@@ -2,13 +2,14 @@
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
 <script>
-  // 一覧の絞り込み・並び順・フォルダ/フラットの状態を、ブラウザを開いている間は覚えておく(詳細画面などから一覧へ戻っても、そのまま)。
-  // 条件なしの「/」を開いたとき、覚えている条件があれば、それで開き直す(「すべてクリア」を押すと、覚えている条件も空になる)
+  // 一覧の絞り込み・並び順・フォルダ/フラットの状態を、次回(ブラウザを閉じて開き直したあと)も覚えておく(詳細画面などから一覧へ戻っても、そのまま)。
+  // 条件なしの「/」を開いたとき、覚えている条件があれば、それで開き直す(「すべてクリア」を押すと、覚えている条件も空になる)。
+  // 覚えるのは、このブラウザ(端末)の中だけ
   (function () {
     try {
-      var saved = sessionStorage.getItem("reelmilly:listQuery");
+      var saved = localStorage.getItem("reelmilly:listQuery");
       if (!location.search && saved) { location.replace("/?" + saved); return; }
-      if (location.search) sessionStorage.setItem("reelmilly:listQuery", location.search.slice(1));
+      if (location.search) localStorage.setItem("reelmilly:listQuery", location.search.slice(1));
     } catch (e) { /* 保存できない環境では、これまでどおり(覚えない) */ }
   })();
 </script>
