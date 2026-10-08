@@ -292,6 +292,46 @@ class OpenAiGenerator:
         return (response.choices[0].message.content or "").strip()
 
 
+def quantize_linear_int8(model, min_params: int = 100_000) -> int:
+    """モデルの全結合層(nn.Linear)を、int8の動的量子化に置き換える。置き換えた数を返す。
+
+    重みを1バイトにするため、メモリが約1/4(4Bで約4.5GB)になり、bf16/fp16が極端に遅いCPU(AVX512-bf16の無いCPU)でも、
+    fp32より速く動く。メモリを増やさないよう、1層ずつ、fp32にして量子化し、元の層を捨てる。
+    埋め込み・出力層(lm_head)・小さな層は、そのまま(fp32)にする。
+    """
+    import torch
+    from torch import nn
+    from torch.ao.nn.quantized.dynamic import Linear as QuantizedLinear
+    from torch.ao.quantization import default_dynamic_qconfig
+
+    count = 0
+
+    def convert(module: nn.Module, path: str = "") -> None:
+        nonlocal count
+        for name, child in list(module.named_children()):
+            full = f"{path}.{name}" if path else name
+            if isinstance(child, nn.Linear) and child.weight.numel() >= min_params and "lm_head" not in full:
+                child = child.float()
+                child.qconfig = default_dynamic_qconfig
+                setattr(module, name, QuantizedLinear.from_float(child))
+                count += 1
+            elif len(list(child.children())) == 0:
+                child.float()  # 層でない部品(正規化・埋め込みなど)は、fp32にする
+            else:
+                convert(child, full)
+
+    convert(model)
+    # 直接持っているパラメータ・バッファ(子を持たない部品の外にあるもの)も、fp32にそろえる
+    for param in model.parameters():
+        if param.dtype in (torch.bfloat16, torch.float16):
+            param.data = param.data.float()
+    for buf_owner in model.modules():
+        for key, buf in list(buf_owner._buffers.items()):
+            if buf is not None and buf.dtype in (torch.bfloat16, torch.float16):
+                buf_owner._buffers[key] = buf.float()
+    return count
+
+
 class LocalVlmGenerator:
     """自前ホスト型VLM(Vision-Language Model)による画像内容説明・投稿文生成(ADR-0017)。
 
@@ -311,16 +351,29 @@ class LocalVlmGenerator:
     動作検証が必要(TODO.md参照)。
     """
 
-    def __init__(self, model_id: str = DEFAULT_LOCAL_VLM_MODEL):
+    def __init__(self, model_id: str = DEFAULT_LOCAL_VLM_MODEL, quantize: str | None = None):
+        """`quantize="int8"`で、重みをint8に圧縮して動かす(CPU向け。メモリが約1/4。大きなモデルを、この環境で動かすため)。"""
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
         self._torch = torch
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self._dtype = torch.float16 if self._device == "cuda" else torch.float32
+        if quantize == "int8" and self._device == "cpu":
+            self._processor = AutoProcessor.from_pretrained(model_id)
+            # 読み込みは、bf16(メモリが半分)で。1層ずつ、fp32にして量子化する(全体をfp32にしない)
+            model = AutoModelForImageTextToText.from_pretrained(model_id, dtype=torch.bfloat16)
+            quantize_linear_int8(model)
+            self._model = model
+            self._model.eval()
+            return
 
         self._processor = AutoProcessor.from_pretrained(model_id)
-        model = AutoModelForImageTextToText.from_pretrained(model_id)
+        # 読み込むときに、使う型(CPUは、float32)へ直接変換する。あとから変換すると、メモリが一時的に2倍近くになる
+        try:
+            model = AutoModelForImageTextToText.from_pretrained(model_id, dtype=self._dtype)
+        except TypeError:  # 古いtransformersは、引数名が違う
+            model = AutoModelForImageTextToText.from_pretrained(model_id, torch_dtype=self._dtype)
         self._model = model.to(device=self._device, dtype=self._dtype)
         self._model.eval()
 

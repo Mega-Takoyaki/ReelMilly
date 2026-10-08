@@ -170,3 +170,36 @@ def test_post_now_dialog_has_the_generate_button(env):
     html = client.get("/").get_data(as_text=True)
     assert 'id="pn-generate"' in html and 'id="pn-undo"' in html
     assert "/api/captions/generate" in client.get("/static/post-now.js").get_data(as_text=True)
+
+
+def test_quantize_linear_int8_replaces_big_linear_layers_and_keeps_outputs_close():
+    """CPUで大きなモデルを動かすための、int8の動的量子化。大きな全結合層だけを置き換え、出力はほぼ変わらない。"""
+    import torch
+    from torch import nn
+
+    from core.generation import quantize_linear_int8
+
+    torch.manual_seed(0)
+
+    class Tiny(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embed = nn.Embedding(50, 512)
+            self.block = nn.Sequential(nn.Linear(512, 1024), nn.GELU(), nn.Linear(1024, 512))
+            self.small = nn.Linear(4, 4)          # 小さな層は、そのまま
+            self.lm_head = nn.Linear(512, 50)     # 出力層は、そのまま
+
+        def forward(self, ids):
+            return self.lm_head(self.block(self.embed(ids)))
+
+    model = Tiny().eval()
+    ids = torch.randint(0, 50, (1, 6))
+    expected = model(ids)
+    model = model.to(torch.bfloat16)  # 読み込みは、bf16。量子化の関数が、1層ずつ、fp32にして量子化する
+    count = quantize_linear_int8(model, min_params=100_000)
+
+    assert count == 2 and type(model.block[0]).__name__ == "Linear" and "quantized" in type(model.block[0]).__module__
+    assert type(model.small) is nn.Linear and type(model.lm_head) is nn.Linear
+    assert all(p.dtype == torch.float32 for p in model.parameters())  # 量子化しない部品は、fp32にそろう(bf16のまま残らない)
+    got = model(ids)
+    assert torch.allclose(got, expected, atol=0.15, rtol=0.15)
