@@ -136,7 +136,7 @@
 
     {# ---- 区分の承認 ---- #}
     <div class="card">
-      <h2>区分の承認{{ info("AIの判定は一次判定の補助です。最終判断は必ず人が行ってください。" ~ (" 初期選択は、AIの自動判定(" ~ asset.nsfw_auto_rating ~ ")からの推定です(nsfw→explicit。suggestiveかどうかはAIでは判別できないため、人が選んでください)。" if (not asset.content_rating and suggested_rating) else "")) }}</h2>
+      <h2>区分の承認{{ info("AIの判定は一次判定の補助です。最終判断は必ず人が行ってください。迷ったときは重いほうを選びます。各区分の目安は、右上の使用法の「7. 区分の承認」を見てください。" ~ (" 初期選択は、AIの自動判定(" ~ asset.nsfw_auto_rating ~ ")からの推定です(nsfw→explicit。suggestiveかどうかはAIでは判別できないため、人が選んでください)。" if (not asset.content_rating and suggested_rating) else "")) }}</h2>
       <form method="post" action="{{ url_for('confirm_rating', asset_id=asset.id) }}" class="confirm-form">
         <select name="content_rating" required aria-label="区分">
           {% if not suggested_rating %}<option value="" selected disabled>選択してください</option>{% endif %}
