@@ -92,6 +92,56 @@ def set_auto_ingest(conn: sqlite3.Connection, enabled: bool) -> None:
     db.set_setting(conn, _KEY_AUTO_INGEST, "1" if enabled else "0")
 
 
+# --- 投稿スケジュール(自動投稿) ---------------------------------------------------
+# 画面の設定で決める。一度でも保存されていれば、config.yamlのcadenceより、こちらを優先する
+_KEY_POST_SCHEDULE = "post_schedule"
+DEFAULT_POST_SCHEDULE = {"enabled": False, "time": "21:00", "count": 1}
+MAX_POST_SCHEDULE_COUNT = 10
+
+
+def _valid_time(value) -> str | None:
+    import re
+
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", str(value or "").strip())
+    if not match or int(match.group(1)) > 23 or int(match.group(2)) > 59:
+        return None
+    return f"{int(match.group(1)):02d}:{match.group(2)}"
+
+
+def get_post_schedule(conn: sqlite3.Connection) -> dict | None:
+    """画面で設定された投稿スケジュール。一度も保存されていなければNone(その場合は、config.yamlのcadenceに従う)。"""
+    import json
+
+    stored = db.get_setting(conn, _KEY_POST_SCHEDULE)
+    if stored is None:
+        return None
+    try:
+        data = json.loads(stored)
+    except ValueError:
+        return dict(DEFAULT_POST_SCHEDULE)
+    return {
+        "enabled": bool(data.get("enabled")),
+        "time": _valid_time(data.get("time")) or DEFAULT_POST_SCHEDULE["time"],
+        "count": min(max(int(data.get("count") or 1), 1), MAX_POST_SCHEDULE_COUNT),
+    }
+
+
+def set_post_schedule(conn: sqlite3.Connection, enabled: bool, time: str | None, count) -> None:
+    """投稿スケジュールを保存する。時刻・件数が不正なときは、いまの値(無ければ既定値)のまま。"""
+    import json
+
+    current = get_post_schedule(conn) or dict(DEFAULT_POST_SCHEDULE)
+    try:
+        number = int(count)
+    except (TypeError, ValueError):
+        number = current["count"]
+    db.set_setting(conn, _KEY_POST_SCHEDULE, json.dumps({
+        "enabled": bool(enabled),
+        "time": _valid_time(time) or current["time"],
+        "count": min(max(number, 1), MAX_POST_SCHEDULE_COUNT),
+    }))
+
+
 def get_all_settings(conn: sqlite3.Connection) -> dict:
     return {
         "description_system_prompt": get_description_system_prompt(conn),
@@ -100,6 +150,7 @@ def get_all_settings(conn: sqlite3.Connection) -> dict:
         "generation_model": get_generation_model(conn),
         "caption_mode": get_caption_mode(conn),
         "auto_ingest": get_auto_ingest(conn),
+        "post_schedule": get_post_schedule(conn) or dict(DEFAULT_POST_SCHEDULE),
     }
 
 

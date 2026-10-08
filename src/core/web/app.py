@@ -952,6 +952,12 @@ def create_app(config: Config) -> Flask:
                 caption_mode=request.form.get("caption_mode"),
             )
             settings_module.set_auto_ingest(conn, bool(request.form.get("auto_ingest")))
+            settings_module.set_post_schedule(
+                conn,
+                bool(request.form.get("post_schedule_enabled")),
+                request.form.get("post_schedule_time"),
+                request.form.get("post_schedule_count"),
+            )
             settings_module.set_ai_schedules(
                 conn,
                 [
@@ -995,6 +1001,8 @@ def create_app(config: Config) -> Flask:
         model_choices = settings_module.get_model_choices(conn)
         schedules = settings_module.get_ai_schedules(conn)
         tag_categories = settings_module.get_tag_categories(conn)
+        post_schedule_last_run = db.get_last_run_date(conn, "drop")
+        post_schedule_from_yaml = settings_module.get_post_schedule(conn) is None and bool(config.cadence)
         conn.close()
 
         from posting.fanvue_oauth import FanvueTokenStore
@@ -1006,6 +1014,8 @@ def create_app(config: Config) -> Flask:
             settings=current_settings,
             model_choices=model_choices,
             schedules=schedules,
+            post_schedule_last_run=post_schedule_last_run,
+            post_schedule_from_yaml=post_schedule_from_yaml,
             schedule_labels=settings_module.AI_KIND_LABELS,
             tag_categories=tag_categories,
             connections=connections,

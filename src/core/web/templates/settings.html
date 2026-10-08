@@ -50,6 +50,7 @@
     <button type="button" role="tab" data-tab="sec-fanvue">Fanvue</button>
     <button type="button" role="tab" data-tab="sec-telegram">Telegram</button>
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
+    <button type="button" role="tab" data-tab="sec-post">投稿スケジュール</button>
     <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
     <button type="button" role="tab" data-tab="sec-log">通知・ログ</button>
     <button type="button" role="tab" data-tab="sec-storage">ストレージ</button>
@@ -148,6 +149,26 @@
       <label>Fanvue投稿文生成のシステムプロンプト{{ info("画像の説明文をもとに、Fanvueの投稿文を作るときにAIへ渡す指示文です。文体・長さ・絵文字の量などをここで調整できます。") }}
         <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
       </label>
+    </div>
+  </section>
+
+  <section class="card settings-tab" id="sec-post">
+    <h2 style="margin-top: 0;">投稿スケジュール（自動投稿）{{ info("オンにすると、reelmilly watch が動いている間、毎日決めた時刻になったら、承認済み・Fanvueが投稿予定・未投稿の作品を、古いものから順に、指定した件数だけFanvueへ自動投稿します。投稿文が未設定の作品は、設定の「生成AI」の投稿文の生成モードに従います（auto: AIが作った文章をそのまま公開／draft: 下書きだけ保存して、投稿しない）。") }}</h2>
+    {% if post_schedule_from_yaml %}
+    <div class="banner banner-error">この画面の設定はまだ保存されていないため、いまは <code>config.yaml</code> の <code>cadence</code> に従って自動投稿します。ここで保存すると、この画面の設定が優先されます。</div>
+    {% endif %}
+    <div class="settings-form">
+      <label class="checkbox-label">
+        <input type="checkbox" name="post_schedule_enabled" {% if settings.post_schedule.enabled %}checked{% endif %}>
+        自動投稿を有効にする（オフの間は、手動で投稿する以外、何も投稿されません）
+      </label>
+      <label>投稿する時刻{{ info("毎日、この時刻を過ぎたら、その日の分を1回だけ実行します（reelmilly watch が動いていることが前提です）。この時刻より後にオンにした場合は、保存後すぐ（次の巡回で）実行されます。") }}
+        <input type="time" name="post_schedule_time" value="{{ settings.post_schedule.time }}" required>
+      </label>
+      <label>1回に投稿する件数{{ info("1日1回の実行で、最大この件数を投稿します（1〜10）。途中で失敗したら、そこで止まります。") }}
+        <input type="number" name="post_schedule_count" min="1" max="10" value="{{ settings.post_schedule.count }}" required>
+      </label>
+      <p class="hint">最後に自動投稿を実行した日: {{ post_schedule_last_run or 'まだありません' }}</p>
     </div>
   </section>
 

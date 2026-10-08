@@ -443,3 +443,47 @@ def test_analyze_reports_no_pending_assets(tmp_path, capsys):
 
     assert exit_code == 0
     assert "処理待ちのAI処理はありません" in capsys.readouterr().out
+
+
+def test_run_due_follows_the_saved_post_schedule_over_config_yaml(tmp_path, capsys):
+    """画面で保存された投稿スケジュールが優先される。オフなら、config.yamlのcadenceがあっても投稿しない。"""
+    from core import db, settings
+
+    config = _load_with_cadence(tmp_path)  # config.yamlには、cadenceがある
+    cmd_init(config)
+    conn = db.get_connection(config.paths.db_path)
+    settings.set_post_schedule(conn, enabled=False, time="09:30", count=3)
+    capsys.readouterr()
+
+    with patch("core.cli._is_job_due", return_value=True), patch("core.cli.cmd_run_drop") as mocked:
+        assert cmd_run_due(config) == 0
+    assert "自動投稿はオフです" in capsys.readouterr().out
+    mocked.assert_not_called()
+
+    settings.set_post_schedule(conn, enabled=True, time="09:30", count=3)
+    with patch("core.cli._is_job_due", return_value=True) as due, patch("core.cli.cmd_run_drop") as mocked:
+        cmd_run_due(config)
+    mocked.assert_called_once_with(config, count=3, kind=None, rating=None)
+    assert due.call_args.args[1] == "09:30"  # 画面の時刻で判定する
+
+
+def test_post_schedule_settings_validation_and_page(tmp_path):
+    from core import db, settings
+    from core.web.app import create_app
+
+    config = _load(tmp_path)
+    cmd_init(config)
+    conn = db.get_connection(config.paths.db_path)
+    assert settings.get_post_schedule(conn) is None  # 一度も保存していなければ、config.yamlに従う
+    settings.set_post_schedule(conn, True, "25:99", "999")  # 不正な値は、既定値/範囲内に
+    assert settings.get_post_schedule(conn) == {"enabled": True, "time": "21:00", "count": 10}
+    settings.set_post_schedule(conn, False, "7:05", "x")
+    assert settings.get_post_schedule(conn) == {"enabled": False, "time": "07:05", "count": 10}
+
+    client = create_app(config).test_client()
+    page = client.get("/settings").get_data(as_text=True)
+    assert 'id="sec-post"' in page and 'name="post_schedule_time" value="07:05"' in page
+    client.post("/settings", data={"post_schedule_enabled": "on", "post_schedule_time": "20:15", "post_schedule_count": "2"})
+    assert settings.get_post_schedule(conn) == {"enabled": True, "time": "20:15", "count": 2}
+    client.post("/settings", data={"post_schedule_time": "20:15", "post_schedule_count": "2"})  # チェックを外して保存
+    assert settings.get_post_schedule(conn)["enabled"] is False

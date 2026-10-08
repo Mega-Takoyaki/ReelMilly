@@ -300,13 +300,27 @@ def cmd_run_due(config: Config) -> int:
 
     現状`drop`ジョブのみ対応。X投稿ジョブ実装時にここへ追加する。
     """
-    if not config.cadence:
+    # 画面の「投稿スケジュール」で保存された設定があれば、それに従う(オフなら何もしない)。無ければ、config.yamlのcadence
+    cadence = config.cadence
+    conn = get_connection(config.paths.db_path)
+    try:
+        init_db(conn)
+        schedule = settings.get_post_schedule(conn)
+    finally:
+        conn.close()
+    if schedule is not None:
+        if not schedule["enabled"]:
+            print("[run-due] 自動投稿はオフです（設定の「投稿スケジュール」でオンにできます）")
+            return 0
+        cadence = {"drop": {"time": schedule["time"], "count": schedule["count"]}}
+
+    if not cadence:
         print("[run-due] config.yamlにcadence設定がありません（何もしません）")
         return 0
 
     now = datetime.now(ZoneInfo(config.timezone))
     ran_any = False
-    for job_name, entry in config.cadence.items():
+    for job_name, entry in cadence.items():
         if job_name != "drop":
             print(f"[run-due] 未対応のジョブ名のためスキップします: {job_name}")
             continue
