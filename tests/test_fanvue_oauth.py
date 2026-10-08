@@ -1,3 +1,4 @@
+import base64
 import time
 from unittest.mock import MagicMock, patch
 
@@ -76,6 +77,9 @@ def test_exchange_code_for_tokens_posts_expected_params():
     assert kwargs["data"]["grant_type"] == "authorization_code"
     assert kwargs["data"]["code"] == "auth-code"
     assert kwargs["data"]["code_verifier"] == "verifier-1"
+    # クライアント認証は、client_secret_basic(Authorizationヘッダ)。シークレットを、リクエスト本文には入れない
+    assert kwargs["headers"]["Authorization"] == "Basic " + base64.b64encode(b"client-1:secret-1").decode()
+    assert "client_secret" not in kwargs["data"] and "client_id" not in kwargs["data"]
 
 
 def test_exchange_code_for_tokens_raises_on_error_response():
@@ -97,6 +101,8 @@ def test_refresh_tokens_posts_refresh_grant():
     _, kwargs = mocked_post.call_args
     assert kwargs["data"]["grant_type"] == "refresh_token"
     assert kwargs["data"]["refresh_token"] == "rt1"
+    assert kwargs["headers"]["Authorization"] == "Basic " + base64.b64encode(b"c:s").decode()
+    assert "client_secret" not in kwargs["data"]
 
 
 def test_refresh_tokens_keeps_old_refresh_token_when_not_returned():

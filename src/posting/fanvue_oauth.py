@@ -22,7 +22,7 @@ import secrets
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 
 import requests
 
@@ -97,6 +97,15 @@ def _token_set_from_response(payload: dict) -> TokenSet:
     )
 
 
+def _basic_auth_header(client_id: str, client_secret: str) -> dict[str, str]:
+    """client_secret_basic(HTTP Basic認証)のヘッダ。FanvueのOAuthアプリは、この方式を受け付ける(RFC 6749 2.3.1)。
+
+    IDとシークレットは、base64の前に、フォームのURLエンコードをする決まり。
+    """
+    raw = f"{quote_plus(client_id)}:{quote_plus(client_secret)}".encode()
+    return {"Authorization": "Basic " + base64.b64encode(raw).decode("ascii")}
+
+
 def exchange_code_for_tokens(
     client_id: str,
     client_secret: str,
@@ -107,12 +116,11 @@ def exchange_code_for_tokens(
 ) -> TokenSet:
     response = requests.post(
         token_url,
+        headers=_basic_auth_header(client_id, client_secret),
         data={
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "client_secret": client_secret,
             "code_verifier": code_verifier,
         },
     )
@@ -129,11 +137,10 @@ def refresh_tokens(
 ) -> TokenSet:
     response = requests.post(
         token_url,
+        headers=_basic_auth_header(client_id, client_secret),
         data={
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
-            "client_id": client_id,
-            "client_secret": client_secret,
         },
     )
     if not response.ok:
