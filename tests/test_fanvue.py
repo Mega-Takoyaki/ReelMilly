@@ -5,13 +5,13 @@ import pytest
 from posting.fanvue import FanvueApiError, FanvueClient, build_post_url
 
 
-def _mock_response(status_code=200, json_data=None, content=b"{}", headers=None):
+def _mock_response(status_code=200, json_data=None, content=b"{}", headers=None, text=None):
     response = MagicMock()
     response.status_code = status_code
     response.ok = 200 <= status_code < 300
     response.json.return_value = json_data or {}
     response.content = content
-    response.text = str(json_data)
+    response.text = text if text is not None else str(json_data)
     response.headers = headers or {}
     return response
 
@@ -59,7 +59,7 @@ def test_upload_media_single_part(client, tmp_path):
     file_path.write_bytes(b"small-file-content")
 
     init_response = _mock_response(json_data={"uploadId": "up1", "mediaUuid": "media-uuid-1"})
-    part_url_response = _mock_response(json_data="https://s3.example.com/part1")
+    part_url_response = _mock_response(text="https://s3.example.com/part1")
     finalize_response = _mock_response(json_data={"status": "processing"})
 
     put_response = _mock_response(status_code=200, headers={"ETag": "etag-1"})
@@ -81,8 +81,8 @@ def test_upload_media_multiple_parts(client, tmp_path):
     file_path.write_bytes(b"x" * (PART_SIZE_BYTES + 100))
 
     init_response = _mock_response(json_data={"uploadId": "up2", "mediaUuid": "media-uuid-2"})
-    part1_url = _mock_response(json_data="https://s3.example.com/part1")
-    part2_url = _mock_response(json_data="https://s3.example.com/part2")
+    part1_url = _mock_response(text="https://s3.example.com/part1")
+    part2_url = _mock_response(text="https://s3.example.com/part2")
     finalize_response = _mock_response(json_data={"status": "processing"})
     put_response = _mock_response(status_code=200, headers={"ETag": "etag"})
 
@@ -103,7 +103,7 @@ def test_upload_media_uses_server_provided_part_size(client, tmp_path):
     file_path.write_bytes(b"x" * 25)
 
     init_response = _mock_response(json_data={"uploadId": "up4", "mediaUuid": "media-uuid-4", "partSize": 10})
-    part_urls = [_mock_response(json_data=f"https://s3.example.com/part{i}") for i in range(1, 4)]
+    part_urls = [_mock_response(text=f"https://s3.example.com/part{i}") for i in range(1, 4)]
     finalize_response = _mock_response(json_data={"status": "processing"})
     put_response = _mock_response(status_code=200, headers={"ETag": "etag"})
 
@@ -122,7 +122,7 @@ def test_upload_media_raises_when_part_upload_fails(client, tmp_path):
     file_path.write_bytes(b"content")
 
     init_response = _mock_response(json_data={"uploadId": "up3", "mediaUuid": "media-uuid-3"})
-    part_url_response = _mock_response(json_data="https://s3.example.com/part1")
+    part_url_response = _mock_response(text="https://s3.example.com/part1")
     failed_put = _mock_response(status_code=500)
 
     with patch.object(
@@ -175,3 +175,24 @@ def test_create_post_builds_expected_body(client):
 def test_build_post_url():
     url = build_post_url("https://www.fanvue.com/{handle}", handle="mycreator", uuid="abc123")
     assert url == "https://www.fanvue.com/mycreator"
+
+
+def test_part_upload_url_is_read_as_plain_text_not_json(client):
+    """署名URLの応答は、JSONではなくプレーンテキスト(実機で、response.json()が失敗した)。"""
+    init_response = _mock_response(json_data={"uploadId": "up9", "mediaUuid": "media-uuid-9"})
+    plain = _mock_response(text="https://s3.example.com/part1?X-Amz-Signature=abc\n")
+    plain.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")  # JSONとして読むと、失敗する
+    finalize_response = _mock_response(json_data={"status": "processing"})
+    put_response = _mock_response(status_code=200, headers={"ETag": "etag-9"})
+
+    with patch.object(client._session, "request", side_effect=[init_response, plain, finalize_response]), patch(
+        "posting.fanvue.requests.put", return_value=put_response
+    ) as mocked_put:
+        import tempfile, pathlib
+
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "a.png"
+            path.write_bytes(b"x" * 10)
+            assert client.upload_media(path, media_type="image") == "media-uuid-9"
+
+    assert mocked_put.call_args.args[0] == "https://s3.example.com/part1?X-Amz-Signature=abc"

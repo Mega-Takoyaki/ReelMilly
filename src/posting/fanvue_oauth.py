@@ -28,7 +28,8 @@ import requests
 
 DEFAULT_AUTHORIZATION_URL = "https://auth.fanvue.com/oauth2/auth"
 DEFAULT_TOKEN_URL = "https://auth.fanvue.com/oauth2/token"
-DEFAULT_SCOPES = ["read:self", "write:media", "write:post", "read:post"]
+# 投稿に必要な許可(スコープ)。read:mediaは、アップロードしたメディアの処理状況(GET /media/{uuid})の確認に必要
+DEFAULT_SCOPES = ["read:self", "read:media", "write:media", "write:post", "read:post"]
 
 # アクセストークンの実際の有効期限より手前でリフレッシュし、
 # リクエスト直前の失効を避けるための安全マージン

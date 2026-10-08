@@ -48,12 +48,16 @@ class FanvueClient:
     def _url(self, path: str) -> str:
         return f"{self._base_url}{path}"
 
-    def _request(self, method: str, path: str, **kwargs):
+    def _request(self, method: str, path: str, as_text: bool = False, **kwargs):
+        """APIを呼ぶ。応答はJSONとして返す。`as_text=True`は、JSONではなくプレーンテキストを返すAPI用(署名URLなど)。"""
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self._bearer_token()}"
         response = self._session.request(method, self._url(path), headers=headers, **kwargs)
         if not response.ok:
             raise FanvueApiError(f"{method} {path} failed: {response.status_code} {response.text}")
+        if as_text:
+            # 実機で確認: パートの署名URLは、JSONではなく、URLそのもののプレーンテキストで返ってくる
+            return response.text.strip().strip('"')
         if response.content:
             return response.json()
         return {}
@@ -69,7 +73,7 @@ class FanvueClient:
         1. POST /media/uploads でアップロードセッションを作成（レスポンスに
            `mediaUuid`・`uploadId`・パートサイズ`partSize`が含まれる）
         2. 各パートごとに署名URL（レスポンスはURLそのものを表す文字列）を
-           取得しPUTでアップロード
+           取得しPUTでアップロード(この応答だけは、JSONではなくプレーンテキスト)
         3. PATCH /media/uploads/{id} でパート情報を送りファイナライズ
            （レスポンスは`status`のみで`mediaUuid`は含まれないため、1.の
            `mediaUuid`をそのまま返す）
@@ -97,7 +101,7 @@ class FanvueClient:
                 if not chunk:
                     break
                 part_url = self._request(
-                    "GET", f"/media/uploads/{upload_id}/parts/{part_number}/url"
+                    "GET", f"/media/uploads/{upload_id}/parts/{part_number}/url", as_text=True
                 )
                 put_response = requests.put(part_url, data=chunk)
                 if not put_response.ok:

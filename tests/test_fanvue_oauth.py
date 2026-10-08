@@ -206,3 +206,13 @@ def test_redirect_uri_is_fixed_regardless_of_the_address_used_to_open_the_page(t
     monkeypatch.setenv("FANVUE_OAUTH_REDIRECT_URI", "https://example.test/cb")  # 明示した値が優先
     res = client.get("/settings/fanvue/oauth/start")
     assert parse_qs(urlparse(res.headers["Location"]).query)["redirect_uri"][0] == "https://example.test/cb"
+
+
+def test_default_scopes_cover_every_endpoint_used_for_posting():
+    """投稿の実機確認で、read:mediaが無く「Insufficient scopes」(403)になった。使うAPIの許可は、すべて含める。"""
+    from posting.fanvue_oauth import DEFAULT_SCOPES
+
+    assert {"read:self", "read:media", "write:media", "write:post"} <= set(DEFAULT_SCOPES)
+    assert "read%3Amedia" in build_authorization_url(
+        client_id="c", redirect_uri="http://x/cb", state="s", code_challenge="ch"
+    )
