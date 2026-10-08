@@ -687,6 +687,56 @@ def create_app(config: Config) -> Flask:
             "trashed": bool(asset.get("deleted_at")),
         })
 
+    # --- タグ整理(表記ゆれ・複合タグ・色・文のタグ) ---
+
+    @app.route("/api/tag-cleanup/plan")
+    def api_tag_cleanup_plan():
+        """いまあるタグを整理する案(適用はしない)。"""
+        from core import tag_cleanup
+
+        conn = get_conn()
+        items = tag_cleanup.plan(conn)
+        info = tag_cleanup.summary(conn, items)
+        conn.close()
+        return jsonify({"items": items, "summary": info, "kinds": tag_cleanup.KIND_LABELS})
+
+    @app.route("/api/tag-cleanup/apply", methods=["POST"])
+    def api_tag_cleanup_apply():
+        """整理案を適用する(`names`で、適用するタグを選べる)。適用の前に、データベースを退避する。"""
+        from core import tag_cleanup
+
+        names = (request.get_json(silent=True) or {}).get("names")
+        conn = get_conn()
+        try:
+            result = tag_cleanup.apply(conn, config, names if isinstance(names, list) else None)
+        except Exception as exc:  # noqa: BLE001
+            conn.close()
+            return jsonify({"error": f"整理に失敗しました（元に戻しました）: {exc}"}), 500
+        conn.close()
+        return jsonify(result)
+
+    @app.route("/api/tag-aliases", methods=["GET", "POST", "DELETE"])
+    def api_tag_aliases():
+        """タグの別名の対応表(別名 → 標準名)。"""
+        from core import tag_cleanup
+        from core.tag_normalizer import DEFAULT_ALIASES
+
+        conn = get_conn()
+        if request.method == "POST":
+            body = request.get_json(silent=True) or {}
+            alias, canonical = str(body.get("alias") or "").strip(), str(body.get("canonical") or "").strip()
+            if not alias or not canonical or alias == canonical:
+                conn.close()
+                return jsonify({"error": "別名と標準名を、違う言葉で入れてください"}), 400
+            conn.execute("INSERT OR REPLACE INTO tag_aliases (alias, canonical) VALUES (?, ?)", (alias, canonical))
+            conn.commit()
+        elif request.method == "DELETE":
+            conn.execute("DELETE FROM tag_aliases WHERE alias = ?", (str((request.get_json(silent=True) or {}).get("alias") or ""),))
+            conn.commit()
+        custom = tag_cleanup.aliases(conn)
+        conn.close()
+        return jsonify({"custom": custom, "builtin": DEFAULT_ALIASES})
+
     @app.route("/api/captions/generate", methods=["POST"])
     def api_generate_caption():
         """作品(複数なら、まとめて1つの投稿として)の投稿文を、チャンネル(fanvue|x)のプロンプトで生成する。"""
@@ -1150,6 +1200,12 @@ def create_app(config: Config) -> Flask:
                 x_caption_system_prompt=request.form.get("x_caption_system_prompt"),
             )
             settings_module.set_auto_ingest(conn, bool(request.form.get("auto_ingest")))
+            from core import tag_cleanup
+
+            tag_cleanup.set_schedule(
+                conn, bool(request.form.get("tag_cleanup_enabled")), request.form.get("tag_cleanup_weekday"),
+                request.form.get("tag_cleanup_time"), bool(request.form.get("tag_cleanup_auto_apply")),
+            )
             settings_module.set_caption_model(conn, request.form.get("caption_provider"), request.form.get("caption_model"))
             settings_module.set_post_schedule(
                 conn,
@@ -1208,6 +1264,9 @@ def create_app(config: Config) -> Flask:
         model_choices = settings_module.get_model_choices(conn)
         schedules = settings_module.get_ai_schedules(conn)
         tag_categories = settings_module.get_tag_categories(conn)
+        from core import tag_cleanup as tag_cleanup_module
+
+        tag_cleanup_schedule = tag_cleanup_module.get_schedule(conn)
         post_schedule_from_yaml = settings_module.get_post_schedule(conn) is None and bool(config.cadence)
         post_schedule = settings_module.get_post_schedule(conn) or {"enabled": False, "entries": []}
         from datetime import datetime
@@ -1240,6 +1299,7 @@ def create_app(config: Config) -> Flask:
             settings=current_settings,
             model_choices=model_choices,
             schedules=schedules,
+            tag_cleanup_schedule=tag_cleanup_schedule,
             post_schedule_next=post_schedule_next,
             weekday_labels=settings_module.WEEKDAY_LABELS,
             caption_model_choices=model_choices,

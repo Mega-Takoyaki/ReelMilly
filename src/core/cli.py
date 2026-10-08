@@ -125,6 +125,20 @@ def _storage_ready(config: Config, conn, label: str) -> bool:
     return status.available
 
 
+def _run_tag_cleanup_if_due(config: Config) -> None:
+    """設定の「タグ整理」の定期実行(週1回など)の時刻が来ていれば、整理する(または、整理案を通知する)。"""
+    from core import tag_cleanup
+
+    conn = get_connection(config.paths.db_path)
+    try:
+        init_db(conn)
+        tag_cleanup.run_if_due(conn, config)
+    except Exception as exc:  # noqa: BLE001  整理の失敗で、watchを止めない
+        print(f"[tag-cleanup] 失敗しました: {exc}")
+    finally:
+        conn.close()
+
+
 def _notify_ingested(config: Config, count: int) -> None:
     """inboxフォルダから取り込んだ件数を、通知に残す(画面を開いていないときの自動取り込みも含む)。"""
     if count <= 0:
@@ -409,6 +423,7 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
             if auto_ingest:
                 cmd_ingest(config, defer_analysis=True)
             cmd_analyze(config, worker, enqueue_pending=False)
+            _run_tag_cleanup_if_due(config)
             _notify_duplicates(config)  # 定期処理: 取り込み(自動取り込み等)で増えた重複を検出して通知する
             cmd_run_due(config)
             time.sleep(interval_seconds)

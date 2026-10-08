@@ -53,6 +53,7 @@
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
     <button type="button" role="tab" data-tab="sec-post">投稿スケジュール</button>
     <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
+    <button type="button" role="tab" data-tab="sec-tags">タグ整理</button>
     <button type="button" role="tab" data-tab="sec-log">通知・ログ</button>
     <button type="button" role="tab" data-tab="sec-storage">ストレージ</button>
     <button type="button" role="tab" data-tab="sec-wm">透かし</button>
@@ -344,6 +345,37 @@
     <button type="button" id="category-add" class="btn-ghost-inline">＋ カテゴリを追加</button>
   </section>
 
+  <section class="card settings-tab" id="sec-tags">
+    <h2 style="margin-top: 0;">タグ整理{{ info("AIが付けたタグの、表記ゆれ・複合タグ・色つき・文のようなタグを、規則で整えます。新しく付くタグは、保存時に自動で整います。ここでは、すでにあるタグを、整理案(プレビュー)で確認して、適用します。タグの内容を、外部に送ることはありません(クラウドのAIは使いません)。") }}</h2>
+
+    <h3>整理案{{ info("規則: ①「と」「や」「、」でつないだ複合タグを分ける ②色つきのタグを、物と色に分ける(例: レッドビキニ→ビキニ・赤) ③文のようなタグ(例: 膝を曲げて座る)から、姿勢や先頭の名詞だけを残す ④別名・中国語混じりの表記を、標準名にそろえる。適用する前に、データベースを自動で退避します。") }}</h3>
+    <button type="button" class="btn-ghost-inline" id="tc-plan">整理案を作る（まだ変更しません）</button>
+    <p class="hint" id="tc-summary" hidden></p>
+    <div id="tc-table" class="tc-table" hidden></div>
+    <button type="button" class="btn-primary" id="tc-apply" hidden>チェックしたものを適用する</button>
+
+    <h3 style="margin-top: 1.4rem;">別名の対応表{{ info("「別名 → 標準名」を足すと、保存時と整理のときに、別名のタグが標準名になります。組み込みの対応は、下に表示しています。") }}</h3>
+    <div id="tc-aliases" class="tc-aliases"></div>
+    <div class="tc-alias-add">
+      <input type="text" id="tc-alias" placeholder="別名（例: 赤ビキニ）" aria-label="別名">
+      <span>→</span>
+      <input type="text" id="tc-canonical" placeholder="標準名（例: ビキニ）" aria-label="標準名">
+      <button type="button" class="btn-ghost-inline" id="tc-alias-add">追加</button>
+    </div>
+
+    <h3 style="margin-top: 1.4rem;">定期実行{{ info("決めた曜日・時刻に、reelmilly watch が整理を行います。「自動で適用する」がオフなら、整理案があることを、通知するだけです(適用は、ここで確認して行います)。") }}</h3>
+    <div class="settings-form">
+      <label class="checkbox-label"><input type="checkbox" name="tag_cleanup_enabled" {% if tag_cleanup_schedule.enabled %}checked{% endif %}> 定期的に整理する</label>
+      <label>曜日
+        <select name="tag_cleanup_weekday">
+          {% for label in weekday_labels %}<option value="{{ loop.index0 }}" {% if tag_cleanup_schedule.weekday == loop.index0 %}selected{% endif %}>{{ label }}曜日（毎週）</option>{% endfor %}
+        </select>
+      </label>
+      <label>時刻 <input type="time" name="tag_cleanup_time" value="{{ tag_cleanup_schedule.time }}" required></label>
+      <label class="checkbox-label"><input type="checkbox" name="tag_cleanup_auto_apply" {% if tag_cleanup_schedule.auto_apply %}checked{% endif %}> 自動で適用する（オフなら、整理案を通知するだけ）</label>
+    </div>
+  </section>
+
   <section class="card settings-tab" id="sec-log">
     <h2 style="margin-top: 0;">通知・ログ{{ info("AI処理・透かし・投稿・ストレージ・重複の検出などの、完了や失敗の履歴です。画面を開いていないときに起きたことも残ります。画面右上のベルのアイコンでは、最新10件を見られます(未読があると印が出ます)。") }}</h2>
     <div class="log-toolbar">
@@ -605,6 +637,71 @@
   document.getElementById("sp-refresh").addEventListener("click", loadScheduledPosts);
   loadScheduledPosts();
   setInterval(() => { if (!document.hidden && !document.getElementById("sec-post").hidden) loadScheduledPosts(); }, 20000);
+
+  // タグ整理: 整理案(プレビュー)・適用・別名の対応表
+  const tcTable = document.getElementById("tc-table");
+  const tcSummary = document.getElementById("tc-summary");
+  const tcApply = document.getElementById("tc-apply");
+  const TC_KIND = { split: "分割", color: "色を分離", alias: "別名を統一", phrase: "文のタグ", drop: "捨てる", fix: "表記を直す" };
+  document.getElementById("tc-plan").addEventListener("click", async () => {
+    tcSummary.hidden = false;
+    tcSummary.textContent = "整理案を作っています…";
+    const data = await (await fetch("/api/tag-cleanup/plan")).json();
+    const s = data.summary;
+    tcSummary.textContent = data.items.length
+      ? `タグ ${s.tags_before} 種類 → 整理後 約 ${s.tags_after} 種類。変わるタグは ${s.changed} 種類です。適用するものに、チェックを入れてください。`
+      : "整理が必要なタグは、ありません。";
+    tcTable.replaceChildren(...data.items.map((i) => {
+      const row = document.createElement("label");
+      row.className = "tc-row";
+      const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: !i.kinds.includes("drop") || i.becomes.length > 0 });
+      box.dataset.name = i.name;
+      const text = document.createElement("span");
+      text.textContent = `${i.name}（${i.count}件） → ${i.becomes.length ? i.becomes.join("、") : "（捨てる）"}`;
+      const kinds = document.createElement("span");
+      kinds.className = "hint";
+      kinds.textContent = i.kinds.map((k) => TC_KIND[k] || k).join("・");
+      row.append(box, text, kinds);
+      return row;
+    }));
+    tcTable.hidden = data.items.length === 0;
+    tcApply.hidden = data.items.length === 0;
+  });
+  tcApply.addEventListener("click", async () => {
+    const names = Array.from(tcTable.querySelectorAll("input:checked")).map((b) => b.dataset.name);
+    if (!names.length) return;
+    if (!(await window.confirmDialog(`${names.length}種類のタグを、整理して適用します（データベースは、事前に自動で退避します）。よろしいですか？`))) return;
+    const res = await fetch("/api/tag-cleanup/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ names }) });
+    const data = await res.json();
+    if (!res.ok) { window.showToast(data.error || "整理できませんでした", "error"); return; }
+    window.showToast(`${data.applied}種類を整理しました（${data.assets}件の作品）`, "success");
+    tcTable.hidden = true; tcApply.hidden = true;
+    tcSummary.textContent = `整理しました。退避: ${data.backup}`;
+  });
+  const tcAliases = document.getElementById("tc-aliases");
+  async function renderAliases(data) {
+    data = data || await (await fetch("/api/tag-aliases")).json();
+    const rows = Object.entries(data.custom).map(([a, c]) => {
+      const row = document.createElement("div");
+      row.className = "tc-alias-row";
+      row.append(`${a} → ${c}`);
+      const del = Object.assign(document.createElement("button"), { type: "button", className: "btn-ghost-inline", textContent: "削除" });
+      del.addEventListener("click", async () => renderAliases(await (await fetch("/api/tag-aliases", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ alias: a }) })).json()));
+      row.append(del);
+      return row;
+    });
+    const builtin = document.createElement("details");
+    builtin.innerHTML = `<summary>組み込みの対応（${Object.keys(data.builtin).length}件）</summary><p class="hint">${Object.entries(data.builtin).map(([a, c]) => `${a} → ${c}`).join(" ／ ")}</p>`;
+    tcAliases.replaceChildren(...rows, builtin);
+  }
+  document.getElementById("tc-alias-add").addEventListener("click", async () => {
+    const res = await fetch("/api/tag-aliases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ alias: document.getElementById("tc-alias").value, canonical: document.getElementById("tc-canonical").value }) });
+    const data = await res.json();
+    if (!res.ok) { window.showToast(data.error, "error"); return; }
+    document.getElementById("tc-alias").value = ""; document.getElementById("tc-canonical").value = "";
+    renderAliases(data);
+  });
+  renderAliases();
 
   // 投稿スケジュール: 曜日のチェックを、保存用の隠し欄(カンマ区切り)に反映する。予定の追加・削除
   const psList = document.getElementById("ps-list");

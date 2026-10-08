@@ -1802,3 +1802,12 @@ dialog.post-now-dialog { width: min(94vw, 40rem); max-height: 92vh; overflow: au
 .sp-done, .sp-cancelled { opacity: 0.65; }
 .sp-error { color: var(--danger, #e5484d); }
 .sp-badge-failed { background: color-mix(in srgb, var(--danger, #e5484d) 30%, var(--surface-alt)); }
+
+/* タグ整理 -------------------------------------------------------------------------*/
+.tc-table { display: flex; flex-direction: column; gap: 0.2rem; max-height: 24rem; overflow-y: auto; margin: 0.6rem 0; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.tc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.6rem; font-size: 0.85rem; padding: 0.15rem 0.2rem; }
+.tc-row input { width: auto; }
+.tc-aliases { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.5rem; font-size: 0.85rem; }
+.tc-alias-row { display: flex; align-items: center; gap: 0.6rem; }
+.tc-alias-add { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.tc-alias-add input { width: 12rem; }

@@ -162,3 +162,9 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
     finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_posts_status ON scheduled_posts(status, run_at);
+
+-- タグの別名の対応表(別名 → 標準名)。AIが付けるタグを、保存時と定期の整理で、標準名にそろえる
+CREATE TABLE IF NOT EXISTS tag_aliases (
+    alias TEXT PRIMARY KEY,
+    canonical TEXT NOT NULL
+);

@@ -60,8 +60,14 @@ def apply_auto_tags(conn: sqlite3.Connection, asset_id: str, result: AnalysisRes
     """
     from core import db
 
+    # AIが付けたタグは、整えてから付ける(複合タグの分割・色の分離・表記ゆれの統一・文のタグの整理。core/tag_normalizer.py)
+    from core import tag_cleanup
+    from core.tag_normalizer import normalize
+
+    custom = tag_cleanup.aliases(conn)
     for tag in result.suggested_tags:
-        db.add_tag_to_asset(conn, asset_id, tag)
+        for normalized in normalize(tag, custom).tags:
+            db.add_tag_to_asset(conn, asset_id, normalized)
     if result.nsfw_auto_rating:
         db.add_tag_to_asset(conn, asset_id, result.nsfw_auto_rating)
 

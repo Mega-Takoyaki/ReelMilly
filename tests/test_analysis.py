@@ -142,7 +142,8 @@ def test_apply_auto_tags_adds_suggested_tags_and_nsfw_rating(tmp_path):
 
     apply_auto_tags(conn, "a1", analysis_result)
 
-    assert set(db.list_tags_for_asset(conn, "a1")) == {"屋外", "笑顔", "sfw"}
+    # 「笑顔」は、保存時に、標準名の「微笑む」にそろえる(core/tag_normalizer.py)
+    assert set(db.list_tags_for_asset(conn, "a1")) == {"屋外", "微笑む", "sfw"}
 
 
 def test_apply_auto_tags_applies_partial_results_even_when_not_successful(tmp_path):
