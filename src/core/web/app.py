@@ -782,8 +782,7 @@ def create_app(config: Config) -> Flask:
             ratings = [a.get("content_rating") if a.get("content_rating_confirmed") else None for a, _p, _t in items]
             if "explicit" in ratings:
                 return jsonify({"error": "区分がexplicit(成人向け)の作品は、Xには投稿しません"}), 400
-            if not sensitive and any(r != "sfw" for r in ratings):
-                return jsonify({"error": "sfwと承認されていない作品(suggestive・未承認)は、センシティブ指定をつけて投稿してください"}), 400
+            # センシティブ指定は、人が決める(sfwと承認されていない作品でも、指定なしで投稿できる)。成人向け(explicit)だけは、投稿しない
         if posting_now & seen:
             return jsonify({"error": "投稿の処理中の作品が含まれています。終わってからやり直してください"}), 409
         posting_now.update(seen)

@@ -26,7 +26,8 @@
       <button type="button" class="btn-ghost-inline pn-undo" id="pn-undo" hidden>生成前の文に戻す</button>
     </div>
     <div class="pn-xonly" id="pn-xonly" hidden>
-      <label class="checkbox-label"><input type="checkbox" id="pn-sensitive"> センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。sfwと承認されていない作品(suggestive・未承認)は、必ずつけます。explicitな作品は、Xには投稿できません。") }}</label>
+      <label class="checkbox-label"><input type="checkbox" id="pn-sensitive"> センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。最後は、人が決めます(チェックを外して、投稿できます)。sfwと承認されていない作品(suggestive・未承認)は、開いたときに、既定でオンになります。explicitな作品は、Xには投稿できません。") }}</label>
+      <p class="hint" id="pn-sensitive-note" hidden>sfwと承認されていない作品を含むため、既定でオンにしています（問題なければ、外せます）。</p>
       <label class="checkbox-label"><input type="checkbox" id="pn-ai" checked> AI生成のメディアを含む、と表示する{{ info("Xの「AI生成」の申告(made_with_ai)を、投稿につけます。") }}</label>
       <p class="hint" id="pn-count">Xの文字数: 0 / 280（全角は2文字）</p>
     </div>

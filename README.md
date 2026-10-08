@@ -257,7 +257,7 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現�
 
 ### Xへの投稿
 
-設定の「X」タブで、OAuth 2.0（認可コード+PKCE、機密クライアント）で連携します（`X_OAUTH_CLIENT_ID`/`X_OAUTH_CLIENT_SECRET`、コールバックURIは画面に表示。スコープは`tweet.read tweet.write users.read media.write offline.access`）。投稿は「今すぐ投稿」から（画像4枚まで、または動画1本）。**成人向けは投稿しません**: 区分がexplicitの作品は拒否し、suggestive・未承認の作品は、メディアのセンシティブ指定（`sensitive_media_warning: adult_content`）をつけたときだけ投稿できます。`made_with_ai`（AI生成の申告）もつけられます。X APIは従量課金です。
+設定の「X」タブで、OAuth 2.0（認可コード+PKCE、機密クライアント）で連携します（`X_OAUTH_CLIENT_ID`/`X_OAUTH_CLIENT_SECRET`、コールバックURIは画面に表示。スコープは`tweet.read tweet.write users.read media.write offline.access`）。投稿は「今すぐ投稿」から（画像4枚まで、または動画1本）。**成人向けは投稿しません**: 区分がexplicitの作品は拒否し、センシティブ指定（`sensitive_media_warning: adult_content`）は人が決め（sfwと承認されていない作品は、既定でオン。外せます）、explicit以外は、指定なしでも投稿できます。`made_with_ai`（AI生成の申告）もつけられます。X APIは従量課金です。
 
 ### 通知・履歴と重複の検出
 

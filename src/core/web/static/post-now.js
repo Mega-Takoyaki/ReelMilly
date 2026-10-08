@@ -81,10 +81,8 @@
       else if (videos === 0 && types.length > X_MAX_IMAGES) problem = `Xでは、1つの投稿に付けられる画像は${X_MAX_IMAGES}枚までです`;
       const ratings = assets.map((a) => a.rating);
       if (ratings.includes("explicit")) problem = problem || "区分がexplicit(成人向け)の作品は、Xには投稿しません";
-      const needSensitive = ratings.some((r) => r !== "sfw");
-      const box = $("pn-sensitive");
-      if (needSensitive) box.checked = true;       // sfwと承認されていない作品は、センシティブ指定が必須
-      box.disabled = needSensitive;
+      // センシティブ指定は、最後は人が決める(外せる)。sfwと承認されていない作品は、開いたときに、既定でオンにするだけ
+      $("pn-sensitive-note").hidden = !ratings.some((r) => r !== "sfw");
       const weight = xWeight($("pn-text").value);
       $("pn-count").textContent = `Xの文字数: ${weight} / ${X_MAX_WEIGHT}（全角は2文字）`;
       $("pn-count").classList.toggle("pn-warn", weight > X_MAX_WEIGHT);
@@ -121,7 +119,7 @@
     $("pn-text").value = first.text || "";
     $("pn-audience").value = first.audience || "subscribers";
     $("pn-price").value = first.price_cents ? (first.price_cents / 100).toString() : "";
-    $("pn-sensitive").checked = false;
+    $("pn-sensitive").checked = assets.some((a) => a.rating !== "sfw");  // 既定: sfwと承認されていない作品は、オン(人が外せる)
     $("pn-ai").checked = true;
     beforeGenerate = null;
     $("pn-undo").hidden = true;

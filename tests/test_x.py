@@ -227,24 +227,25 @@ def approve(conn, asset_id, rating):
     db.update_asset(conn, asset_id, content_rating=rating, content_rating_confirmed=1)
 
 
-def test_x_policy_blocks_explicit_and_requires_sensitive_unless_sfw(env):
+def test_x_policy_blocks_explicit_and_leaves_sensitive_to_the_user(env):
     config, conn, client = env
     _insert(conn, config.paths.ready, "a1")
     item = [{"asset_id": "a1", "version": "original"}]
 
     assert post_x(client, None, items=item, text="t").status_code == 503  # 未連携
 
-    # 未承認: センシティブ指定が必要
-    res = post_x(client, fake_x(), items=item, text="t")
-    assert res.status_code == 400 and "センシティブ指定" in res.get_json()["error"]
+    # 未承認でも、人がセンシティブ指定を外して(つけずに)投稿できる。指定をつければ、つけて投稿する
+    x = fake_x()
+    assert post_x(client, x, items=item, text="t").status_code == 202
+    assert x.upload_media.call_args.kwargs["sensitive"] is False
     ok = post_x(client, fake_x(), items=item, text="t", sensitive=True)
     assert ok.status_code == 202 and ok.get_json()["ok"]
 
-    # suggestive: センシティブ指定が必要
+    # suggestive: 同じく、人が決める
     _insert(conn, config.paths.ready, "a2")
     approve(conn, "a2", "suggestive")
     item2 = [{"asset_id": "a2", "version": "original"}]
-    assert post_x(client, fake_x(), items=item2, text="t").status_code == 400
+    assert post_x(client, fake_x(), items=item2, text="t").status_code == 202
     assert post_x(client, fake_x(), items=item2, text="t", sensitive=True).status_code == 202
 
     # explicit: センシティブ指定をつけても、投稿しない
@@ -338,7 +339,8 @@ def test_x_connect_flow_start_callback_disconnect(env, monkeypatch):
 def test_dialog_has_x_controls(env):
     config, conn, client = env
     html = client.get("/").get_data(as_text=True)
-    for needle in ('id="pn-sensitive"', 'id="pn-ai"', 'id="pn-xonly"', 'id="pn-fanvueonly"', 'id="pn-count"'):
+    for needle in ('id="pn-sensitive"', 'id="pn-sensitive-note"', 'id="pn-ai"', 'id="pn-xonly"', 'id="pn-fanvueonly"', 'id="pn-count"'):
         assert needle in html
     js = client.get("/static/post-now.js").get_data(as_text=True)
     assert "/api/post-targets" in js and "X_MAX_WEIGHT" in js
+    assert "box.disabled" not in js and "box.checked = true" not in js  # センシティブ指定は、外せる(開いたときに、既定でオンにするだけ)
