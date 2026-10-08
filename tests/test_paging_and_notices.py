@@ -151,3 +151,46 @@ def test_full_layout_uses_row_order_with_aspect_numbers(env):
     assert "--arn:" in html
     css = client.get("/static/style.css").get_data(as_text=True)
     assert ".asset-grid.is-full { display: flex; flex-wrap: wrap;" in css
+
+
+def test_hidden_assets_are_left_out_of_the_default_list_only(env):
+    config, conn = env
+    client = create_app(config).test_client()
+    ids = _make_assets(client, 3)["asset_ids"]
+
+    res = client.post("/api/assets/hidden", json={"asset_ids": ids[:1], "hidden": True}).get_json()
+    assert res["changed"] == 1
+    assert client.post("/api/assets/hidden", json={"asset_ids": ids[:1], "hidden": True}).get_json()["changed"] == 0
+
+    default = client.get("/").get_data(as_text=True)
+    assert ids[0] not in _card_ids(default) and len(_card_ids(default)) == 2 and "全" not in default.split('id="grid-count"')[1][:80]
+    assert ids[0] in _card_ids(client.get("/?hidden=show").get_data(as_text=True))
+    only = client.get("/?hidden=only").get_data(as_text=True)
+    assert _card_ids(only) == [ids[0]] and "chip-hidden" in only
+    assert client.get("/trash").status_code == 200
+
+    # ごみ箱・破綻画像とは別で、投稿・AI処理の対象には影響しない
+    asset = db.get_asset(conn, ids[0])
+    assert asset["deleted_at"] is None and asset["is_broken"] == 0 and asset["is_hidden"] == 1
+    assert any(a["id"] == ids[0] for a in db.list_assets(conn, limit=10))  # 一覧以外(既定の呼び出し)には、影響しない
+
+    # フォルダの件数も、非表示を除く
+    folder_id = db.create_folder(conn, "f")
+    db.add_asset_to_folder(conn, ids[0], folder_id)
+    db.add_asset_to_folder(conn, ids[1], folder_id)
+    top = client.get("/").get_data(as_text=True)
+    assert "1件" in top.split('class="folder-card"')[1][:600]
+
+    # 詳細画面から解除
+    assert client.post(f"/assets/{ids[0]}/hidden").status_code == 302
+    assert db.get_asset(conn, ids[0])["is_hidden"] == 0
+    assert "非表示にする" in client.get(f"/assets/{ids[0]}").get_data(as_text=True)
+
+
+def test_hidden_filter_and_bulk_buttons_are_on_the_list_page(env):
+    config, conn = env
+    client = create_app(config).test_client()
+    _make_assets(client, 1)
+    page = client.get("/").get_data(as_text=True)
+    for needle in ('name="hidden"', 'id="hidden-badge"', 'id="bulk-hide"', 'id="bulk-unhide"'):
+        assert needle in page

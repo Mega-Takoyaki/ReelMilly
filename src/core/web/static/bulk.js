@@ -80,6 +80,20 @@
     });
   });
 
+  // 非表示: 既定の一覧に出さないだけ(フィルタで表示できる)
+  [["bulk-hide", true], ["bulk-unhide", false]].forEach(([id, hidden]) => {
+    document.getElementById(id).addEventListener("click", async () => {
+      if (selected.size === 0) return;
+      try {
+        const data = await postJson("/api/assets/hidden", { asset_ids: Array.from(selected), hidden });
+        window.showToast(hidden ? `${data.changed}件を非表示にしました（フィルタの「非表示」で見られます）` : `${data.changed}件を表示に戻しました`, "success");
+        setTimeout(() => window.location.reload(), 600);
+      } catch (err) {
+        window.showToast(`変更に失敗しました: ${err.message}`, "error");
+      }
+    });
+  });
+
   // 破綻画像(キメラ)のマーク。付けた作品は既定の一覧から消える(フィルタで表示できる)
   [["bulk-broken", true], ["bulk-unbroken", false]].forEach(([id, broken]) => {
     document.getElementById(id).addEventListener("click", async () => {

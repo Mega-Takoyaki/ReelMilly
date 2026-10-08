@@ -1,5 +1,5 @@
 {# 一覧のカード(最初の表示と、下へスクロールしたときの続きで共通) #}
-{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip %}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip, hidden_chip %}
 {% for asset in assets %}
   <div class="asset-card" data-asset-id="{{ asset.id }}"{% if asset.width and asset.height %} style="--ar: {{ asset.width }} / {{ asset.height }}; --arn: {{ (asset.width / asset.height) | round(4) }}"{% endif %}>
     <label class="asset-select">
@@ -11,7 +11,7 @@
       {% else %}
       <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
       {% endif %}
-      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset) }}{{ broken_chip(asset) }}</span>
+      <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset) }}{{ broken_chip(asset) }}{{ hidden_chip(asset) }}</span>
       {{ status_dot(asset) }}
       <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>
       <a class="asset-detail-link" href="{{ url_for('asset_detail', asset_id=asset.id) }}" title="詳細を見る" aria-label="詳細を見る">

@@ -14,7 +14,7 @@
   let controller = null;
   let timer = null;
   const chipBox = document.getElementById("filter-chips");
-  const brokenBadge = document.getElementById("broken-badge");
+  const modeBadges = [["broken", document.getElementById("broken-badge")], ["hidden", document.getElementById("hidden-badge")]];
   const RADIO_TEXT = { show: "含む", only: "のみ" };
 
   function optionText(input) {
@@ -78,10 +78,12 @@
   }
 
   function syncBrokenBadge() {
-    if (!brokenBadge) return;
-    const mode = (form.querySelector('input[name="broken"]:checked') || {}).value;
-    brokenBadge.hidden = !RADIO_TEXT[mode];
-    brokenBadge.textContent = RADIO_TEXT[mode] || "";
+    modeBadges.forEach(([name, badge]) => {
+      if (!badge) return;
+      const mode = (form.querySelector(`input[name="${name}"]:checked`) || {}).value;
+      badge.hidden = !RADIO_TEXT[mode];
+      badge.textContent = RADIO_TEXT[mode] || "";
+    });
   }
 
   function queryString() {

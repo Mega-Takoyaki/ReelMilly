@@ -1173,9 +1173,9 @@ def test_broken_flag_ui_filter_and_posting_exclusion(app_and_conn):
 def test_filter_bar_is_grouped_and_has_chip_area(app_and_conn):
     app, _ = app_and_conn
     body = app.test_client().get("/").get_data(as_text=True)
-    # 9〜10個あったプルダウンを、ファイルタイプ・タグ・フォルダ・状態/区分・投稿・破綻画像の6つにまとめる
+    # 9〜10個あったプルダウンを、ファイルタイプ・タグ・フォルダ・状態/区分・投稿・破綻画像・非表示の7つにまとめる
     filters = body.split('<section class="filters">')[1].split("</section>")[0]
-    assert filters.count('<details>') == 6
+    assert filters.count('<details>') == 7
     for heading in ("状態・区分", "投稿", "ステータス", "区分（承認済み）", "AI判定", "承認状態", "投稿予定", "投稿状態", "破綻画像"):
         assert heading in filters
     assert 'id="filter-chips"' in filters  # 選択中の条件のチップ

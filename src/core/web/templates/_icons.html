@@ -24,6 +24,13 @@
 {%- endif -%}
 {%- endmacro %}
 
+{# 非表示の印。表示モード(含める/のみ)のときだけ一覧に出る #}
+{% macro hidden_chip(asset) -%}
+{%- if asset.is_hidden -%}
+<span class="chip chip-hidden" data-tip="非表示: 既定の一覧には出ません（フィルタの「非表示」で見られます。投稿・AI処理には影響しません）">隠</span>
+{%- endif -%}
+{%- endmacro %}
+
 {% macro rating_chip(asset) -%}
 {%- if asset.content_rating_confirmed and asset.content_rating -%}
   {%- set state = {'sfw': 'ok-sfw', 'suggestive': 'ok-sug', 'explicit': 'ok-nsfw'}.get(asset.content_rating, 'ok-sfw') -%}

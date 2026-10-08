@@ -35,6 +35,7 @@
         <h1>
           {{ asset.id }}
           <span id="live-status"><span class="badge status-{{ asset.status }}">{{ asset.status }}</span></span>
+          {% if asset.is_hidden %}<span class="badge" data-tip="非表示にしています（既定の一覧には出ません）">非表示</span>{% endif %}
           {% if asset.is_broken %}<span class="badge badge-broken" data-tip="破綻画像（キメラ）としてマークされています">破綻画像</span>{% endif %}
         </h1>
         <p class="hint" id="ai-task-state"></p>
@@ -76,6 +77,10 @@
 
           <div class="menu-group">
             <div class="menu-title">作品の扱い</div>
+            <form method="post" action="{{ url_for('toggle_hidden', asset_id=asset.id) }}" class="menu-form">
+              <button type="submit" class="menu-item" role="menuitem">{{ '非表示を解除する（一覧に表示する）' if asset.is_hidden else '非表示にする' }}</button>
+              {{ info("既定の一覧に出さないだけです。ごみ箱や破綻画像とは別で、投稿・AI処理には影響しません。一覧の「非表示」で表示できます。") }}
+            </form>
             <form method="post" action="{{ url_for('toggle_broken', asset_id=asset.id) }}" class="menu-form">
               <button type="submit" class="menu-item" role="menuitem">{{ '破綻画像のマークを解除する' if asset.is_broken else '破綻画像（キメラ）としてマークする' }}</button>
               {{ info("AI生成特有の崩れ(手足・顔の破綻など)がある作品に付けます。マークした作品は、既定の一覧に表示されず、SNS投稿・AI処理の対象から外れます。一覧の「破綻画像」で表示できます。") }}

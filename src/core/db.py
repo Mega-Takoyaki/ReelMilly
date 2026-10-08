@@ -39,6 +39,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE assets ADD COLUMN {column} INTEGER")
     if "is_broken" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN is_broken INTEGER NOT NULL DEFAULT 0")
+    if "is_hidden" not in columns:  # 一覧から標準で隠すだけの印(ごみ箱・破綻画像とは別。投稿・AI処理には影響しない)
+        conn.execute("ALTER TABLE assets ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0")
     if "original_name" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN original_name TEXT")
     # 既存の作品は、いまのファイル名を元の名前として記録する(ファイルは動かさない)
@@ -173,6 +175,7 @@ def list_assets(
     tag_mode: str = "all",
     folder_mode: str = "any",
     broken: str = "hide",
+    hidden: str = "show",
     trashed: bool = False,
     no_folder: bool = False,
     sort: str | None = None,
@@ -202,6 +205,12 @@ def list_assets(
             conditions.append("assets.is_broken = 1")
         elif broken != "show":
             conditions.append("assets.is_broken = 0")
+        # 非表示: 一覧の既定では隠す(呼び出し側が"hide"を渡す)。"only"=非表示の作品だけ。既定の"show"は絞り込まない
+        # (投稿・AI処理など、一覧以外の呼び出しには影響させない)
+        if hidden == "only":
+            conditions.append("assets.is_hidden = 1")
+        elif hidden == "hide":
+            conditions.append("assets.is_hidden = 0")
 
     def in_clause(column: str, values: list, prefix: str) -> None:
         """IN条件。NONE_VALUE(未設定)が含まれていれば、NULLも対象にする。"""
@@ -490,7 +499,20 @@ def set_broken(conn: sqlite3.Connection, asset_ids: list[str], broken: bool) -> 
     return changed
 
 
-def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide") -> dict[str, list[tuple]]:
+def set_hidden(conn: sqlite3.Connection, asset_ids: list[str], hidden: bool) -> int:
+    """非表示のフラグを付け外しする(一覧から隠すだけ。ごみ箱や破綻画像とは別)。変更した件数を返す。"""
+    changed = 0
+    for asset_id in asset_ids:
+        cur = conn.execute(
+            "UPDATE assets SET is_hidden = ? WHERE id = ? AND is_hidden != ?",
+            (1 if hidden else 0, asset_id, 1 if hidden else 0),
+        )
+        changed += cur.rowcount
+    conn.commit()
+    return changed
+
+
+def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide", hidden: str = "show") -> dict[str, list[tuple]]:
     """一覧の絞り込み候補。ごみ箱以外の作品に実在する値だけを、件数つきで返す。
 
     値が未設定(NULL)のものは`NONE_VALUE`として含める。`channels`は投稿状態の候補にする投稿先。
@@ -500,6 +522,10 @@ def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide") 
         live += " AND is_broken = 1"
     elif broken != "show":
         live += " AND is_broken = 0"
+    if hidden == "only":
+        live += " AND is_hidden = 1"
+    elif hidden == "hide":
+        live += " AND is_hidden = 0"
     live_ids = "SELECT id " + live
 
     def grouped(column: str) -> list[tuple]:
@@ -607,9 +633,10 @@ def create_folder(conn: sqlite3.Connection, name: str, parent_id: int | None = N
     return cursor.lastrowid
 
 
-def folder_summaries(conn: sqlite3.Connection, broken: str = "hide") -> list[dict]:
+def folder_summaries(conn: sqlite3.Connection, broken: str = "hide", hidden: str = "show") -> list[dict]:
     """フォルダの一覧(名前順)。中の作品数(ごみ箱・非表示の破綻画像を除く)と、表紙にする作品(新しい順の先頭)つき。"""
     broken_sql = "AND a.is_broken = 1" if broken == "only" else ("" if broken == "show" else "AND a.is_broken = 0")
+    broken_sql += " AND a.is_hidden = 1" if hidden == "only" else (" AND a.is_hidden = 0" if hidden == "hide" else "")
     out = []
     for f in conn.execute("SELECT * FROM folders ORDER BY name").fetchall():
         rows = conn.execute(

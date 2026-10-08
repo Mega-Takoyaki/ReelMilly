@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
-{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip %}
+{% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip, hidden_chip %}
 {# 絞り込みの部品。項目内はOR。チェックを入れるとその場で一覧に反映される(filters.js) #}
 
 {# チェックの並び1つ分。groupは、選択中の条件を表すチップの見出しにも使う #}
@@ -127,6 +127,19 @@
         </div>
       </details>
     </div>
+    <div class="ms">
+      <details>
+        <summary>非表示<span class="ms-count" id="hidden-badge" {% if hidden_mode == 'hide' %}hidden{% endif %}>{{ '含む' if hidden_mode == 'show' else 'のみ' }}</span></summary>
+        <div class="ms-panel">
+          <p class="hint">「非表示」にした作品です。一覧に出ないだけで、ごみ箱や破綻画像とは別です（投稿・AI処理には影響しません）。既定では一覧に出ません（{{ hidden_total }}件）。</p>
+          <div class="ms-mode ms-mode-col" role="radiogroup" aria-label="非表示の作品の表示">
+            <label><input type="radio" name="hidden" value="hide" data-default="hide" data-group="非表示" {% if hidden_mode == 'hide' %}checked{% endif %}> 表示しない（既定）</label>
+            <label><input type="radio" name="hidden" value="show" data-default="hide" data-group="非表示" {% if hidden_mode == 'show' %}checked{% endif %}> 含めて表示する</label>
+            <label><input type="radio" name="hidden" value="only" data-default="hide" data-group="非表示" {% if hidden_mode == 'only' %}checked{% endif %}> 非表示の作品だけ表示する</label>
+          </div>
+        </div>
+      </details>
+    </div>
     <button type="submit" class="btn-primary" id="filter-apply">絞り込む</button>
     <a href="{{ url_for('index') }}" class="filter-clear" id="filter-clear" {% if not active_filters %}hidden{% endif %}>すべてクリア</a>
   </form>
@@ -248,6 +261,11 @@
   <span class="bulk-group">
     <button type="button" id="bulk-noplan">投稿予定なしにする</button>
     <button type="button" id="bulk-plan">投稿予定に戻す</button>
+  </span>
+
+  <span class="bulk-group">
+    <button type="button" id="bulk-hide">非表示にする</button>
+    <button type="button" id="bulk-unhide" class="btn-ghost-inline">表示に戻す</button>
   </span>
 
   <span class="bulk-group">

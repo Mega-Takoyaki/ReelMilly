@@ -157,11 +157,12 @@ def create_app(config: Config) -> Flask:
         kind_sel = [v for v in request.args.getlist("kind") if v in ("image", "video")]
         ext_sel = [v.lower() for v in request.args.getlist("ext") if v.isalnum()]
         broken_mode = request.args.get("broken") if request.args.get("broken") in ("show", "only") else "hide"
+        hidden_mode = request.args.get("hidden") if request.args.get("hidden") in ("show", "only") else "hide"
         q = (request.args.get("q") or "").strip()
         sort = request.args.get("sort") if request.args.get("sort") in db.SORTS else "created_desc"
         flat = request.args.get("flat") == "1"  # フラット表示(フォルダの中身も、すべて並べる)
         active_filters = bool(
-            broken_mode != "hide" or kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
+            broken_mode != "hide" or hidden_mode != "hide" or kind_sel or ext_sel or status_sel or rating_sel or auto_sel or plan_sel or tag_sel or folder_sel or confirmed_sel or post_sel or q
         )
         # フォルダ表示(既定): 何も絞り込んでいないときは、最上部にフォルダを並べ、フォルダに入っていない作品だけを出す。
         # 絞り込み・検索中や、フォルダを開いているときは、該当する作品をそのまま出す
@@ -179,6 +180,7 @@ def create_app(config: Config) -> Flask:
             tag_mode=tag_mode,
             folder_mode=folder_mode,
             broken=broken_mode,
+            hidden=hidden_mode,
             tag=tag_sel,
             folder_id=folder_sel,
             confirmed=[v == "1" for v in confirmed_sel],
@@ -203,12 +205,15 @@ def create_app(config: Config) -> Flask:
             conn.close()
             html = render_template("_cards.html", assets=assets, posts=posts, channels_map=channels_map, post_channels=POST_CHANNELS)
             return jsonify({"html": html, "next": offset + len(assets), "total": total})
-        facets = db.facets(conn, list(POST_CHANNELS), broken_mode)
+        facets = db.facets(conn, list(POST_CHANNELS), broken_mode, hidden_mode)
+        hidden_total = conn.execute(
+            "SELECT COUNT(*) FROM assets WHERE is_hidden = 1 AND deleted_at IS NULL"
+        ).fetchone()[0]
         broken_total = conn.execute(
             "SELECT COUNT(*) FROM assets WHERE is_broken = 1 AND deleted_at IS NULL"
         ).fetchone()[0]
         folders = db.list_folders(conn)
-        folder_cards = db.folder_summaries(conn, broken_mode) if folder_top else []
+        folder_cards = db.folder_summaries(conn, broken_mode, hidden_mode) if folder_top else []
         conn.close()
 
         def options(rows, labels=None, selected=()):
@@ -272,6 +277,8 @@ def create_app(config: Config) -> Flask:
             folder_mode=folder_mode,
             broken_mode=broken_mode,
             broken_total=broken_total,
+            hidden_mode=hidden_mode,
+            hidden_total=hidden_total,
             type_tree=type_tree,
             type_count=len(ext_sel) if ext_sel else len(kind_sel),
             status_sel=status_sel,
@@ -381,6 +388,29 @@ def create_app(config: Config) -> Flask:
         changed = db.set_broken(conn, ids, bool(payload["broken"]))
         conn.close()
         return jsonify({"changed": changed, "broken": bool(payload["broken"])})
+
+    @app.route("/api/assets/hidden", methods=["POST"])
+    def api_set_hidden():
+        """非表示のフラグを付け外しする。付けた作品は、既定の一覧に出なくなる(フィルタで見られる。投稿・AI処理には影響しない)。"""
+        payload = request.get_json(silent=True) or {}
+        ids = payload.get("asset_ids") or []
+        if not ids or "hidden" not in payload:
+            return jsonify({"error": "asset_ids and hidden are required"}), 400
+        conn = get_conn()
+        changed = db.set_hidden(conn, ids, bool(payload["hidden"]))
+        conn.close()
+        return jsonify({"changed": changed, "hidden": bool(payload["hidden"])})
+
+    @app.route("/assets/<asset_id>/hidden", methods=["POST"])
+    def toggle_hidden(asset_id):
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        db.set_hidden(conn, [asset_id], not asset["is_hidden"])
+        conn.close()
+        return redirect(url_for("asset_detail", asset_id=asset_id))
 
     @app.route("/assets/<asset_id>/broken", methods=["POST"])
     def toggle_broken(asset_id):

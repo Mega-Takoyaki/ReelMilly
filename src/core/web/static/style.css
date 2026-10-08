@@ -1739,3 +1739,5 @@ dialog.dup-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
 .ve-queued .ve-badge, .ve-running .ve-badge { animation: ve-blink 1.2s ease-in-out infinite; }
 @keyframes ve-blink { 50% { opacity: 0.45; } }
 .ve-trim { margin-bottom: 1.2rem; }
+
+.chip-hidden { padding: 0 0.3rem; background: #475569; color: #fff; font-size: 0.6rem; }
