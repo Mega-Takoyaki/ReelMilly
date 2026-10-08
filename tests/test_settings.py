@@ -53,6 +53,7 @@ def test_get_all_settings_returns_dict(conn):
         "generation_model": "claude-opus-5",
         "caption_mode": "auto",
         "auto_ingest": False,
+        "post_schedule": {"enabled": False, "time": "21:00", "count": 1},  # 未設定のときの既定: 自動投稿はオフ
     }
 
 
