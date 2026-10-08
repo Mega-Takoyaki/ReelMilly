@@ -779,10 +779,7 @@ def create_app(config: Config) -> Flask:
             problem = x_module.check_media_set([media_type for _a, _p, media_type in items])
             if problem:
                 return jsonify({"error": problem}), 400
-            ratings = [a.get("content_rating") if a.get("content_rating_confirmed") else None for a, _p, _t in items]
-            if "explicit" in ratings:
-                return jsonify({"error": "区分がexplicit(成人向け)の作品は、Xには投稿しません"}), 400
-            # センシティブ指定は、人が決める(sfwと承認されていない作品でも、指定なしで投稿できる)。成人向け(explicit)だけは、投稿しない
+            # 区分による制限は、設けない。センシティブ指定をつけるかは、人が決める
         if posting_now & seen:
             return jsonify({"error": "投稿の処理中の作品が含まれています。終わってからやり直してください"}), 409
         posting_now.update(seen)

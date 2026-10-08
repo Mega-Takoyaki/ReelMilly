@@ -227,7 +227,7 @@ def approve(conn, asset_id, rating):
     db.update_asset(conn, asset_id, content_rating=rating, content_rating_confirmed=1)
 
 
-def test_x_policy_blocks_explicit_and_leaves_sensitive_to_the_user(env):
+def test_x_has_no_rating_restrictions_and_leaves_sensitive_to_the_user(env):
     config, conn, client = env
     _insert(conn, config.paths.ready, "a1")
     item = [{"asset_id": "a1", "version": "original"}]
@@ -248,11 +248,12 @@ def test_x_policy_blocks_explicit_and_leaves_sensitive_to_the_user(env):
     assert post_x(client, fake_x(), items=item2, text="t").status_code == 202
     assert post_x(client, fake_x(), items=item2, text="t", sensitive=True).status_code == 202
 
-    # explicit: センシティブ指定をつけても、投稿しない
+    # explicit: 区分による制限は設けない(センシティブ指定は、人が決める)
     _insert(conn, config.paths.ready, "a3")
     approve(conn, "a3", "explicit")
-    res = post_x(client, fake_x(), items=[{"asset_id": "a3", "version": "original"}], text="t", sensitive=True)
-    assert res.status_code == 400 and "explicit" in res.get_json()["error"]
+    one = [{"asset_id": "a3", "version": "original"}]
+    assert post_x(client, fake_x(), items=one, text="t", sensitive=True).status_code == 202
+    assert post_x(client, fake_x(), items=one, text="t").status_code == 202
 
     # 承認済みのsfw: 指定なしで投稿できる
     _insert(conn, config.paths.ready, "a4")

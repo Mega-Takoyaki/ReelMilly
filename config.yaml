@@ -12,7 +12,7 @@ nsfw:
 
 platform_content_rules:
   fanvue: [sfw, suggestive, explicit]
-  x: [sfw, suggestive]  # Xでは、成人向け(explicit)は投稿しない(suggestiveは、センシティブ指定をつけて投稿する)
+  x: [sfw, suggestive, explicit]
   instagram: [sfw]
 
 platform_auto_post_ratings:

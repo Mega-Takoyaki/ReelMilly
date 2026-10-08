@@ -2,7 +2,7 @@
 // - window.openPostNow(assetIds) でダイアログを開く
 // - 投稿先: Fanvue / X(連携済みのときだけ選べる)
 // - 作品ごとに、元のファイル・透かし入り・編集した動画のどれを投稿するかを選べる
-// - Xは、画像4枚まで/動画1本・文字数(全角は2)・センシティブ指定(sfw以外は必須。explicitは投稿しない)を、投稿前に検査する
+// - Xは、画像4枚まで/動画1本・文字数(全角は2)を、投稿前に検査する(Xの仕様による制限だけ。区分による制限は設けない。センシティブ指定は、人が決める)
 // - 投稿は非同期で、結果は通知(右上のベル)に出る
 (function () {
   const dialog = document.getElementById("post-now-dialog");
@@ -80,7 +80,6 @@
       if (videos > 0 && !(videos === 1 && types.length === 1)) problem = "Xでは、動画は1本だけで、画像とは一緒に投稿できません";
       else if (videos === 0 && types.length > X_MAX_IMAGES) problem = `Xでは、1つの投稿に付けられる画像は${X_MAX_IMAGES}枚までです`;
       const ratings = assets.map((a) => a.rating);
-      if (ratings.includes("explicit")) problem = problem || "区分がexplicit(成人向け)の作品は、Xには投稿しません";
       // センシティブ指定は、最後は人が決める(外せる)。sfwと承認されていない作品は、開いたときに、既定でオンにするだけ
       $("pn-sensitive-note").hidden = !ratings.some((r) => r !== "sfw");
       const weight = xWeight($("pn-text").value);
