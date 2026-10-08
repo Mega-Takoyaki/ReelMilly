@@ -85,7 +85,13 @@
     <p><code id="fanvue-redirect-uri">{{ fanvue_redirect_uri }}</code>
       <button type="button" class="btn-ghost-inline" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('fanvue-redirect-uri').textContent).then(function(){ window.showToast('コピーしました', 'success'); })">コピー</button></p>
     <h3 style="margin-top: 1rem;">OAuth連携状態{{ info("このアプリがFanvueへ投稿してよいという許可（アクセストークン）を持っているかの状態です。「Fanvueと連携する」を押すとFanvueの許可画面に移り、許可すると連携済みになります。トークンは期限が切れる前に自動で更新されます。連携を解除すると保存したトークンを削除します。") }}</h3>
-    {% if fanvue_connected %}
+    {% if fanvue_connected and fanvue_needs_reconnect %}
+    <div class="banner banner-error">
+      <strong>Fanvueの連携が切れています。</strong>アクセストークンの期限(1時間)が切れていて、更新もできない状態です（以前の連携が、更新用トークンの許可(offline_access)なしで行われたため）。
+      いったん「連携を解除する」を押して、もう一度「Fanvueと連携する」で連携し直してください。
+    </div>
+    <button type="submit" form="fanvue-disconnect-form" class="btn-ghost-inline">連携を解除する</button>
+    {% elif fanvue_connected %}
     <p><strong>連携済み</strong>（保存後に操作してください）</p>
     <button type="submit" form="fanvue-disconnect-form" class="btn-ghost-inline">連携を解除する</button>
     {% else %}

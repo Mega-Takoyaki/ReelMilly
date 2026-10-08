@@ -190,3 +190,12 @@ def test_dialog_js_stores_the_asset_id_on_each_row(env):
     js = client.get("/static/post-now.js").get_data(as_text=True)
     assert 'k === "dataset"' in js and "Object.assign(e.dataset" in js
     assert "dataset: { assetId: a.asset_id }" in js
+
+
+def test_list_remembers_filters_in_the_browser_session(env):
+    """詳細画面などから一覧へ戻ったとき、絞り込み・並び順を維持する(条件なしの「/」を、覚えている条件で開き直す)。"""
+    config, conn, client = env
+    page = client.get("/").get_data(as_text=True)
+    assert 'sessionStorage.getItem("reelmilly:listQuery")' in page and 'location.replace("/?" + saved)' in page
+    assert 'sessionStorage.setItem("reelmilly:listQuery", location.search.slice(1))' in page  # 条件つきで開いたときに記憶する
+    assert 'sessionStorage.setItem("reelmilly:listQuery", qs)' in client.get("/static/filters.js").get_data(as_text=True)  # 絞り込みのたびに記憶する

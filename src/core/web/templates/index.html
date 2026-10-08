@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Reelmilly - 一覧{% endblock %}
 {% block content %}
+<script>
+  // 一覧の絞り込み・並び順・フォルダ/フラットの状態を、ブラウザを開いている間は覚えておく(詳細画面などから一覧へ戻っても、そのまま)。
+  // 条件なしの「/」を開いたとき、覚えている条件があれば、それで開き直す(「すべてクリア」を押すと、覚えている条件も空になる)
+  (function () {
+    try {
+      var saved = sessionStorage.getItem("reelmilly:listQuery");
+      if (!location.search && saved) { location.replace("/?" + saved); return; }
+      if (location.search) sessionStorage.setItem("reelmilly:listQuery", location.search.slice(1));
+    } catch (e) { /* 保存できない環境では、これまでどおり(覚えない) */ }
+  })();
+</script>
 {% from "_icons.html" import type_chip, rating_chip, status_dot, post_marks, noplan_chip, wm_chip, broken_chip, hidden_chip %}
 {# 絞り込みの部品。項目内はOR。チェックを入れるとその場で一覧に反映される(filters.js) #}
 

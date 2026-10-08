@@ -29,7 +29,9 @@ import requests
 DEFAULT_AUTHORIZATION_URL = "https://auth.fanvue.com/oauth2/auth"
 DEFAULT_TOKEN_URL = "https://auth.fanvue.com/oauth2/token"
 # 投稿に必要な許可(スコープ)。read:mediaは、アップロードしたメディアの処理状況(GET /media/{uuid})の確認に必要
-DEFAULT_SCOPES = ["read:self", "read:media", "write:media", "write:post", "read:post"]
+# offline_accessは、アクセストークン(1時間で切れる)を更新するための「更新用トークン」を発行してもらう許可。
+# これが無いと、更新用トークンが空になり、1時間後に投稿できなくなる(実機で起きた)
+DEFAULT_SCOPES = ["offline_access", "read:self", "read:media", "write:media", "write:post", "read:post"]
 
 # アクセストークンの実際の有効期限より手前でリフレッシュし、
 # リクエスト直前の失効を避けるための安全マージン
@@ -154,6 +156,10 @@ def refresh_tokens(
     return new_tokens
 
 
+class FanvueTokenExpired(FanvueOAuthError):
+    """アクセストークンの期限が切れていて、更新もできない(設定画面から、連携し直す必要がある)。"""
+
+
 class FanvueTokenStore:
     """取得したOAuthトークンをローカルファイルに永続化する(ADR-0021)。
 
@@ -172,8 +178,17 @@ class FanvueTokenStore:
         return TokenSet(**data)
 
     def save(self, tokens: TokenSet) -> None:
+        # 途中で止まっても(停電・クラッシュ)、トークンのファイルが壊れたり、古い内容に戻ったりしないよう、
+        # 一時ファイルに書いてディスクへ確実に書き出してから、置き換える
+        import os
+
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(asdict(tokens)), encoding="utf-8")
+        temp = self._path.with_suffix(".tmp")
+        with temp.open("w", encoding="utf-8") as f:
+            f.write(json.dumps(asdict(tokens)))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, self._path)
 
     def clear(self) -> None:
         if self._path.exists():
@@ -189,7 +204,60 @@ class FanvueTokenStore:
             raise FanvueOAuthError(
                 "Fanvueと連携していません。本体UIの設定画面から連携してください。"
             )
-        if tokens.is_expired():
-            tokens = refresh_tokens(client_id, client_secret, tokens.refresh_token)
+        if not tokens.is_expired():
+            return tokens.access_token
+        with self._refresh_lock():
+            # 待っている間に、別のプロセス(画面の投稿・定期の投稿)が更新していれば、それを使う
+            # (更新用トークンは、使うと新しいものに替わる。同時に更新すると、片方が失敗して、連携が切れてしまう)
+            tokens = self.load() or tokens
+            if not tokens.is_expired():
+                return tokens.access_token
+            if not tokens.refresh_token:
+                raise FanvueTokenExpired(self.RECONNECT_MESSAGE + "（更新用トークンがありません）")
+            try:
+                tokens = refresh_tokens(client_id, client_secret, tokens.refresh_token)
+            except FanvueOAuthError as exc:
+                if "invalid_grant" in str(exc):
+                    raise FanvueTokenExpired(self.RECONNECT_MESSAGE) from exc
+                raise
             self.save(tokens)
         return tokens.access_token
+
+    RECONNECT_MESSAGE = "Fanvueの連携が切れています。設定の「Fanvue」タブで、連携し直してください"
+
+    def needs_reconnect(self) -> bool:
+        """連携はしているが、期限が切れていて、更新もできない(連携し直しが必要)状態か。"""
+        tokens = self.load()
+        return tokens is not None and tokens.is_expired(margin_seconds=0) and not tokens.refresh_token
+
+    def _refresh_lock(self):
+        """プロセス間の排他(ロックファイル)。古いロックは、60秒で無効とみなす。"""
+        import contextlib
+        import os
+
+        lock_path = self._path.with_suffix(".lock")
+
+        @contextlib.contextmanager
+        def lock():
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    os.close(fd)
+                    break
+                except FileExistsError:
+                    try:
+                        if time.time() - lock_path.stat().st_mtime > 60:
+                            lock_path.unlink(missing_ok=True)  # 前のプロセスが、ロックを残して止まった
+                            continue
+                    except OSError:
+                        pass
+                    if time.monotonic() > deadline:
+                        break  # 待ちきれなければ、ロックなしで進める(止まり続けるよりは、よい)
+                    time.sleep(0.2)
+            try:
+                yield
+            finally:
+                lock_path.unlink(missing_ok=True)
+
+        return lock()

@@ -1167,7 +1167,9 @@ def create_app(config: Config) -> Flask:
 
         from posting.fanvue_oauth import FanvueTokenStore
 
-        fanvue_connected = FanvueTokenStore(_fanvue_token_store_path(config)).load() is not None
+        token_store = FanvueTokenStore(_fanvue_token_store_path(config))
+        fanvue_connected = token_store.load() is not None
+        fanvue_needs_reconnect = token_store.needs_reconnect()
 
         return render_template(
             "settings.html",
@@ -1183,6 +1185,7 @@ def create_app(config: Config) -> Flask:
             connections=connections,
             saved=request.args.get("saved") == "1",
             fanvue_connected=fanvue_connected,
+            fanvue_needs_reconnect=fanvue_needs_reconnect,
             fanvue_just_connected=request.args.get("fanvue_connected") == "1",
             fanvue_redirect_uri=fanvue_redirect_uri(),
             fanvue_error=request.args.get("fanvue_error"),

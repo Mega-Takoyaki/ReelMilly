@@ -119,6 +119,7 @@
       const freshToolbar = doc.getElementById("grid-toolbar");
       if (toolbar && freshToolbar) toolbar.innerHTML = freshToolbar.innerHTML;
       history.replaceState(null, "", url);
+      try { sessionStorage.setItem("reelmilly:listQuery", qs); } catch (e) { /* 覚えられなくても、絞り込みは使える */ }
       if (clearLink) clearLink.hidden = qs === "";
       window.dispatchEvent(new Event("grid-updated"));
     } catch (err) {
