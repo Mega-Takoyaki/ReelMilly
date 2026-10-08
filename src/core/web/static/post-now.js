@@ -14,6 +14,7 @@
     const e = document.createElement(tag);
     Object.entries(props || {}).forEach(([k, v]) => {
       if (k === "class") e.className = v;
+      else if (k === "dataset") Object.assign(e.dataset, v);  // datasetは読み取り専用の項目なので、代入ではなく中身を移す(これが無く、作品IDが空で送られていた)
       else if (k in e) e[k] = v;
       else e.setAttribute(k, v);
     });

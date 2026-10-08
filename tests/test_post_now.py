@@ -182,3 +182,11 @@ def test_post_now_works_for_any_status_and_marks_the_asset_ready(env):
     with patch("core.cli._try_create_fanvue_client", return_value=(bad, None)):
         client.post("/api/post-now", json={"items": [{"asset_id": "a2", "version": "original"}]})
     assert db.get_asset(conn, "a2")["status"] == "analyzing"
+
+
+def test_dialog_js_stores_the_asset_id_on_each_row(env):
+    """投稿ダイアログの行は、data-asset-idを持つ必要がある(datasetは代入できず、空のIDが送られて「投稿できない作品が含まれています」になった)。"""
+    config, conn, client = env
+    js = client.get("/static/post-now.js").get_data(as_text=True)
+    assert 'k === "dataset"' in js and "Object.assign(e.dataset" in js
+    assert "dataset: { assetId: a.asset_id }" in js
