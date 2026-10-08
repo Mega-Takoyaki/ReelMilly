@@ -3,8 +3,8 @@
 // - 定期ポーリングで進捗を取得し、完了したものから順に画面表示を更新する
 // - 完了・失敗をトースト通知する
 (function () {
-  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入" };
-  const BUSY_SHORT = { nsfw: "判定", describe: "説明生成", watermark: "透かし" };
+  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入", edit: "動画編集" };
+  const BUSY_SHORT = { nsfw: "判定", describe: "説明生成", watermark: "透かし", edit: "動画編集" };
   const POLL_MS = 3000;
 
   let cards = [];

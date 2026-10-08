@@ -12,6 +12,7 @@ LEVELS = ("info", "success", "warning", "error")
 KINDS = {
     "ai": "AI処理",
     "watermark": "透かし",
+    "edit": "動画編集",
     "post": "投稿",
     "import": "取り込み",
     "trash": "ごみ箱・削除",

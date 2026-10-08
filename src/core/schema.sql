@@ -128,3 +128,22 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at);
 CREATE TABLE IF NOT EXISTS dup_ignores (
     content_hash TEXT PRIMARY KEY
 );
+
+-- 動画の編集結果(1作品に、サブ動画として複数持てる)。元の動画は変更しない。
+-- ファイルは、作品のフォルダの `edits/` に置く(filenameは、そこからの相対)
+CREATE TABLE IF NOT EXISTS asset_edits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,       -- 'trim'(切り出し)。今後: 'caption'(テロップ)・'logo'・'mosaic'など
+    params TEXT NOT NULL,     -- 編集の内容(JSON)
+    summary TEXT NOT NULL,    -- 画面に出す、簡単な説明(例: トリム 0:02.0～0:05.0)
+    status TEXT NOT NULL,     -- 'queued' | 'running' | 'done' | 'failed'
+    error TEXT,
+    filename TEXT,
+    duration REAL,
+    size_bytes INTEGER,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_asset_edits_asset ON asset_edits(asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_edits_status ON asset_edits(status);

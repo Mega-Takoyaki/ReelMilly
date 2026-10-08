@@ -1711,3 +1711,31 @@ dialog.dup-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
 .folder-name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-count { font-size: 0.72rem; color: var(--fg-muted); }
 .folder-open-note { margin: 0 0 0.8rem; font-size: 0.85rem; color: var(--fg-muted); }
+
+/* 動画の編集(詳細画面) ---------------------------------------------------------*/
+.ve-trim video { width: 100%; max-height: 22rem; background: #000; border-radius: var(--radius-md); }
+.ve-timeline {
+  position: relative; height: 1.1rem; margin: 0.5rem 0; cursor: pointer;
+  background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px;
+}
+.ve-range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; }
+.ve-playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); pointer-events: none; }
+.ve-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; }
+.ve-fields label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
+.ve-fields input[type="number"] { width: 6rem; }
+.ve-modes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 1.2rem; margin: 0.6rem 0; font-size: 0.85rem; }
+.ve-modes label { display: inline-flex; align-items: center; gap: 0.3rem; }
+.ve-modes input { width: auto; }
+.ve-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.ve-error { color: var(--danger, #e5484d); }
+.ve-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.ve-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem 1rem;
+  padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-alt); }
+.ve-main { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.7rem; min-width: 0; }
+.ve-summary { font-weight: 600; font-size: 0.9rem; }
+.ve-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.9rem; font-size: 0.85rem; }
+.ve-badge-queued, .ve-badge-running { background: color-mix(in srgb, var(--accent) 25%, var(--surface-alt)); }
+.ve-badge-failed { background: color-mix(in srgb, var(--danger, #e5484d) 30%, var(--surface-alt)); }
+.ve-queued .ve-badge, .ve-running .ve-badge { animation: ve-blink 1.2s ease-in-out infinite; }
+@keyframes ve-blink { 50% { opacity: 0.45; } }
+.ve-trim { margin-bottom: 1.2rem; }

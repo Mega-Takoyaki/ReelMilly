@@ -14,7 +14,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core import db
+from core import db, edits
 from core.config import Config
 from core.events import log_event
 
@@ -55,6 +55,7 @@ def purge_assets(config: Config, conn: sqlite3.Connection, asset_ids: list[str] 
             result.errors.append(f"{asset_id}: AI処理の実行中のため削除できません（終わってからやり直してください）")
             continue
         try:
+            edits.remove_files(conn, trashed[asset_id])  # 編集動画(サブ動画)も、消す
             _remove_files(config, trashed[asset_id])
         except OSError as exc:
             result.errors.append(f"{asset_id}: ファイルを削除できませんでした（{exc}）")

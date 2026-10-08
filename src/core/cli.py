@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sqlite3
 import sys
 import time
 from datetime import datetime, timezone
@@ -65,6 +66,11 @@ def cmd_doctor(config: Config) -> int:
     except Exception as exc:  # noqa: BLE001 - doctorは診断結果を表示するのが目的
         ok = False
         print(f"[doctor] database {config.paths.db_path}: NG ({exc})")
+
+    from core import ffmpeg
+
+    ffmpeg_path = ffmpeg.find("ffmpeg")
+    print(f"[doctor] ffmpeg (動画の編集用): {ffmpeg_path or '見つかりません(動画の編集を使うには `winget install Gyan.FFmpeg`)'}")
 
     events_status = "exists" if config.paths.events_path.exists() else "not yet created"
     print(f"[doctor] events log {config.paths.events_path}: {events_status}")
@@ -328,6 +334,7 @@ def cmd_watch(config: Config, interval_seconds: int = 60) -> int:
     """
     print(f"[watch] {interval_seconds}秒間隔でanalyze/run-dueを実行します（Ctrl+Cで終了）")
     worker = AnalysisWorker(config, persistent=True)
+    _start_edit_thread(config)
     try:
         while True:
             conn = get_connection(config.paths.db_path)
@@ -362,6 +369,36 @@ def cmd_migrate_filenames(config: Config) -> int:
     for message in result.skipped:
         print(f"[migrate-filenames] スキップ: {message}")
     return 0
+
+
+def _start_edit_thread(config: Config) -> None:
+    """動画の編集(切り出しなど)を処理するスレッドを始める。
+
+    AI処理は1件に数分かかるため、同じ巡回で処理すると、編集が待たされる。ffmpegは軽いので、別のスレッドで、
+    登録されたらすぐ(数秒以内に)処理する。
+    """
+    import threading
+
+    from core import edits
+
+    def loop() -> None:
+        conn = get_connection(config.paths.db_path)
+        try:
+            edits.requeue_running(conn)  # 前回、途中で止まった分は、やり直す
+        finally:
+            conn.close()
+        while True:
+            try:
+                conn = get_connection(config.paths.db_path)
+                try:
+                    edits.run_pending(conn, config)
+                finally:
+                    conn.close()
+            except Exception as exc:  # noqa: BLE001  スレッドが止まらないように、続ける
+                print(f"[edit] 予期しないエラー: {exc}")
+            time.sleep(2)
+
+    threading.Thread(target=loop, name="edit-runner", daemon=True).start()
 
 
 def _quiet_access_log() -> None:

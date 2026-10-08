@@ -1,0 +1,36 @@
+{% from "_info.html" import info %}
+{# 動画の編集(切り出し)と、編集した動画(サブ動画)の一覧。作品詳細画面の動画だけに出す。video-edit.jsが動かす #}
+<div class="card" id="video-edit" data-asset-id="{{ asset.id }}">
+  <h2>動画の編集{{ info("元の動画は変わりません。編集した結果は、別の動画(サブ動画)として、この作品に最大" ~ edit_limit ~ "件まで登録できます。処理は別プロセスのワーカー(reelmilly watch)が非同期で行い、終わると通知(右上のベル)に出ます。") }}</h2>
+
+  <div class="ve-trim">
+    <h3>切り出し（前後の削除）</h3>
+    <video id="ve-video" src="{{ url_for('asset_media', asset_id=asset.id) }}" controls preload="metadata" muted playsinline></video>
+    <div class="ve-timeline" id="ve-timeline" role="slider" aria-label="切り出す範囲（クリックでその位置へ移動）">
+      <div class="ve-range" id="ve-range"></div>
+      <div class="ve-playhead" id="ve-playhead"></div>
+    </div>
+    <div class="ve-fields">
+      <label>開始（秒）<input type="number" id="ve-start" min="0" step="0.1" value="0" inputmode="decimal"></label>
+      <button type="button" class="btn-ghost-inline" id="ve-set-start" data-tip="再生位置を、開始にします">現在位置を開始に</button>
+      <label>終了（秒）<input type="number" id="ve-end" min="0" step="0.1" value="0" inputmode="decimal"></label>
+      <button type="button" class="btn-ghost-inline" id="ve-set-end" data-tip="再生位置を、終了にします">現在位置を終了に</button>
+      <span class="hint" id="ve-length"></span>
+    </div>
+    <div class="ve-modes" role="radiogroup" aria-label="切り出し方">
+      <label><input type="radio" name="ve-mode" value="accurate" checked> 正確（再エンコード）</label>
+      <label><input type="radio" name="ve-mode" value="fast"> 高速（再エンコードなし）</label>
+      {{ info("正確: 指定した位置ぴったりで切ります(数秒〜、動画の長さ程度かかります。画質はほぼ変わりません)。高速: 再エンコードせずに切るため一瞬ですが、開始位置が直前のキーフレームに少しずれることがあります。") }}
+    </div>
+    <div class="ve-actions">
+      <button type="button" class="btn-ghost" id="ve-preview">範囲をプレビュー</button>
+      <button type="button" class="btn-primary" id="ve-run">切り出して、別の動画として保存</button>
+    </div>
+    <p class="hint" id="ve-notice" hidden></p>
+  </div>
+
+  <h3>編集した動画 <span class="hint" id="ve-count"></span></h3>
+  <ul class="ve-list" id="ve-list" aria-live="polite">
+    <li class="hint ve-empty">まだありません</li>
+  </ul>
+</div>

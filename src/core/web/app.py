@@ -15,7 +15,7 @@ from pathlib import Path
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from core import db, env_settings, generation
-from core import duplicates, notifications, storage, watermark
+from core import duplicates, edits, ffmpeg, notifications, storage, watermark
 from core.dimensions import read_dimensions
 from core import worker as worker_module
 from core.channels import POST_CHANNELS, POST_STATUS_LABELS
@@ -445,6 +445,7 @@ def create_app(config: Config) -> Flask:
             all_folders=all_folders,
             content_ratings=CONTENT_RATINGS,
             properties=properties,
+            edit_limit=edits.MAX_EDITS_PER_ASSET,
             suggested_rating=_suggested_rating(asset),
             posts=asset_posts,
             post_channels=POST_CHANNELS,
@@ -610,6 +611,89 @@ def create_app(config: Config) -> Flask:
         if not path.exists():
             abort(404)
         return send_file(path, as_attachment=True, download_name=name)
+
+    # --- 動画の編集(切り出しなど)。結果は、サブ動画として作品に複数登録する ---
+
+    def _edit_view(asset: dict, edit: dict) -> dict:
+        path = edits.edit_path(asset, edit)
+        return {
+            "id": edit["id"],
+            "kind": edit["kind"],
+            "summary": edit["summary"],
+            "status": edit["status"],
+            "error": edit["error"],
+            "duration": edit["duration"],
+            "size_bytes": edit["size_bytes"],
+            "created_at": edit["created_at"],
+            "available": bool(path and path.exists()),
+            "url": url_for("edit_media", asset_id=asset["id"], edit_id=edit["id"]),
+            "download_url": url_for("edit_media", asset_id=asset["id"], edit_id=edit["id"], download=1),
+        }
+
+    @app.route("/api/assets/<asset_id>/edits")
+    def api_list_edits(asset_id):
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        items = [_edit_view(asset, e) for e in edits.list_edits(conn, asset_id)]
+        used = edits.active_count(conn, asset_id)
+        conn.close()
+        return jsonify({"edits": items, "used": used, "limit": edits.MAX_EDITS_PER_ASSET, "ffmpeg": ffmpeg.available()})
+
+    @app.route("/api/assets/<asset_id>/edits", methods=["POST"])
+    def api_create_edit(asset_id):
+        payload = request.get_json(silent=True) or {}
+        if payload.get("kind", "trim") not in edits.KINDS:
+            return jsonify({"error": "未対応の編集です"}), 400
+        if not ffmpeg.available():
+            return jsonify({"error": "ffmpegが見つかりません。`winget install Gyan.FFmpeg`で入れてから、アプリを再起動してください"}), 503
+        require_storage()
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None or asset.get("deleted_at"):
+            conn.close()
+            abort(404)
+        try:
+            edit_id = edits.enqueue_trim(conn, asset, payload.get("start"), payload.get("end"), payload.get("mode", "accurate"))
+        except edits.EditError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        conn.close()
+        return jsonify({"id": edit_id}), 201
+
+    @app.route("/api/assets/<asset_id>/edits/<int:edit_id>", methods=["DELETE"])
+    def api_delete_edit(asset_id, edit_id):
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        try:
+            deleted = edits.delete_edit(conn, asset, edit_id)
+        except edits.EditError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 409
+        conn.close()
+        return jsonify({"deleted": deleted}), (200 if deleted else 404)
+
+    @app.route("/assets/<asset_id>/edits/<int:edit_id>/media")
+    def edit_media(asset_id, edit_id):
+        """編集した動画。download=1で、元のファイル名をもとにした名前で保存する。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        edit = edits.get_edit(conn, asset_id, edit_id) if asset else None
+        conn.close()
+        path = edits.edit_path(asset, edit) if edit else None
+        if path is None or not path.exists():
+            abort(404)
+        if request.args.get("download"):
+            stem = Path(asset.get("original_name") or asset_id).stem
+            p = edit["params"]
+            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else edit["kind"]
+            return send_file(path, as_attachment=True, download_name=f"{stem}_{tag}{path.suffix}")
+        return send_file(path)
 
     # --- 透かし(ウォーターマーク) ---
 

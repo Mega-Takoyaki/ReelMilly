@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+import pytest
 from unittest.mock import MagicMock, patch
 
 from core import db
@@ -248,6 +249,12 @@ def test_run_due_skips_unsupported_job_name(tmp_path, capsys, monkeypatch):
     assert exit_code == 0
     assert "未対応のジョブ名" in capsys.readouterr().out
     mocked.assert_not_called()
+
+
+@pytest.fixture(autouse=True)
+def _no_edit_thread(monkeypatch):
+    """`watch`の動画編集用スレッドは、ここでは動かさない(巡回のテストに、余計なsleepが混ざらないように)。"""
+    monkeypatch.setattr("core.cli._start_edit_thread", lambda config: None)
 
 
 def test_watch_loops_run_due_until_interrupted(tmp_path, monkeypatch):
