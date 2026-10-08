@@ -360,3 +360,30 @@ def test_posted_or_failed_assets_are_not_picked_again(setup):
     )
     assert retry.executed is True
     assert db.get_posts(conn, ["a1"])["a1"]["fanvue"]["status"] == "posted"
+
+
+def test_run_fanvue_drop_with_asset_id_posts_that_asset_not_the_oldest(setup):
+    """作品を指定すると、最古ではなく、その作品を投稿する(実機で、意図しない作品が先に投稿されたため)。"""
+    config, conn = setup
+    _make_ready_asset(config, conn, "old", created_at="2026-01-01T00:00:00+00:00")
+    _make_ready_asset(config, conn, "chosen", created_at="2026-01-02T00:00:00+00:00", audience="followers-and-subscribers")
+    client = _mock_fanvue_client()
+
+    result = run_fanvue_drop(config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}", asset_id="chosen")
+
+    assert result.executed and result.asset_id == "chosen"
+    assert client.create_post.call_args.kwargs["audience"] == "followers-and-subscribers"  # 作品ごとの公開範囲で投稿する
+    assert db.get_posts(conn, ["old"]) == {} or "fanvue" not in db.get_posts(conn, ["old"]).get("old", {})  # 古いほうは、投稿していない
+
+
+def test_run_fanvue_drop_with_asset_id_refuses_unsuitable_assets(setup):
+    config, conn = setup
+    _make_ready_asset(config, conn, "unconfirmed", content_rating_confirmed=0)
+    _make_ready_asset(config, conn, "posted")
+    db.set_post(conn, "posted", "fanvue", "posted", url="u")
+    client = _mock_fanvue_client()
+
+    for asset_id in ("unconfirmed", "posted", "missing"):
+        result = run_fanvue_drop(config, conn, client, fanvue_handle="c", post_url_template="https://f.com/{handle}", asset_id=asset_id)
+        assert not result.executed and "投稿できる状態ではありません" in result.skipped_reason
+    client.upload_media.assert_not_called()

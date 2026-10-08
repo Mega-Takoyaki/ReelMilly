@@ -212,8 +212,9 @@ def cmd_run_drop(
     count: int = 1,
     kind: str | None = None,
     rating: str | None = None,
+    asset_id: str | None = None,
 ) -> int:
-    """Fanvueへの本編投稿を最大`count`件実行する(CLAUDE_HANDOFF.md 6章のdropジョブ、X投稿部分は未実装)。
+    """Fanvueへの本編投稿を最大`count`件実行する(`asset_id`指定時は、その作品だけ)(CLAUDE_HANDOFF.md 6章のdropジョブ、X投稿部分は未実装)。
 
     `kind`/`rating`で投稿対象を絞り込める(ADR-0015)。同日の実行有無は
     ジョブ全体(`drop`)単位で判定する(1回の実行でcount件まとめて投稿する)。
@@ -222,7 +223,8 @@ def cmd_run_drop(
     init_db(conn)
 
     today = _today_str(config.timezone)
-    if db_module.get_last_run_date(conn, "drop") == today:
+    # 作品を指定した投稿は、定期の投稿(1日1回)とは別の手動の操作なので、「本日実行済み」の判定にも記録にも関与しない
+    if asset_id is None and db_module.get_last_run_date(conn, "drop") == today:
         print(f"[run drop] 本日（{today}）は既に実行済みのためスキップします")
         conn.close()
         return 0
@@ -251,9 +253,11 @@ def cmd_run_drop(
         kind=kind,
         rating=rating,
         generator=generator,
+        asset_id=asset_id,
     )
 
-    db_module.set_last_run_date(conn, "drop", today)
+    if asset_id is None:
+        db_module.set_last_run_date(conn, "drop", today)
     conn.close()
 
     exit_code = 0
@@ -477,6 +481,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--rating", choices=["sfw", "suggestive", "explicit"], default=None, help="対象をcontent_ratingで絞り込む"
     )
+    run_parser.add_argument("--asset-id", default=None, help="最古ではなく、この作品を投稿する(承認済み・Fanvueが投稿予定・未投稿のもの)")
     subparsers.add_parser("run-due", help="config.yamlのcadence設定を見て、時刻が来ているジョブを実行する")
     watch_parser = subparsers.add_parser(
         "watch", help="run-dueを一定間隔で繰り返す常駐プロセスとして起動する(Ctrl+Cで終了)"
@@ -511,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "web":
         return cmd_web(config)
     if args.command == "run" and args.job == "drop":
-        return cmd_run_drop(config, count=args.count, kind=args.kind, rating=args.rating)
+        return cmd_run_drop(config, count=args.count, kind=args.kind, rating=args.rating, asset_id=args.asset_id)
     if args.command == "run-due":
         return cmd_run_due(config)
     if args.command == "watch":

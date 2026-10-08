@@ -82,8 +82,11 @@ def run_fanvue_drop(
     kind: str | None = None,
     rating: str | None = None,
     generator=None,
+    asset_id: str | None = None,
 ) -> DropResult:
     """readyかつfanvueチャンネル指定・承認済みの最古アセットを1件Fanvueへ投稿する。
+
+    `asset_id`を指定すると、最古ではなく、その作品を投稿する(承認済み・Fanvueが投稿予定・Fanvue未投稿のものに限る)。
 
     対象アセットが無い場合、またはポリシー(ADR-0006/0008/0009)で自動投稿
     不可と判定された場合は`executed=False`で理由を返し、何も投稿しない。
@@ -105,12 +108,19 @@ def run_fanvue_drop(
         kind=kind,
         content_rating=rating,
         order="asc",
-        limit=1,
+        limit=1 if asset_id is None else 100000,
     )
+    if asset_id is not None:
+        candidates = [a for a in candidates if a["id"] == asset_id]  # 指定した作品が、投稿できる条件を満たすときだけ
     if not candidates:
         return DropResult(
             executed=False,
-            skipped_reason="ready状態でfanvue向けの承認済みアセットがありません",
+            asset_id=asset_id,
+            skipped_reason=(
+                f"{asset_id}は、投稿できる状態ではありません(承認済み・Fanvueが投稿予定・Fanvue未投稿のものだけです)"
+                if asset_id
+                else "ready状態でfanvue向けの承認済みアセットがありません"
+            ),
         )
 
     asset = candidates[0]
@@ -193,6 +203,7 @@ def run_fanvue_drop_batch(
     kind: str | None = None,
     rating: str | None = None,
     generator=None,
+    asset_id: str | None = None,
 ) -> list[DropResult]:
     """`run_fanvue_drop`を最大`count`回繰り返す(ADR-0015)。
 
@@ -210,6 +221,7 @@ def run_fanvue_drop_batch(
             kind=kind,
             rating=rating,
             generator=generator,
+            asset_id=asset_id,
         )
         results.append(result)
         if not result.executed:
