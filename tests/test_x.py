@@ -97,7 +97,11 @@ def test_image_upload_posts_multipart_and_sets_the_sensitive_flag(tmp_path):
     assert upload.args[:2] == ("POST", "https://api.x.com/2/media/upload")
     assert upload.kwargs["data"]["media_category"] == "tweet_image" and upload.kwargs["headers"]["Authorization"] == "Bearer token"
     assert metadata.args[:2] == ("POST", "https://api.x.com/2/media/metadata")
-    assert metadata.kwargs["json"] == {"id": "111", "metadata": {"sensitive_media_warning": ["adult_content"]}}  # センシティブ指定
+    # センシティブ指定: 配列ではなく、真偽値のオブジェクト(配列は、実機で400になった)
+    assert metadata.kwargs["json"] == {
+        "id": "111",
+        "metadata": {"sensitive_media_warning": {"adult_content": True, "graphic_violence": False, "other": False}},
+    }
 
 
 def test_image_upload_without_sensitive_does_not_call_metadata(tmp_path):

@@ -81,8 +81,12 @@ class XClient:
         else:
             media_id = self._upload_video(path, size, mime)
         if sensitive:
-            # 成人向けのセンシティブなメディアとして、投稿前に指定する
-            self._request("POST", "/2/media/metadata", json={"id": media_id, "metadata": {"sensitive_media_warning": ["adult_content"]}})
+            # 成人向けのセンシティブなメディアとして、投稿前に指定する。
+            # 形は、配列ではなく、真偽値の3項目のオブジェクト(実機で、配列は400になった。公式ドキュメントで確認)
+            self._request(
+                "POST", "/2/media/metadata",
+                json={"id": media_id, "metadata": {"sensitive_media_warning": {"adult_content": True, "graphic_violence": False, "other": False}}},
+            )
         return media_id
 
     def _upload_video(self, path: Path, size: int, mime: str) -> str:
