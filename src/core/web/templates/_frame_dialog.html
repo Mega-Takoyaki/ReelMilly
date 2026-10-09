@@ -1,0 +1,45 @@
+{% from "_info.html" import info %}
+{# 加工エディタ(静止画の取り出し)のポップアップ。動画の詳細画面だけ。frame-editor.jsが動かす。結果は、「ファイル(原本と加工版)」に、画像の加工版として並ぶ #}
+<dialog id="frame-dialog" class="wm-dialog edit-dialog frame-dialog" data-asset-id="{{ asset.id }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}">
+  <form method="dialog" id="frame-form">
+    <header class="pn-head">
+      <h2>加工版を作る: 静止画を取り出す{{ info("動画の、止めた位置の1コマを、jpgまたはpngの画像（加工版）として保存します。大きさは、元の動画と同じです。拡大を選ぶと、補間（Lanczos）で大きくします。細かい部分が新しく描かれるわけではないので、見た目の鮮明さは、あまり変わりません。原本は変わりません。") }}</h2>
+      <button type="button" class="lightbox-close pn-close" id="fr-close" aria-label="閉じる">&times;</button>
+    </header>
+
+    <div class="mk-stage-wrap"><video id="fr-video" muted playsinline preload="none"></video></div>
+    <div class="mk-player">
+      <button type="button" class="btn-ghost-inline" id="fr-play">▶ 再生</button>
+      <button type="button" class="btn-ghost-inline" id="fr-prev" data-tip="1コマ戻る">◀ 1コマ</button>
+      <button type="button" class="btn-ghost-inline" id="fr-next" data-tip="1コマ進む">1コマ ▶</button>
+      <input type="range" id="fr-seek" min="0" max="1000" value="0" aria-label="再生位置">
+      <span class="hint" id="fr-time">0.00 / 0.00 秒</span>
+    </div>
+
+    <div class="mk-options">
+      <div class="pn-seg" role="radiogroup" aria-label="形式">
+        <label><input type="radio" name="fr-format" value="jpg" checked><span>JPG</span></label>
+        <label><input type="radio" name="fr-format" value="png"><span>PNG</span></label>
+      </div>
+      <label class="mk-strength">拡大
+        <select id="fr-scale">
+          <option value="1">しない（元の大きさ）</option>
+          <option value="2">2倍</option>
+          <option value="3">3倍</option>
+          <option value="4">4倍</option>
+        </select>
+        {{ info("補間による拡大です(細部は増えません)。AIによる高精細化は、このPCでは時間がかかるため、未対応です。PNGは無劣化で、ファイルが大きくなります。") }}
+      </label>
+      <span class="hint" id="fr-size"></span>
+    </div>
+    <p class="hint" id="fr-notice" hidden></p>
+
+    <footer class="pn-foot">
+      <span class="hint">原本は変わりません</span>
+      <div class="confirm-actions">
+        <button type="button" class="btn-ghost" id="fr-cancel">キャンセル</button>
+        <button type="button" class="btn-primary" id="fr-run">このコマを、加工版として保存</button>
+      </div>
+    </footer>
+  </form>
+</dialog>

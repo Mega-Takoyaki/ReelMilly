@@ -170,3 +170,27 @@ def mask_video(src: Path, dest: Path, params: dict, timeout: int = 7200) -> None
         dest.unlink(missing_ok=True)
         detail = (result.stderr or "").strip().splitlines()
         raise FfmpegError("ffmpegが失敗しました: " + (detail[-1] if detail else f"終了コード{result.returncode}"))
+
+
+def extract_frame(src: Path, dest: Path, at: float, scale: int = 1, timeout: int = 300) -> None:
+    """動画の`at`秒の1コマを、静止画として`dest`(拡張子で、jpg/pngが決まる)に書く。
+
+    `scale`が2以上のときは、その倍率に拡大する(Lanczos補間。細部が増えるわけではない)。
+    """
+    ffmpeg = _require("ffmpeg")
+    cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{at:.3f}", "-i", str(src), "-frames:v", "1"]
+    if scale and scale > 1:
+        cmd += ["-vf", f"scale=iw*{int(scale)}:ih*{int(scale)}:flags=lanczos"]
+    if dest.suffix.lower() in (".jpg", ".jpeg"):
+        cmd += ["-q:v", "1", "-pix_fmt", "yuvj420p"]
+    cmd.append(str(dest))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW)
+    except subprocess.TimeoutExpired as exc:
+        dest.unlink(missing_ok=True)
+        raise FfmpegError("ffmpegの処理が時間切れになりました") from exc
+    if result.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        dest.unlink(missing_ok=True)
+        detail = (result.stderr or "").strip().splitlines()
+        raise FfmpegError("コマを取り出せませんでした: " + (detail[-1] if detail else "指定の位置に、映像がありません"))

@@ -1,4 +1,6 @@
 """ぼかし・モザイク(静止画・動画)。"""
+from unittest.mock import patch
+
 import pytest
 from PIL import Image
 
@@ -87,3 +89,32 @@ def test_mask_video_end_to_end(tmp_path):
         ffmpeg.mask_video(src, dest, mask.clean_params([{"x": 0.2, "y": 0.2, "w": 0.5, "h": 0.5}], style, 5))
         assert dest.exists() and ffmpeg.probe_size(dest) == (160, 120)
         dest.unlink()
+
+
+def test_frame_validation_and_summary(env):
+    config, conn, client, tmp_path = env
+    video = db.get_asset(conn, "a1")
+    conn.execute("UPDATE assets SET kind = 'video' WHERE id = 'a1'")
+    conn.commit()
+    video = db.get_asset(conn, "a1")
+    for bad in (dict(at=-1, fmt="jpg", scale=1), dict(at=1, fmt="gif", scale=1), dict(at=1, fmt="png", scale=9), dict(at="x", fmt="jpg", scale=1)):
+        with pytest.raises(edits.EditError):
+            edits.enqueue_frame(conn, video, **bad)
+    with patch("core.ffmpeg.probe_duration", return_value=10.0):
+        edit_id = edits.enqueue_frame(conn, video, at=2.5, fmt="png", scale=2)
+    edit = edits.get_edit(conn, "a1", edit_id)
+    assert edit["summary"] == "静止画 0:02.5 PNG（2倍に拡大）" and edits.media_type(video, edit) == "image"
+    assert edits.kind_label(edit) == "静止画"
+
+
+@pytest.mark.skipif(not ffmpeg.available(), reason="ffmpegなし")
+@pytest.mark.parametrize("suffix,scale,expected", [(".jpg", 1, (160, 120)), (".png", 2, (320, 240))])
+def test_extract_frame_end_to_end(tmp_path, suffix, scale, expected):
+    import subprocess
+    src = tmp_path / "in.mp4"
+    subprocess.run([ffmpeg.find("ffmpeg"), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=2", "-pix_fmt", "yuv420p", str(src)], check=True)
+    dest = tmp_path / f"frame{suffix}"
+    ffmpeg.extract_frame(src, dest, 1.0, scale)
+    assert Image.open(dest).size == expected
+    with pytest.raises(ffmpeg.FfmpegError):
+        ffmpeg.extract_frame(src, tmp_path / f"late{suffix}", 99.0)

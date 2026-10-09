@@ -14,7 +14,9 @@ from pathlib import Path
 from core import ffmpeg, mask
 
 MAX_EDITS_PER_ASSET = 10
-KINDS = ("trim", "mask")
+KINDS = ("trim", "mask", "frame")
+FRAME_FORMATS = {"jpg": "JPG", "png": "PNG"}
+FRAME_SCALES = (1, 2, 3, 4)
 TRIM_MODES = {"accurate": "正確", "fast": "高速"}
 
 
@@ -39,6 +41,9 @@ def summarize(kind: str, params: dict) -> str:
         return text + ("（高速）" if params.get("mode") == "fast" else "")
     if kind == "mask":
         return mask.summarize(params)
+    if kind == "frame":
+        text = f"静止画 {fmt_time(params['time'])} {FRAME_FORMATS.get(params['format'], params['format'])}"
+        return text + (f"（{params['scale']}倍に拡大）" if params.get("scale", 1) > 1 else "")
     return kind
 
 
@@ -46,11 +51,13 @@ def kind_label(edit: dict) -> str:
     """一覧に出す、加工の種類の名前。"""
     if edit["kind"] == "mask":
         return mask.STYLES.get(edit["params"].get("style"), "ぼかし・モザイク")
-    return "切り出し"
+    return "静止画" if edit["kind"] == "frame" else "切り出し"
 
 
 def media_type(asset: dict, edit: dict) -> str:
     """加工版の、メディアの種類(image|video)。切り出しは動画、ぼかし・モザイクは、原本と同じ。"""
+    if edit["kind"] == "frame":
+        return "image"
     return asset["kind"] if edit["kind"] == "mask" else "video"
 
 
@@ -143,6 +150,38 @@ def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, str
     return cur.lastrowid
 
 
+def enqueue_frame(conn: sqlite3.Connection, asset: dict, at, fmt: str = "jpg", scale=1) -> int:
+    """動画の1コマを、静止画の加工版として待機中に登録する。登録したIDを返す。入力が不正・上限なら`EditError`。"""
+    if asset["kind"] != "video":
+        raise EditError("動画だけが対象です")
+    try:
+        at, scale = round(float(at), 3), int(scale or 1)
+    except (TypeError, ValueError) as exc:
+        raise EditError("位置は秒の数値、倍率は整数で指定してください") from exc
+    if fmt not in FRAME_FORMATS:
+        raise EditError("形式は、jpgかpngです")
+    if scale not in FRAME_SCALES:
+        raise EditError("拡大の倍率は、1〜4倍です")
+    if at < 0:
+        raise EditError("位置は、0秒以上にしてください")
+    path = Path(asset["file_path"])
+    if not path.exists():
+        raise EditError("元の動画のファイルが見つかりません(ストレージを確認してください)")
+    duration = ffmpeg.probe_duration(path)
+    if duration is not None and at >= duration:
+        at = round(max(duration - 0.05, 0.0), 3)  # 最後のコマ
+    if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
+        raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
+    params = {"time": at, "format": fmt, "scale": scale}
+    conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
+    cur = conn.execute(
+        "INSERT INTO asset_edits (asset_id, kind, params, summary, status, created_at) VALUES (?, 'frame', ?, ?, 'queued', ?)",
+        (asset["id"], json.dumps(params), summarize("frame", params), _now()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
 def delete_edit(conn: sqlite3.Connection, asset: dict, edit_id: int) -> bool:
     """編集動画を、ファイルごと削除する。処理中のものは削除できない(`EditError`)。"""
     edit = get_edit(conn, asset["id"], edit_id)
@@ -202,6 +241,8 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
         p = edit["params"]
         if edit["kind"] == "trim":
             suffix = src.suffix if p.get("mode") == "fast" else ".mp4"
+        elif edit["kind"] == "frame":
+            suffix = ".png" if p.get("format") == "png" else ".jpg"
         elif edit["kind"] == "mask":
             suffix = ".mp4" if asset["kind"] == "video" else src.suffix
         else:
@@ -210,6 +251,8 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
         dest = edits_dir(asset) / filename
         if edit["kind"] == "trim":
             ffmpeg.trim(src, dest, p["start"], p["end"], p.get("mode", "accurate"))
+        elif edit["kind"] == "frame":
+            ffmpeg.extract_frame(src, dest, p["time"], p.get("scale", 1))
         elif asset["kind"] == "video":
             ffmpeg.mask_video(src, dest, p)
         else:

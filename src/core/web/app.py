@@ -1003,7 +1003,9 @@ def create_app(config: Config) -> Flask:
             conn.close()
             return jsonify({"error": "ffmpegが見つかりません。`winget install Gyan.FFmpeg`で入れてから、アプリを再起動してください"}), 503
         try:
-            if payload.get("kind", "trim") == "mask":
+            if payload.get("kind", "trim") == "frame":
+                edit_id = edits.enqueue_frame(conn, asset, payload.get("time"), payload.get("format", "jpg"), payload.get("scale", 1))
+            elif payload.get("kind", "trim") == "mask":
                 edit_id = edits.enqueue_mask(conn, asset, payload.get("regions"), payload.get("style"), payload.get("strength", 5))
             else:
                 edit_id = edits.enqueue_trim(conn, asset, payload.get("start"), payload.get("end"), payload.get("mode", "accurate"))
@@ -1041,7 +1043,7 @@ def create_app(config: Config) -> Flask:
         if request.args.get("download"):
             stem = Path(asset.get("original_name") or asset_id).stem
             p = edit["params"]
-            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else f"{p.get('style', 'mask')}"
+            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else (f"frame_{p.get('time', 0):g}s" if edit["kind"] == "frame" else f"{p.get('style', 'mask')}")
             return send_file(path, as_attachment=True, download_name=f"{stem}_{tag}{path.suffix}")
         return send_file(path)
 

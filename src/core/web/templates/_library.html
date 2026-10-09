@@ -10,6 +10,7 @@
       <div class="menu-panel" role="menu">
         {% if asset.kind == 'video' %}
         <button type="button" class="menu-item" role="menuitem" data-open-editor="trim">切り出し（前後を削除）…</button>
+        <button type="button" class="menu-item" role="menuitem" data-open-frame>静止画を取り出す（jpg/png）…</button>
         {% else %}
         <button type="button" class="menu-item" role="menuitem" id="wm-open">透かしを入れる…</button>
         {% endif %}

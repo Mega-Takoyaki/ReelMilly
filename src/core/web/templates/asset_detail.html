@@ -218,6 +218,7 @@
 {% if asset.kind == 'image' %}{% include "_watermark_dialog.html" %}{% endif %}
 {% if asset.kind == 'video' and not asset.deleted_at %}{% include "_video_edit.html" %}{% endif %}
 {% if not asset.deleted_at %}{% include "_mask_dialog.html" %}{% endif %}
+{% if asset.kind == 'video' and not asset.deleted_at %}{% include "_frame_dialog.html" %}{% endif %}
 
 <dialog id="manual-post-dialog" class="wm-dialog">
   <form method="dialog" id="manual-post-form">
@@ -247,6 +248,7 @@
 <script src="{{ url_for('static', filename='library.js') }}"></script>
 {% if asset.kind == 'video' and not asset.deleted_at %}<script src="{{ url_for('static', filename='video-edit.js') }}"></script>{% endif %}
 {% if not asset.deleted_at %}<script src="{{ url_for('static', filename='mask-editor.js') }}"></script>{% endif %}
+{% if asset.kind == 'video' and not asset.deleted_at %}<script src="{{ url_for('static', filename='frame-editor.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='post-actions.js') }}"></script>
 {% if not asset.deleted_at %}<script src="{{ url_for('static', filename='post-now.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='esc-back.js') }}"></script>
