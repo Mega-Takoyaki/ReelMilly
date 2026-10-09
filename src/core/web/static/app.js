@@ -221,3 +221,17 @@ window.confirmDialog = function confirmDialog(message) {
     });
   });
 })();
+
+// ダイアログを開くと、ブラウザは最初にフォーカスできる要素(見出しのⓘなど)へフォーカスを移し、説明の吹き出しが勝手に出てしまう。
+// 開いた直後にⓘがフォーカスされていたら、外す(キーボードで移動したときは、これまでどおり出る)
+(function () {
+  const original = HTMLDialogElement.prototype.showModal;
+  HTMLDialogElement.prototype.showModal = function () {
+    original.apply(this, arguments);
+    const active = document.activeElement;
+    if (active && this.contains(active) && (active.classList.contains("info-icon") || active.dataset.tip)) {
+      active.blur();
+      this.focus({ preventScroll: true });
+    }
+  };
+})();
