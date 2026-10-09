@@ -466,6 +466,7 @@ def create_app(config: Config) -> Flask:
         asset_folders = db.list_folders_for_asset(conn, asset_id)
         all_folders = db.list_folders(conn)
         asset_posts = db.get_posts(conn, [asset_id]).get(asset_id, {})
+        library = library_with_urls(conn, asset)
         conn.close()
         properties = get_media_properties(Path(asset["file_path"]), asset["kind"])
         return render_template(
@@ -478,6 +479,7 @@ def create_app(config: Config) -> Flask:
             content_ratings=CONTENT_RATINGS,
             properties=properties,
             edit_limit=edits.MAX_EDITS_PER_ASSET,
+            library=library,
             suggested_rating=_suggested_rating(asset),
             posts=asset_posts,
             post_channels=POST_CHANNELS,
@@ -656,6 +658,70 @@ def create_app(config: Config) -> Flask:
         conn.close()
         return [{"id": r["id"], "channel": r["channel"], "run_at_label": _scheduled_view(r)["run_at_label"]} for r in rows]
 
+    def library_with_urls(conn, asset: dict) -> list[dict]:
+        """詳細画面の「ファイル(原本と加工版)」の行に、表示・ダウンロードのアドレスを足す。"""
+        rows = versions_module.library_rows(conn, asset)
+        for row in rows:
+            if row["role"] == "original":
+                row["url"] = url_for("asset_media", asset_id=asset["id"])
+                row["download_url"] = url_for("asset_download", asset_id=asset["id"])
+            elif row["role"] == "wm":
+                row["url"] = url_for("asset_media", asset_id=asset["id"], variant="wm")
+                row["download_url"] = url_for("asset_download", asset_id=asset["id"], variant="wm")
+            else:
+                row["url"] = url_for("edit_media", asset_id=asset["id"], edit_id=row["edit_id"])
+                row["download_url"] = url_for("edit_media", asset_id=asset["id"], edit_id=row["edit_id"], download=1)
+        return rows
+
+    @app.route("/api/assets/<asset_id>/library")
+    def api_library(asset_id):
+        """原本と加工版の一覧(区分・AI判定つき)。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        rows = library_with_urls(conn, asset)
+        conn.close()
+        return jsonify({"rows": rows, "edit_limit": edits.MAX_EDITS_PER_ASSET})
+
+    @app.route("/api/assets/<asset_id>/versions/<path:key>/rating", methods=["POST"])
+    def api_version_rating(asset_id, key):
+        """加工版の区分を、人が決める(`rating: null`で、原本からの引き継ぎに戻す)。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None:
+            conn.close()
+            abort(404)
+        try:
+            versions_module.set_rating(conn, asset, key, (request.get_json(silent=True) or {}).get("rating"))
+        except versions_module.VersionError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        info = versions_module.rating_info(conn, db.get_asset(conn, asset_id), key)  # 更新後の値で
+        conn.close()
+        return jsonify(info)
+
+    @app.route("/api/assets/<asset_id>/versions/<path:key>/nsfw", methods=["POST"])
+    def api_version_nsfw(asset_id, key):
+        """加工版(または原本)のsfw/nsfw判定を、キューに積む(処理は、別プロセスのワーカーが行う)。"""
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        if asset is None or asset.get("deleted_at"):
+            conn.close()
+            abort(404)
+        if key == "original":
+            queued = worker_module.enqueue_for_assets(conn, [asset_id], ["nsfw"])
+        else:
+            try:
+                versions_module.resolve(conn, asset, key)  # 使えるファイル(処理が終わっている)か
+            except versions_module.VersionError as exc:
+                conn.close()
+                return jsonify({"error": str(exc)}), 400
+            queued = int(db.enqueue_ai_task(conn, asset_id, "version_nsfw", {"version": key}))
+        conn.close()
+        return jsonify({"queued": queued})
+
     @app.route("/api/assets/<asset_id>/versions")
     def api_asset_versions(asset_id):
         """投稿に使えるバージョン(元のファイル・透かし入り・編集した動画)と、投稿ダイアログに出す作品の情報。"""
@@ -667,6 +733,9 @@ def create_app(config: Config) -> Flask:
         from posting.jobs import FANVUE_AUDIENCES  # coreはpostingに依存しない方針(ADR-0013)のため、使う場所で読み込む
 
         versions = versions_module.list_versions(conn, asset)
+        for version in versions:  # ファイルごとの区分(加工版は、承認するまで、原本から引き継ぐ)。投稿の既定値(Xのセンシティブ指定など)に使う
+            info = versions_module.rating_info(conn, asset, version["key"])
+            version.update({"rating": info["rating"], "rating_source": info["source"], "auto": info["auto"]})
         posts = db.get_posts(conn, [asset_id]).get(asset_id, {})
         fanvue, x_post = posts.get("fanvue"), posts.get("x")
         conn.close()

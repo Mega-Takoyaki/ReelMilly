@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from core import analysis, db, generation, notifications, storage, watermark
+from core import analysis, db, generation, notifications, storage, versions, watermark
 from core import settings as settings_module
 from core.config import Config
 from core.events import log_event
@@ -252,6 +252,13 @@ class AnalysisWorker:
                     wm_position=",".join(positions), updated_at=_now().isoformat(),
                 )
                 return None
+            if task["kind"] == "version_nsfw":
+                # 加工版(切り出し・透かし入り)のsfw/nsfw判定。結果は、その加工版に記録する(原本とは独立)
+                version = json.loads(task.get("params") or "{}").get("version")
+                path, _media_type = versions.resolve(conn, asset, version)
+                result = analysis.run_nsfw(self._get_classifier(), path)
+                versions.set_auto(conn, asset, version, result.rating, result.confidence)
+                return None
             if task["kind"] == "nsfw":
                 result = analysis.run_nsfw(self._get_classifier(), media_path)
                 db.update_asset(
@@ -372,7 +379,7 @@ class AnalysisWorker:
         `remaining`を渡したときは途中経過として、まだ待っている件数を添える。
         """
         for kind, entry in summary.items():
-            label = settings_module.AI_KIND_LABELS.get(kind) or ("透かし挿入" if kind == "watermark" else kind)
+            label = settings_module.AI_KIND_LABELS.get(kind) or {"watermark": "透かし挿入", "version_nsfw": "加工版のsfw/nsfw判定"}.get(kind, kind)
             title, body, level = notifications.summarize_tasks(label, entry["done"], entry["failed"], entry["error"])
             if remaining:
                 title = f"{title}（途中経過）"

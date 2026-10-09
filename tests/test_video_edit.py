@@ -159,7 +159,7 @@ def test_web_api_create_list_download_delete_and_purge(tmp_path):
     asset = add_video(config, conn)
     client = create_app(config).test_client()
 
-    assert "動画の編集" in client.get(f"/assets/{asset['id']}").get_data(as_text=True)
+    assert "ファイル（原本と加工版）" in client.get(f"/assets/{asset['id']}").get_data(as_text=True)
     bad = client.post(f"/api/assets/{asset['id']}/edits", json={"kind": "trim", "start": 3, "end": 1})
     assert bad.status_code == 400 and "終了" in bad.get_json()["error"]
     created = client.post(f"/api/assets/{asset['id']}/edits", json={"kind": "trim", "start": 0.5, "end": 2.5})

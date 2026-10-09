@@ -1843,3 +1843,36 @@ dialog.post-now-dialog label.pn-check input { width: 1.15rem; height: 1.15rem; m
 .post-now-dialog .pn-summary { flex: 1 1 12rem; margin: 0; }
 .post-now-dialog .pn-foot .confirm-actions { margin: 0; }
 .post-now-dialog .pn-items { max-height: 15rem; margin-bottom: 0; }
+
+/* ファイル(原本と加工版)のライブラリ / 加工エディタ ------------------------------------------*/
+.lib-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.6rem; }
+.lib-head h2 { margin: 0; }
+.lib-add { position: relative; }
+.lib-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.lib-row { display: grid; grid-template-columns: 4.4rem 1fr; gap: 0.5rem 0.8rem; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-alt); }
+.lib-thumb { width: 4.4rem; height: 4.4rem; border-radius: var(--radius-sm); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; grid-row: span 2; }
+.lib-thumb img, .lib-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lib-main { min-width: 0; }
+.lib-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; }
+.lib-detail { font-weight: 600; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.lib-role-original { background: color-mix(in srgb, var(--accent) 30%, var(--surface-alt)); }
+.lib-role-wm, .lib-role-edit { background: var(--surface); border: 1px solid var(--border); }
+.lib-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.8rem; margin-top: 0.3rem; font-size: 0.78rem; color: var(--fg-muted); }
+.lib-rating { font-weight: 600; }
+.lib-rating-sfw { color: #4ade80; }
+.lib-rating-suggestive { color: #fbbf24; }
+.lib-rating-explicit { color: #f87171; }
+.lib-rating-none { color: var(--fg-muted); font-weight: 400; }
+.lib-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.8rem; font-size: 0.82rem; }
+.lib-link { text-decoration: none; }
+.lib-menu { position: relative; }
+.lib-menu .menu-panel, .lib-add .menu-panel { min-width: 15rem; z-index: 30; }
+.lib-menu .is-current { font-weight: 700; color: var(--accent); }
+.lib-error { color: var(--danger, #e5484d); }
+.lib-failed, .lib-queued, .lib-running { opacity: 0.9; }
+dialog.edit-dialog { width: min(94vw, 44rem); padding: 1.2rem 1.4rem; }
+.edit-dialog .pn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+.edit-dialog .pn-head h2 { margin: 0; }
+.edit-dialog .pn-close { position: static; background: var(--surface-alt); color: var(--fg-muted); }
+.edit-dialog .pn-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.8rem; }
+.edit-dialog .confirm-actions { margin: 0; }

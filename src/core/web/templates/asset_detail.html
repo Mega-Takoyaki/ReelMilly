@@ -44,43 +44,12 @@
       <details class="menu" id="asset-menu">
         <summary class="menu-button">操作 <span aria-hidden="true">▾</span></summary>
         <div class="menu-panel" role="menu">
-          <div id="live-menu">
-            <div class="menu-group">
-              <div class="menu-title">AI処理{{ info("処理は別プロセスのワーカー(reelmilly watch)が非同期で行い、完了すると画面が自動で更新されます。再実行すると結果を上書きします。") }}</div>
-              <button type="button" class="menu-item" role="menuitem" data-ai-run="nsfw">sfw/nsfw判定を実行</button>
-              <button type="button" class="menu-item" role="menuitem" data-ai-run="describe">説明文・タグ生成を実行</button>
-              <button type="button" class="menu-item" role="menuitem" data-ai-run="both">両方を実行</button>
-            </div>
-
-            {% if asset.kind == 'image' %}
-            <div class="menu-group">
-              <div class="menu-title">透かし{{ info("薄い文字の透かしを入れた別ファイルを作ります。元のファイルは変わりません。投稿(Fanvue)は、透かし入りがあればそれを使います。") }}</div>
-              {% if asset.wm_path %}
-              <div class="menu-note">入っている透かし:「{{ asset.wm_text }}」（{{ asset.wm_position | wm_label }}）</div>
-              {% endif %}
-              <button type="button" class="menu-item" role="menuitem" id="wm-open">透かしを入れる…</button>
-              {% if asset.wm_path %}
-              <a class="menu-item" role="menuitem" href="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}" data-wm-view data-src="{{ url_for('asset_media', asset_id=asset.id, variant='wm') }}">透かし入りを見る</a>
-              <button type="button" class="menu-item" role="menuitem" id="wm-clear">透かしを外す</button>
-              {% endif %}
-            </div>
-            {% endif %}
-
-            {% if not asset.deleted_at %}
-            <div class="menu-group">
-              <div class="menu-title">投稿・予約{{ info("いますぐ投稿するか、日時を決めて予約します(自動投稿のスケジュールとは別)。元のファイルか、加工版(切り出し・透かし入りなど)のどれを投稿するか、選べます。") }}</div>
-              <button type="button" class="menu-item" role="menuitem" id="post-now-open">投稿・予約…（今すぐ／日時を決めて）</button>
-            </div>
-            {% endif %}
-
-            <div class="menu-group">
-              <div class="menu-title">ダウンロード{{ info("元のファイル名で保存されます。透かし入りは「元の名前_watermarked」になります。") }}</div>
-              <a class="menu-item" role="menuitem" href="{{ url_for('asset_download', asset_id=asset.id) }}" download>元のファイル</a>
-              {% if asset.wm_path %}
-              <a class="menu-item" role="menuitem" href="{{ url_for('asset_download', asset_id=asset.id, variant='wm') }}" download>透かし入り</a>
-              {% endif %}
-            </div>
+          {% if not asset.deleted_at %}
+          <div class="menu-group">
+            <div class="menu-title">投稿・予約{{ info("いますぐ投稿するか、日時を決めて予約します(自動投稿のスケジュールとは別)。原本か、加工版(切り出し・透かし入りなど)のどれを投稿するか、選べます。ファイルごとの操作(ダウンロード・AI判定・加工)は、下の「ファイル」の一覧からできます。") }}</div>
+            <button type="button" class="menu-item" role="menuitem" id="post-now-open">投稿・予約…（今すぐ／日時を決めて）</button>
           </div>
+          {% endif %}
 
           <div class="menu-group">
             <div class="menu-title">作品の扱い</div>
@@ -130,9 +99,7 @@
       </dl>
     </div>
 
-    {% if asset.kind == 'video' and not asset.deleted_at %}
-    {% include "_video_edit.html" %}
-    {% endif %}
+    {% include "_library.html" %}
 
     {# ---- 区分の承認 ---- #}
     <div class="card">
@@ -249,6 +216,7 @@
 </section>
 
 {% if asset.kind == 'image' %}{% include "_watermark_dialog.html" %}{% endif %}
+{% if asset.kind == 'video' and not asset.deleted_at %}{% include "_video_edit.html" %}{% endif %}
 
 <dialog id="manual-post-dialog" class="wm-dialog">
   <form method="dialog" id="manual-post-form">
@@ -275,6 +243,7 @@
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
+<script src="{{ url_for('static', filename='library.js') }}"></script>
 {% if asset.kind == 'video' and not asset.deleted_at %}<script src="{{ url_for('static', filename='video-edit.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='post-actions.js') }}"></script>
 {% if not asset.deleted_at %}<script src="{{ url_for('static', filename='post-now.js') }}"></script>{% endif %}

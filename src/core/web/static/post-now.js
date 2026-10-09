@@ -14,6 +14,15 @@
   const X_MAX_IMAGES = 4;
   let assets = [];
   let beforeGenerate = null;
+  let sensitiveByUser = false;  // 利用者が、センシティブ指定を、自分で切り替えたか(切り替えたあとは、勝手に変えない)
+
+  // 選んでいるファイルの区分(加工版は、承認するまで、原本から引き継ぐ)。sfwと承認されていないものがあれば、既定でオン
+  function selectedRatings() {
+    return Array.from(itemsBox.querySelectorAll(".pn-version")).map((s) => s.selectedOptions[0].dataset.rating || null);
+  }
+  function setSensitiveDefault() {
+    $("pn-sensitive").checked = selectedRatings().some((r) => r !== "sfw");
+  }
 
   function el(tag, props, ...children) {
     const e = document.createElement(tag);
@@ -39,13 +48,17 @@
     return currentChannel() === "x" ? a.x_status : a.fanvue_status;
   }
 
-  function row(a) {
+  function row(a, preselect) {
     const media = a.kind === "video"
       ? el("video", { src: `/assets/${a.asset_id}/media`, muted: true, preload: "metadata" })
       : el("img", { src: `/assets/${a.asset_id}/media`, alt: "", loading: "lazy" });
     const select = el("select", { class: "pn-version", "aria-label": `${a.name}の投稿するバージョン` });
-    a.versions.forEach((v) => select.append(el("option", { value: v.key, textContent: v.label, selected: v.key === a.default, dataset: { mediaType: v.media_type } })));
-    select.addEventListener("change", applyChannel);
+    const chosen = (preselect && preselect[a.asset_id]) || a.default;
+    a.versions.forEach((v) => select.append(el("option", {
+      value: v.key, textContent: v.label, selected: v.key === chosen,
+      dataset: { mediaType: v.media_type, rating: v.rating || "", source: v.rating_source || "none" },
+    })));
+    select.addEventListener("change", () => { sensitiveByUser ? null : setSensitiveDefault(); applyChannel(); });
     return el("div", { class: "pn-item", dataset: { assetId: a.asset_id } },
       el("div", { class: "pn-thumb" }, media),
       el("div", { class: "pn-info" },
@@ -67,14 +80,16 @@
     $("pn-scheduled-note").textContent = reserved.length ? `${label}へ、すでに予約されています: ${reserved.join(" ／ ")}` : "";
     itemsBox.querySelectorAll(".pn-item").forEach((r) => {
       const a = assets.find((x) => x.asset_id === r.dataset.assetId);
-      const notes = [a.rating ? `区分: ${a.rating}（承認済み）` : "区分: 未承認"];
+      const picked = r.querySelector(".pn-version").selectedOptions[0].dataset;
+      const SOURCE = { own: "承認済み", inherited: "原本から引き継ぎ", none: "" };
+      const notes = [picked.rating ? `区分: ${picked.rating}（${SOURCE[picked.source] || "承認済み"}）` : "区分: 未承認"];
       const status = postedStatus(a);
       if (status === "posted") notes.push(`${label}に投稿済み`);
       if (status === "failed") notes.push(`${label}への前回の投稿は失敗`);
       if (a.status && a.status !== "ready") notes.push(`状態: ${a.status}（投稿すると、readyにします）`);
       const note = r.querySelector(".pn-note");
       note.textContent = notes.join(" ／ ");
-      note.classList.toggle("pn-warn", !a.rating || status === "posted");
+      note.classList.toggle("pn-warn", !picked.rating || status === "posted");
     });
 
     let problem = "";
@@ -83,7 +98,7 @@
       const videos = types.filter((t) => t === "video").length;
       if (videos > 0 && !(videos === 1 && types.length === 1)) problem = "Xでは、動画は1本だけで、画像とは一緒に投稿できません";
       else if (videos === 0 && types.length > X_MAX_IMAGES) problem = `Xでは、1つの投稿に付けられる画像は${X_MAX_IMAGES}枚までです`;
-      const ratings = assets.map((a) => a.rating);
+      const ratings = selectedRatings();
       // センシティブ指定は、最後は人が決める(外せる)。sfwと承認されていない作品は、開いたときに、既定でオンにするだけ
       $("pn-sensitive-note").hidden = !ratings.some((r) => r !== "sfw");
       const weight = xWeight($("pn-text").value);
@@ -98,7 +113,7 @@
     updateSummary();
   }
 
-  window.openPostNow = async function (ids) {
+  window.openPostNow = async function (ids, preselect) {
     ids = Array.from(new Set(ids || []));
     if (ids.length === 0) return;
     showError("");
@@ -120,12 +135,13 @@
       window.showToast(err.message, "error");
       return;
     }
-    itemsBox.replaceChildren(...assets.map(row));
+    itemsBox.replaceChildren(...assets.map((a) => row(a, preselect)));
     const first = assets.find((a) => a.text) || assets[0];
     $("pn-text").value = first.text || "";
     $("pn-audience").value = first.audience || "subscribers";
     $("pn-price").value = first.price_cents ? (first.price_cents / 100).toString() : "";
-    $("pn-sensitive").checked = assets.some((a) => a.rating !== "sfw");  // 既定: sfwと承認されていない作品は、オン(人が外せる)
+    sensitiveByUser = false;
+    setSensitiveDefault();  // 既定: sfwと承認されていないファイルを含めば、オン(人が外せる)
     $("pn-ai").checked = true;
     beforeGenerate = null;
     $("pn-undo").hidden = true;
@@ -170,6 +186,7 @@
   dialog.querySelectorAll('input[name="pn-when"]').forEach((r) => r.addEventListener("change", applyWhen));
   dialog.querySelectorAll('input[name="pn-channel"]').forEach((r) => r.addEventListener("change", applyChannel));
   $("pn-text").addEventListener("input", applyChannel);
+  $("pn-sensitive").addEventListener("change", () => { sensitiveByUser = true; });
 
   // 投稿文の生成(設定のプロンプトとAIで、都度つくる。投稿先に合わせて、FanvueまたはX用)。生成前の文は、「戻す」で復元できる
   $("pn-generate").addEventListener("click", async () => {

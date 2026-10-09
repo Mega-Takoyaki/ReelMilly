@@ -3,7 +3,7 @@
 // - 定期ポーリングで進捗を取得し、完了したものから順に画面表示を更新する
 // - 完了・失敗をトースト通知する
 (function () {
-  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入", edit: "動画編集" };
+  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入", edit: "動画編集", version_nsfw: "加工版のAI判定" };
   const BUSY_SHORT = { nsfw: "判定", describe: "説明生成", watermark: "透かし", edit: "動画編集" };
   const POLL_MS = 3000;
 
@@ -187,7 +187,7 @@
     try {
       const res = await fetch(window.location.href, { headers: { "X-Requested-With": "XMLHttpRequest" } });
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-      ["live-props", "live-status", "live-posts", "live-menu"].forEach((id) => {
+      ["live-props", "live-status", "live-posts", "live-menu", "live-library"].forEach((id) => {
         const fresh = doc.getElementById(id);
         const cur = document.getElementById(id);
         if (fresh && cur) cur.innerHTML = fresh.innerHTML;

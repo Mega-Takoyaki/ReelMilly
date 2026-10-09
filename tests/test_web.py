@@ -1194,7 +1194,7 @@ def test_watermark_view_popup_and_5x5_picker_and_settings_defaults(app_and_conn)
     detail = client.get("/assets/a1").get_data(as_text=True)
     assert "data-wm-view" in detail and 'target="_blank"' not in detail.split("透かし入りを見る")[0][-200:]  # 新しいタブではなくポップアップ
     assert 'id="lightbox"' in detail and "lightbox.js" in detail
-    assert "（2か所）" in detail  # 複数位置の説明
+    assert "透かし入り" in detail and "live-library" in detail  # ファイル一覧に、加工版として並ぶ
 
     page = client.get("/").get_data(as_text=True)
     import re
@@ -1217,8 +1217,12 @@ def test_detail_page_is_organized_with_menu_and_merged_post_card(app_and_conn):
 
     # 画像への操作は、1つの「操作」メニューにまとまる(AI処理・透かし・ダウンロード・破綻・ごみ箱)
     menu = detail.split('id="asset-menu"')[1].split("</details>")[0]
-    for item in ('data-ai-run="nsfw"', 'data-ai-run="describe"', 'data-ai-run="both"', "download", "破綻画像", "ごみ箱へ移動する"):
+    for item in ("破綻画像", "ごみ箱へ移動する", "投稿・予約"):
         assert item in menu, item
+    # AI処理・ダウンロード・透かしは、「ファイル(原本と加工版)」の一覧へ移った
+    library = detail.split('id="live-library"')[1]
+    for item in ('data-ai-run="nsfw"', 'data-ai-run="describe"', 'data-ai-run="both"', "download", 'data-lib-post='):
+        assert item in library, item
     # 以前は独立したカードだった項目が、重複していない
     for old_card in ("<h2 style=\"margin-top: 0;\">AI処理</h2>", ">破綻画像（キメラ）</h2>", ">投稿先（投稿予定）</h2>", ">投稿状態</h2>", ">透かし</h2>"):
         assert old_card not in detail, old_card

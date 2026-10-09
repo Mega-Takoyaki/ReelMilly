@@ -1,0 +1,81 @@
+{# ファイル(原本と加工版)のライブラリ。作品詳細画面の、基本情報の真下。library.jsが動かす。
+   用語: 原本=取り込んだ元のファイル / 加工版=原本から作ったファイル(切り出し・透かし入り・今後のぼかしなど) #}
+{% from "_info.html" import info %}
+<div class="card" id="live-library" data-asset-id="{{ asset.id }}" data-original-rating="{{ library[0].original_rating or '' }}">
+  <div class="lib-head">
+    <h2>ファイル（原本と加工版）{{ info("この作品の、すべてのファイルです。原本は、取り込んだ元のファイルで、加工版は、原本から作ったファイル（切り出した動画・透かし入りの画像など）です。ここから、ダウンロード・投稿・予約・AI判定ができます。加工版を作っても、原本は変わりません。区分（sfw など）は、加工版ごとに決められます（承認するまでは、原本の区分を引き継ぎます）。") }}</h2>
+    {% if not asset.deleted_at %}
+    <details class="menu lib-add">
+      <summary class="menu-button">＋ 加工版を作る <span aria-hidden="true">▾</span></summary>
+      <div class="menu-panel" role="menu">
+        {% if asset.kind == 'video' %}
+        <button type="button" class="menu-item" role="menuitem" data-open-editor="trim">切り出し（前後を削除）…</button>
+        {% else %}
+        <button type="button" class="menu-item" role="menuitem" id="wm-open">透かしを入れる…</button>
+        {% endif %}
+        <div class="menu-note">ぼかし・モザイク・テロップ・ロゴ（準備中）</div>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+
+  <ul class="lib-list">
+    {% for r in library %}
+    <li class="lib-row lib-{{ r.state }} {% if r.state in ('queued', 'running') or r.ai_busy %}lib-busy{% endif %}" data-key="{{ r.key }}">
+      <div class="lib-thumb">
+        {% if r.state == 'done' and r.exists %}
+          {% if r.media_type == 'video' %}<video src="{{ r.url }}" muted preload="metadata"></video>{% else %}<img src="{{ r.url }}" alt="" loading="lazy">{% endif %}
+        {% else %}<span class="hint">{{ '処理中' if r.state in ('queued', 'running') else '—' }}</span>{% endif %}
+      </div>
+      <div class="lib-main">
+        <div class="lib-title">
+          <span class="badge lib-role lib-role-{{ r.role }}">{{ r.label }}</span>
+          <span class="lib-detail" title="{{ r.detail }}">{{ r.detail }}</span>
+          {% if r.state == 'queued' %}<span class="badge ve-badge-queued">待機中</span>{% elif r.state == 'running' %}<span class="badge ve-badge-running">処理中</span>{% elif r.state == 'failed' %}<span class="badge ve-badge-failed">失敗</span>{% endif %}
+        </div>
+        {% if r.state == 'failed' %}<div class="hint lib-error">{{ r.error or '理由不明' }}</div>{% endif %}
+        <div class="lib-meta">
+          {% if r.duration %}<span>{{ '%.1f' | format(r.duration) }}秒</span>{% endif %}
+          {% if r.size_bytes %}<span>{{ (r.size_bytes / 1048576) | round(1) }}MB</span>{% endif %}
+          <span class="lib-rating lib-rating-{{ r.rating or 'none' }}" data-tip="{{ {'own': 'このファイルで承認した区分です', 'inherited': '原本の区分を引き継いでいます（このファイルで承認すると、独立します）', 'none': 'まだ承認されていません'}[r.source] }}">
+            区分: {{ r.rating or '未承認' }}{% if r.source == 'inherited' %}（原本から）{% elif r.source == 'own' and r.role != 'original' %}（承認済み）{% endif %}
+          </span>
+          {% if r.ai_busy %}<span class="badge ve-badge-running">AI判定中…</span>
+          {% elif r.auto %}<span class="lib-auto" data-tip="AIの判定(参考値)です。最終判断は、人が行ってください">AI判定: {{ r.auto }}{% if r.auto_confidence is not none %}（{{ '%.0f' | format(r.auto_confidence * 100) }}%）{% endif %}</span>
+          {% else %}<span class="hint">AI判定: 未実行</span>{% endif %}
+        </div>
+      </div>
+      {% if not asset.deleted_at %}
+      <div class="lib-actions">
+        {% if r.state == 'done' and r.exists %}
+        {% if r.role == 'wm' %}<a class="lib-link" href="{{ r.url }}" data-wm-view data-src="{{ r.url }}">開く</a>
+        {% else %}<a class="lib-link" href="{{ r.url }}" target="_blank" rel="noopener">{{ '再生' if r.media_type == 'video' else '開く' }}</a>{% endif %}
+        <a class="lib-link" href="{{ r.download_url }}" download>ダウンロード</a>
+        <button type="button" class="btn-ghost-inline" data-lib-post="{{ r.key }}" data-tip="このファイルを、投稿・予約します">投稿・予約…</button>
+        <details class="menu lib-menu">
+          <summary class="menu-button lib-more">AI・区分 <span aria-hidden="true">▾</span></summary>
+          <div class="menu-panel" role="menu">
+            <div class="menu-title">AI処理</div>
+            {% if r.role == 'original' %}
+            <button type="button" class="menu-item" role="menuitem" data-ai-run="nsfw">sfw/nsfw判定を実行</button>
+            <button type="button" class="menu-item" role="menuitem" data-ai-run="describe">説明文・タグ生成を実行</button>
+            <button type="button" class="menu-item" role="menuitem" data-ai-run="both">両方を実行</button>
+            {% else %}
+            <button type="button" class="menu-item" role="menuitem" data-lib-ai="{{ r.key }}" {% if r.ai_busy %}disabled{% endif %}>sfw/nsfw判定を実行</button>
+            <div class="menu-title">区分（このファイルの）</div>
+            {% for value, label in (('', '原本に合わせる（引き継ぐ）'), ('sfw', 'sfw'), ('suggestive', 'suggestive'), ('explicit', 'explicit')) %}
+            <button type="button" class="menu-item {% if (r.rating if r.source == 'own' else '') == value %}is-current{% endif %}" role="menuitem" data-lib-rating="{{ r.key }}" data-value="{{ value }}">{{ '✓ ' if (r.rating if r.source == 'own' else '') == value else '' }}{{ label }}</button>
+            {% endfor %}
+            {% endif %}
+          </div>
+        </details>
+        {% endif %}
+        {% if r.role == 'wm' %}<button type="button" class="btn-ghost-inline" id="wm-clear">削除</button>
+        {% elif r.role == 'edit' and r.state != 'running' %}<button type="button" class="btn-ghost-inline" data-lib-delete-edit="{{ r.edit_id }}" data-label="{{ r.detail }}">削除</button>{% endif %}
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if asset.kind == 'video' %}<p class="hint">加工版は、1つの作品に最大{{ edit_limit }}件まで（失敗したものは数えません）。</p>{% endif %}
+</div>

@@ -49,6 +49,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for column in ("wm_path", "wm_text", "wm_position"):
         if column not in columns:
             conn.execute(f"ALTER TABLE assets ADD COLUMN {column} TEXT")
+    # 加工版(透かし入り・編集した動画)ごとの区分と、AI判定(原本とは独立に持つ。未承認の間は、原本の区分を引き継ぐ)
+    for column, ddl in (
+        ("wm_content_rating", "TEXT"), ("wm_content_rating_confirmed", "INTEGER NOT NULL DEFAULT 0"),
+        ("wm_nsfw_auto_rating", "TEXT"), ("wm_nsfw_auto_confidence", "REAL"),
+    ):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE assets ADD COLUMN {column} {ddl}")
+    edit_columns = {row["name"] for row in conn.execute("PRAGMA table_info(asset_edits)")}
+    for column, ddl in (
+        ("content_rating", "TEXT"), ("content_rating_confirmed", "INTEGER NOT NULL DEFAULT 0"),
+        ("nsfw_auto_rating", "TEXT"), ("nsfw_auto_confidence", "REAL"),
+    ):
+        if column not in edit_columns:
+            conn.execute(f"ALTER TABLE asset_edits ADD COLUMN {column} {ddl}")
     post_columns = {row["name"] for row in conn.execute("PRAGMA table_info(posts)")}
     if "source" not in post_columns:
         conn.execute("ALTER TABLE posts ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'")
@@ -749,16 +763,19 @@ def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str, params: 
 
     `params`はタスクごとの設定(透かしの文字・位置など)。JSONで保存する。
     """
+    # 加工版ごとの判定(version_nsfw)は、同じ作品でも、加工版が違えば別のタスク(paramsも比べる)
+    same = " AND params IS ?" if kind == "version_nsfw" else ""
+    extra = (json.dumps(params, ensure_ascii=False) if params else None,) if same else ()
     active = conn.execute(
-        "SELECT 1 FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('queued', 'running')",
-        (asset_id, kind),
+        f"SELECT 1 FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('queued', 'running'){same}",
+        (asset_id, kind, *extra),
     ).fetchone()
     if active:
         return False
     # 過去の完了/失敗の履歴は最新1件だけ残せば十分なので、積み直すときに消す
     conn.execute(
-        "DELETE FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('done', 'failed')",
-        (asset_id, kind),
+        f"DELETE FROM ai_tasks WHERE asset_id = ? AND kind = ? AND status IN ('done', 'failed'){same}",
+        (asset_id, kind, *extra),
     )
     conn.execute(
         "INSERT INTO ai_tasks (asset_id, kind, status, params, created_at) VALUES (?, ?, 'queued', ?, ?)",
