@@ -1,0 +1,48 @@
+{% from "_info.html" import info %}
+{# 加工エディタ(ぼかし・モザイク)のポップアップ。静止画・動画とも、作品詳細画面から開く。mask-editor.jsが動かす。結果は、「ファイル(原本と加工版)」に、加工版として並ぶ #}
+<dialog id="mask-dialog" class="wm-dialog edit-dialog mask-dialog" data-asset-id="{{ asset.id }}" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}">
+  <form method="dialog" id="mask-form">
+    <header class="pn-head">
+      <h2>加工版を作る: ぼかし・モザイク{{ info("画面の上をドラッグして、ぼかす(モザイクをかける)範囲を、四角で囲みます。範囲は最大" ~ 8 ~ "か所まで、同じ種類・強さでかかります。動画では、その位置に、最初から最後まで固定でかかります（動いた被写体には追従しません）。原本は変わらず、別のファイル（加工版）として保存します。") }}</h2>
+      <button type="button" class="lightbox-close pn-close" id="mk-close" aria-label="閉じる">&times;</button>
+    </header>
+
+    <div class="mk-stage-wrap">
+      <div class="mk-stage" id="mk-stage">
+        {% if asset.kind == 'video' %}<video id="mk-video" muted playsinline preload="none"></video>
+        {% else %}<img id="mk-image" alt="" draggable="false">{% endif %}
+        <div class="mk-layer" id="mk-layer" aria-label="ぼかす範囲を、ドラッグで囲みます"></div>
+      </div>
+    </div>
+    {% if asset.kind == 'video' %}
+    <div class="mk-player">
+      <button type="button" class="btn-ghost-inline" id="mk-play">▶ 再生</button>
+      <input type="range" id="mk-seek" min="0" max="1000" value="0" aria-label="再生位置">
+      <span class="hint" id="mk-time">0:00 / 0:00</span>
+    </div>
+    {% endif %}
+
+    <div class="mk-options">
+      <div class="pn-seg" role="radiogroup" aria-label="種類">
+        <label><input type="radio" name="mk-style" value="blur" checked><span>ぼかし</span></label>
+        <label><input type="radio" name="mk-style" value="mosaic"><span>モザイク</span></label>
+      </div>
+      <label class="mk-strength">強さ <input type="range" id="mk-strength" min="1" max="10" value="5"> <b id="mk-strength-value">5</b>{{ info("大きいほど強くかかります（画像の大きさに合わせて、見た目の強さがそろいます）。上の画面のプレビューで、確かめられます。") }}</label>
+    </div>
+
+    <div class="mk-regions">
+      <span class="hint" id="mk-hint">画面の上をドラッグして、範囲を囲んでください。</span>
+      <ul class="mk-chips" id="mk-chips"></ul>
+      <button type="button" class="btn-ghost-inline" id="mk-clear" hidden>すべて消す</button>
+    </div>
+    <p class="hint" id="mk-notice" hidden></p>
+
+    <footer class="pn-foot">
+      <span class="hint">原本は変わりません</span>
+      <div class="confirm-actions">
+        <button type="button" class="btn-ghost" id="mk-cancel">キャンセル</button>
+        <button type="button" class="btn-primary" id="mk-run" disabled>加工版として保存</button>
+      </div>
+    </footer>
+  </form>
+</dialog>

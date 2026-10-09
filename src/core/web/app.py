@@ -993,16 +993,20 @@ def create_app(config: Config) -> Flask:
         payload = request.get_json(silent=True) or {}
         if payload.get("kind", "trim") not in edits.KINDS:
             return jsonify({"error": "未対応の編集です"}), 400
-        if not ffmpeg.available():
-            return jsonify({"error": "ffmpegが見つかりません。`winget install Gyan.FFmpeg`で入れてから、アプリを再起動してください"}), 503
         require_storage()
         conn = get_conn()
         asset = db.get_asset(conn, asset_id)
         if asset is None or asset.get("deleted_at"):
             conn.close()
             abort(404)
+        if asset["kind"] == "video" and not ffmpeg.available():
+            conn.close()
+            return jsonify({"error": "ffmpegが見つかりません。`winget install Gyan.FFmpeg`で入れてから、アプリを再起動してください"}), 503
         try:
-            edit_id = edits.enqueue_trim(conn, asset, payload.get("start"), payload.get("end"), payload.get("mode", "accurate"))
+            if payload.get("kind", "trim") == "mask":
+                edit_id = edits.enqueue_mask(conn, asset, payload.get("regions"), payload.get("style"), payload.get("strength", 5))
+            else:
+                edit_id = edits.enqueue_trim(conn, asset, payload.get("start"), payload.get("end"), payload.get("mode", "accurate"))
         except edits.EditError as exc:
             conn.close()
             return jsonify({"error": str(exc)}), 400
@@ -1037,7 +1041,7 @@ def create_app(config: Config) -> Flask:
         if request.args.get("download"):
             stem = Path(asset.get("original_name") or asset_id).stem
             p = edit["params"]
-            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else edit["kind"]
+            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else f"{p.get('style', 'mask')}"
             return send_file(path, as_attachment=True, download_name=f"{stem}_{tag}{path.suffix}")
         return send_file(path)
 

@@ -199,8 +199,13 @@ def test_edit_section_only_for_videos_and_missing_ffmpeg_is_reported(tmp_path):
                            "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00"})
     client = create_app(config).test_client()
     assert "動画の編集" not in client.get("/assets/img1").get_data(as_text=True)
+    assert client.post("/api/assets/img1/edits", json={"start": 0, "end": 1}).status_code == 400  # 画像は、切り出せない
+    vpath = tmp_path / "v.mp4"
+    vpath.write_bytes(b"x")
+    db.insert_asset(conn, {"id": "vid1", "status": "ready", "kind": "video", "file_path": str(vpath),
+                           "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00"})
     with patch("core.ffmpeg.available", return_value=False):
-        res = client.post("/api/assets/img1/edits", json={"start": 0, "end": 1})
+        res = client.post("/api/assets/vid1/edits", json={"start": 0, "end": 1})
     assert res.status_code == 503 and "ffmpeg" in res.get_json()["error"]
 
 

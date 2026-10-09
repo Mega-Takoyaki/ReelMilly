@@ -10,7 +10,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)  # 別プロセス(ワーカー)の書き込み中でも、少し待つ
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn

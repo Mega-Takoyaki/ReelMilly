@@ -108,3 +108,65 @@ def trim(src: Path, dest: Path, start: float, end: float, mode: str = "accurate"
         dest.unlink(missing_ok=True)
         detail = (result.stderr or "").strip().splitlines()
         raise FfmpegError("ffmpegが失敗しました: " + (detail[-1] if detail else f"終了コード{result.returncode}"))
+
+
+def probe_size(path: Path) -> tuple[int, int] | None:
+    """動画の映像の(幅, 高さ)。読めない場合はNone。"""
+    probe = find("ffprobe")
+    if probe is None:
+        return None
+    try:
+        out = subprocess.run(
+            [probe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=60, creationflags=_NO_WINDOW,
+        )
+        stream = (json.loads(out.stdout or "{}").get("streams") or [{}])[0]
+        return (int(stream["width"]), int(stream["height"])) if stream.get("width") and stream.get("height") else None
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return None
+
+
+def mask_filter(params: dict, width: int, height: int) -> tuple[str, str]:
+    """ぼかし・モザイクの`-filter_complex`。範囲ごとに切り出して、加工して、元の位置に重ねる(動画の最初から最後まで、固定)。"""
+    from core import mask
+
+    boxes = mask.pixel_regions(params["regions"], width, height, even=True)
+    if not boxes:
+        raise FfmpegError("範囲が小さすぎます")
+    long_side = max(width, height)
+    parts, last = [], "0:v"
+    for i, (x, y, w, h) in enumerate(boxes):
+        if params["style"] == "blur":
+            fx = f"gblur=sigma={mask.blur_sigma(params['strength'], long_side):.2f}"
+        else:
+            block = mask.mosaic_block(params["strength"], long_side)
+            fx = f"scale={max(2, round(w / block))}:{max(2, round(h / block))}:flags=area,scale={w}:{h}:flags=neighbor"
+        parts.append(f"[0:v]crop={w}:{h}:{x}:{y},{fx}[r{i}]")
+        parts.append(f"[{last}][r{i}]overlay={x}:{y}[o{i}]")
+        last = f"o{i}"
+    return ";".join(parts), last
+
+
+def mask_video(src: Path, dest: Path, params: dict, timeout: int = 7200) -> None:
+    """動画の指定範囲に、ぼかし・モザイクをかけて`dest`に書く(音声はそのまま、画質はほぼ劣化しない設定)。"""
+    ffmpeg = _require("ffmpeg")
+    size = probe_size(src)
+    if size is None:
+        raise FfmpegError("動画の大きさを読めませんでした(ffprobeが見つからない、またはファイルが壊れています)")
+    graph, out_label = mask_filter(params, *size)
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(src),
+        "-filter_complex", graph, "-map", f"[{out_label}]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dest),
+    ]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW)
+    except subprocess.TimeoutExpired as exc:
+        dest.unlink(missing_ok=True)
+        raise FfmpegError("ffmpegの処理が時間切れになりました") from exc
+    if result.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        dest.unlink(missing_ok=True)
+        detail = (result.stderr or "").strip().splitlines()
+        raise FfmpegError("ffmpegが失敗しました: " + (detail[-1] if detail else f"終了コード{result.returncode}"))

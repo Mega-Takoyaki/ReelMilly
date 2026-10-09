@@ -29,7 +29,7 @@ def list_versions(conn: sqlite3.Connection, asset: dict) -> list[dict]:
     for edit in edits.list_edits(conn, asset["id"]):
         path = edits.edit_path(asset, edit)
         if edit["status"] == "done" and path is not None and path.exists():
-            versions.append({"key": f"edit:{edit['id']}", "label": f"編集した動画: {edit['summary']}", "media_type": "video"})
+            versions.append({"key": f"edit:{edit['id']}", "label": f"{edits.kind_label(edit)}: {edit['summary']}", "media_type": edits.media_type(asset, edit)})
     return versions
 
 
@@ -52,7 +52,7 @@ def resolve(conn: sqlite3.Connection, asset: dict, key: str | None) -> tuple[Pat
         edit = edits.get_edit(conn, asset["id"], int(key[5:]))
         if edit is None or edit["status"] != "done":
             raise VersionError("その編集した動画は、使えません(処理中・失敗・削除済み)")
-        path, media_type = edits.edit_path(asset, edit), "video"
+        path, media_type = edits.edit_path(asset, edit), edits.media_type(asset, edit)
     else:
         raise VersionError(f"不明なバージョンです: {key}")
     if path is None or not path.exists():
@@ -168,7 +168,7 @@ def library_rows(conn: sqlite3.Connection, asset: dict) -> list[dict]:
     for edit in edits.list_edits(conn, asset["id"]):
         path = edits.edit_path(asset, edit)
         rows.append(with_rating(f"edit:{edit['id']}", {
-            "role": "edit", "label": "切り出し", "detail": edit["summary"], "media_type": "video", "state": edit["status"] if edit["status"] != "done" else "done",
+            "role": "edit", "label": edits.kind_label(edit), "detail": edit["summary"], "media_type": edits.media_type(asset, edit), "state": edit["status"] if edit["status"] != "done" else "done",
             "error": edit["error"], "size_bytes": edit["size_bytes"], "duration": edit["duration"], "edit_id": edit["id"],
             "exists": bool(path and path.exists()),
         }))

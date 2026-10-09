@@ -11,10 +11,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core import ffmpeg
+from core import ffmpeg, mask
 
 MAX_EDITS_PER_ASSET = 10
-KINDS = ("trim",)
+KINDS = ("trim", "mask")
 TRIM_MODES = {"accurate": "正確", "fast": "高速"}
 
 
@@ -37,7 +37,21 @@ def summarize(kind: str, params: dict) -> str:
     if kind == "trim":
         text = f"トリム {fmt_time(params['start'])}～{fmt_time(params['end'])}"
         return text + ("（高速）" if params.get("mode") == "fast" else "")
+    if kind == "mask":
+        return mask.summarize(params)
     return kind
+
+
+def kind_label(edit: dict) -> str:
+    """一覧に出す、加工の種類の名前。"""
+    if edit["kind"] == "mask":
+        return mask.STYLES.get(edit["params"].get("style"), "ぼかし・モザイク")
+    return "切り出し"
+
+
+def media_type(asset: dict, edit: dict) -> str:
+    """加工版の、メディアの種類(image|video)。切り出しは動画、ぼかし・モザイクは、原本と同じ。"""
+    return asset["kind"] if edit["kind"] == "mask" else "video"
 
 
 def edits_dir(asset: dict) -> Path:
@@ -110,6 +124,25 @@ def enqueue_trim(conn: sqlite3.Connection, asset: dict, start, end, mode: str = 
     return cur.lastrowid
 
 
+def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, strength) -> int:
+    """ぼかし・モザイクを待機中として登録する(静止画・動画とも)。登録したIDを返す。入力が不正・上限なら`EditError`。"""
+    try:
+        params = mask.clean_params(regions, style, strength)
+    except mask.MaskError as exc:
+        raise EditError(str(exc)) from exc
+    if not Path(asset["file_path"]).exists():
+        raise EditError("元のファイルが見つかりません(ストレージを確認してください)")
+    if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
+        raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
+    conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
+    cur = conn.execute(
+        "INSERT INTO asset_edits (asset_id, kind, params, summary, status, created_at) VALUES (?, 'mask', ?, ?, 'queued', ?)",
+        (asset["id"], json.dumps(params), summarize("mask", params), _now()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
 def delete_edit(conn: sqlite3.Connection, asset: dict, edit_id: int) -> bool:
     """編集動画を、ファイルごと削除する。処理中のものは削除できない(`EditError`)。"""
     edit = get_edit(conn, asset["id"], edit_id)
@@ -167,14 +200,22 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
         if not src.exists():
             raise ffmpeg.FfmpegError("元の動画のファイルが見つかりません(ストレージを確認してください)")
         p = edit["params"]
-        if edit["kind"] != "trim":
+        if edit["kind"] == "trim":
+            suffix = src.suffix if p.get("mode") == "fast" else ".mp4"
+        elif edit["kind"] == "mask":
+            suffix = ".mp4" if asset["kind"] == "video" else src.suffix
+        else:
             raise ffmpeg.FfmpegError(f"未対応の編集です: {edit['kind']}")
-        suffix = src.suffix if p.get("mode") == "fast" else ".mp4"
         filename = f"{asset['id']}-edit-{edit['id']}{suffix}"
         dest = edits_dir(asset) / filename
-        ffmpeg.trim(src, dest, p["start"], p["end"], p.get("mode", "accurate"))
+        if edit["kind"] == "trim":
+            ffmpeg.trim(src, dest, p["start"], p["end"], p.get("mode", "accurate"))
+        elif asset["kind"] == "video":
+            ffmpeg.mask_video(src, dest, p)
+        else:
+            mask.apply_image(src, dest, p)
         size = dest.stat().st_size
-        duration = ffmpeg.probe_duration(dest)
+        duration = ffmpeg.probe_duration(dest) if media_type(asset, edit) == "video" else None
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
         filename = None
@@ -208,8 +249,8 @@ def run_pending(conn: sqlite3.Connection, config, log=print) -> int:
         count += 1
         if error:
             log(f"[edit] {edit['asset_id']}: {edit['summary']} 失敗 ({error})")
-            notifications.add(conn, "edit", "動画の編集に失敗しました", f"{edit['summary']}: {error}", "error", asset_id=edit["asset_id"])
+            notifications.add(conn, "edit", "加工版の作成に失敗しました", f"{edit['summary']}: {error}", "error", asset_id=edit["asset_id"])
             log_event(config.paths.events_path, "edit_failed", asset_id=edit["asset_id"], error=error)
         else:
             log(f"[edit] {edit['asset_id']}: {edit['summary']} 完了")
-            notifications.add(conn, "edit", "動画の編集が完了しました", edit["summary"], "success", asset_id=edit["asset_id"])
+            notifications.add(conn, "edit", "加工版の作成が完了しました", edit["summary"], "success", asset_id=edit["asset_id"])
