@@ -196,7 +196,7 @@ def extract_frame(src: Path, dest: Path, at: float, scale: int = 1, timeout: int
         raise FfmpegError("コマを取り出せませんでした: " + (detail[-1] if detail else "指定の位置に、映像がありません"))
 
 
-def overlay_filter(params: dict, sizes: list[tuple[int, int]], width: int, height: int) -> tuple[str, str]:
+def overlay_filter(params: dict, sizes: list[tuple[int, int]], width: int, height: int, duration: float | None = None) -> tuple[str, str]:
     """テロップ・スタンプ(レイヤーごとのPNG)を重ねる`-filter_complex`。入力0が動画、入力1以降がレイヤー(`sizes`は、その画像の大きさ)。
 
     位置は、中心(x,y)の割合。動きは、画面の外から外へ、`cycle`秒かけて横切る(`loop`なら繰り返す)。表示の時間帯は、`start`〜`end`秒。
@@ -223,7 +223,14 @@ def overlay_filter(params: dict, sizes: list[tuple[int, int]], width: int, heigh
                 stop = min(stop, start + cycle)  # 1回だけ流れて、画面の外へ出たら、消える
         timed = start > 0 or stop < 999999
         enable = f":enable='between(t,{start:g},{stop:g})'" if timed else ""
-        parts.append(f"[{i + 1}:v]format=rgba[l{i}]")
+        fades = ""
+        fade_in, fade_out = anim.get("fade_in", 0), anim.get("fade_out", 0)
+        if fade_in > 0:
+            fades += f",fade=t=in:st={start:g}:d={fade_in:g}:alpha=1"
+        last_second = stop if stop < 999999 else duration  # 最後まで表示するときは、動画の長さで終わる
+        if fade_out > 0 and last_second:
+            fades += f",fade=t=out:st={max(last_second - fade_out, start):g}:d={fade_out:g}:alpha=1"
+        parts.append(f"[{i + 1}:v]format=rgba{fades}[l{i}]")
         parts.append(f"[{last}][l{i}]overlay=x='{x}':y='{y}':shortest=1:format=auto{enable}[o{i}]")
         last = f"o{i}"
     return ";".join(parts), last
@@ -248,7 +255,7 @@ def overlay_video(conn, src: Path, dest: Path, params: dict, timeout: int = 7200
             img.save(p, format="PNG")
             paths.append(p)
             sizes.append(img.size)
-        graph, out_label = overlay_filter(params, sizes, width, height)
+        graph, out_label = overlay_filter(params, sizes, width, height, probe_duration(src))
         cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(src)]
         for p in paths:
             cmd += ["-loop", "1", "-framerate", "30", "-i", str(p)]

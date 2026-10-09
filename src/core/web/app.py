@@ -1058,6 +1058,7 @@ def create_app(config: Config) -> Flask:
         data = {
             "fonts": fonts.available(fonts.state_dir(conn)), "default_font": fonts.DEFAULT_FONT,
             "stamps": stamps.list_all(conn), "anims": overlay.ANIMS, "max_layers": overlay.MAX_LAYERS,
+            **overlay.load_store(conn),
         }
         conn.close()
         return jsonify(data)
@@ -1099,6 +1100,68 @@ def create_app(config: Config) -> Flask:
         deleted = stamps.delete_upload(conn, stamp_id)
         conn.close()
         return jsonify({"deleted": deleted}), (200 if deleted else 404)
+
+    @app.route("/api/overlay/styles", methods=["POST"])
+    def api_overlay_style_save():
+        payload = request.get_json(silent=True) or {}
+        conn = get_conn()
+        try:
+            item = overlay.save_style(conn, payload.get("name"), payload.get("layer"))
+        except overlay.OverlayError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        conn.close()
+        return jsonify(item), 201
+
+    @app.route("/api/overlay/templates", methods=["POST"])
+    def api_overlay_template_save():
+        payload = request.get_json(silent=True) or {}
+        conn = get_conn()
+        try:
+            item = overlay.save_template(conn, payload.get("name"), payload.get("layers"))
+        except overlay.OverlayError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        conn.close()
+        return jsonify(item), 201
+
+    @app.route("/api/overlay/<kind>/<item_id>", methods=["DELETE"])
+    def api_overlay_saved_delete(kind, item_id):
+        if kind not in ("styles", "templates"):
+            abort(404)
+        conn = get_conn()
+        deleted = overlay.delete_saved(conn, kind, item_id)
+        conn.close()
+        return jsonify({"deleted": deleted}), (200 if deleted else 404)
+
+    @app.route("/api/overlay/apply-batch", methods=["POST"])
+    def api_overlay_apply_batch():
+        """保存したテンプレートを、選んだ複数の作品(画像・動画)へ、一括で適用する(作品ごとに、加工版を作る)。"""
+        payload = request.get_json(silent=True) or {}
+        ids = [i for i in (payload.get("asset_ids") or []) if isinstance(i, str)][:200]
+        if not ids:
+            return jsonify({"error": "作品を選んでください"}), 400
+        require_storage()
+        conn = get_conn()
+        template = overlay.get_template(conn, str(payload.get("template_id") or ""))
+        if template is None:
+            conn.close()
+            return jsonify({"error": "テンプレートが見つかりません"}), 404
+        queued, failed = 0, []
+        for asset_id in ids:
+            asset = db.get_asset(conn, asset_id)
+            if asset is None or asset.get("deleted_at"):
+                failed.append({"id": asset_id, "error": "作品が見つかりません"})
+            elif asset["kind"] == "video" and not ffmpeg.available():
+                failed.append({"id": asset_id, "error": "ffmpegが見つかりません"})
+            else:
+                try:
+                    edits.enqueue_overlay(conn, asset, template["layers"])
+                    queued += 1
+                except edits.EditError as exc:
+                    failed.append({"id": asset_id, "error": str(exc)})
+        conn.close()
+        return jsonify({"queued": queued, "failed": failed})
 
     @app.route("/api/overlay/layer-preview", methods=["POST"])
     def api_layer_preview():

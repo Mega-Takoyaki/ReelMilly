@@ -1,0 +1,24 @@
+{% from "_info.html" import info %}
+{# 選んだ複数の作品に、保存したテロップ・スタンプのテンプレートを、一括で適用するポップアップ。overlay-batch.jsが動かす #}
+<dialog id="overlay-batch-dialog" class="wm-dialog edit-dialog">
+  <form method="dialog">
+    <header class="pn-head">
+      <h2>テロップ・スタンプを一括適用{{ info("作品の詳細画面の「テロップ・スタンプ」エディタで保存したテンプレートを、選んだ画像・動画のすべてに、加工版として一括で作ります。位置・大きさは、画面に対する割合なので、大きさの違う作品にも同じ見た目で入ります。原本は変わりません。処理は裏で行われ、結果は右上のベルの通知と、各作品のファイル一覧に出ます。") }}</h2>
+      <button type="button" class="lightbox-close pn-close" id="ob-close" aria-label="閉じる">&times;</button>
+    </header>
+    <section class="pn-section">
+      <div class="pn-section-title">テンプレート</div>
+      <select id="ob-template" aria-label="テンプレート"></select>
+      <p class="hint" id="ob-empty" hidden>テンプレートがありません。作品の詳細画面で「＋加工版を作る」→「テロップ・スタンプ」を開き、重ね方を作って「テンプレートとして保存」してください。</p>
+      <p class="hint" id="ob-summary"></p>
+    </section>
+    <p class="hint pn-error" id="ob-error" hidden></p>
+    <footer class="pn-foot">
+      <span></span>
+      <div class="confirm-actions">
+        <button type="button" class="btn-ghost" id="ob-cancel">キャンセル</button>
+        <button type="button" class="btn-primary" id="ob-run" disabled>適用する</button>
+      </div>
+    </footer>
+  </form>
+</dialog>

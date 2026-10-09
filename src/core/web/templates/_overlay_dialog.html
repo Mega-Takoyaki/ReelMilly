@@ -31,6 +31,14 @@
           <button type="button" class="btn-ghost-inline" id="ov-add-text">＋ テロップ</button>
           <button type="button" class="btn-ghost-inline" id="ov-add-stamp">＋ スタンプ</button>
         </div>
+        <div class="ov-row ov-tpl-row">
+          <select id="ov-tpl" aria-label="保存したテンプレート"></select>
+          <button type="button" class="btn-ghost-inline" id="ov-tpl-del" disabled>削除</button>
+        </div>
+        <div class="ov-row ov-tpl-row">
+          <input type="text" id="ov-tpl-name" maxlength="30" placeholder="テンプレート名（例: 宣伝セット）">
+          <button type="button" class="btn-ghost-inline" id="ov-tpl-save" data-tip="いまの重ね方全体を保存します。一覧で複数の作品を選んで、一括で適用できます">テンプレートとして保存</button>
+        </div>
         <ul class="ov-list" id="ov-list"></ul>
         <div class="ov-props" id="ov-props"><p class="hint">「＋ テロップ」か「＋ スタンプ」で、追加してください。</p></div>
       </div>

@@ -26,7 +26,7 @@
     { label: "影だけ", v: { fill: "#ffffff", stroke_width: 0, bold: true, shadow: true, shadow_color: "#000000", shadow_blur: 0.06, bg: false } },
     { label: "黒帯つき", v: { fill: "#ffffff", stroke_width: 0, bold: false, shadow: false, bg: true, bg_color: "#000000", bg_opacity: 0.7 } },
   ];
-  const ANIM_DEFAULT = { type: "none", cycle: 6, loop: true, start: 0, end: null };
+  const ANIM_DEFAULT = { type: "none", cycle: 6, loop: true, start: 0, end: null, fade_in: 0, fade_out: 0 };
 
   function showNotice(text, isError) {
     notice.hidden = !text;
@@ -89,7 +89,7 @@
   // ---------------------------------------------------------------- レイヤーの追加・選択・並べ替え
   function addLayer(layer) {
     layer._id = ++seq;
-    layer.anim = { ...ANIM_DEFAULT };
+    layer.anim = { ...ANIM_DEFAULT, ...(layer.anim || {}) };
     const img = document.createElement("img");
     img.className = "ov-layer";
     img.draggable = false;
@@ -210,6 +210,8 @@
       html += `<label class="ov-field">文字（改行できます）<textarea data-f="text" rows="2" maxlength="200">${esc(l.text)}</textarea></label>`;
       html += `<label class="ov-field">フォント<select data-f="font">${options.fonts.map((f) => `<option value="${f.id}" ${f.id === l.font ? "selected" : ""}>${esc(f.label)}</option>`).join("")}</select></label>`;
       html += `<div class="ov-styles">${TEXT_STYLES.map((s, i) => `<button type="button" class="btn-ghost-inline" data-style="${i}">${s.label}</button>`).join("")}</div>`;
+      html += `<div class="ov-styles">${options.styles.map((s) => `<span class="ov-saved"><button type="button" class="btn-ghost-inline" data-saved-style="${s.id}" title="保存したスタイルを当てはめる">★${esc(s.name)}</button><button type="button" class="ov-saved-del" data-del-style="${s.id}" title="このスタイルを削除">×</button></span>`).join("")}</div>`;
+      html += `<div class="ov-row ov-save-row"><input type="text" id="ov-style-name" maxlength="30" placeholder="スタイル名（例: 宣伝・黄色）"><button type="button" class="btn-ghost-inline" id="ov-style-save">いまの見た目を、スタイルとして保存</button></div>`;
       html += range("size", "文字の大きさ", 0.02, 0.4, 0.005, l.size, (v) => `${(v * 100).toFixed(1)}%`);
       html += `<div class="ov-row">${check("bold", "太字", l.bold)}${check("italic", "斜体", l.italic)}
         <label class="ov-inline">配置 <select data-f="align">${[["left", "左"], ["center", "中央"], ["right", "右"]].map(([v, t]) => `<option value="${v}" ${l.align === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>`;
@@ -239,6 +241,8 @@
       html += `<fieldset class="ov-anim"><legend>動画での動き・時間</legend>
         <label class="ov-field">動き<select data-f="anim.type">${Object.entries(options.anims).map(([v, t]) => `<option value="${v}" ${a.type === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>`;
       if (a.type !== "none") html += `<label class="ov-field">端から端まで流れる秒数<input type="number" data-f="anim.cycle" min="0.5" max="300" step="0.5" value="${a.cycle}"></label>${check("anim.loop", "繰り返す", a.loop)}`;
+      html += `<div class="ov-row"><label class="ov-field">フェードイン（秒）<input type="number" data-f="anim.fade_in" min="0" max="30" step="0.1" value="${a.fade_in || 0}"></label>
+        <label class="ov-field">フェードアウト（秒）<input type="number" data-f="anim.fade_out" min="0" max="30" step="0.1" value="${a.fade_out || 0}"></label></div>`;
       html += `<div class="ov-row"><label class="ov-field">表示の開始（秒）<input type="number" data-f="anim.start" min="0" step="0.1" value="${a.start}"></label>
         <label class="ov-field">表示の終了（秒・空欄で最後まで）<input type="number" data-f="anim.end" min="0" step="0.1" value="${a.end === null ? "" : a.end}"></label></div>
         <div class="ov-row"><button type="button" class="btn-ghost-inline" id="ov-set-start">現在位置を開始に</button><button type="button" class="btn-ghost-inline" id="ov-set-end">現在位置を終了に</button></div></fieldset>`;
@@ -272,6 +276,22 @@
     if (!selected) return;
     const style = e.target.closest("[data-style]");
     if (style) { Object.assign(selected, TEXT_STYLES[+style.dataset.style].v); buildProps(); scheduleRender(selected, 0); return; }
+    const saved = e.target.closest("[data-saved-style]");
+    if (saved) { Object.assign(selected, options.styles.find((s) => s.id === saved.dataset.savedStyle).style); buildProps(); scheduleRender(selected, 0); return; }
+    const delStyle = e.target.closest("[data-del-style]");
+    if (delStyle) { await fetch(`/api/overlay/styles/${delStyle.dataset.delStyle}`, { method: "DELETE" }); await loadOptions(); buildProps(); return; }
+    if (e.target.id === "ov-style-save") {
+      const name = $("ov-style-name").value.trim();
+      try {
+        const res = await fetch("/api/overlay/styles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, layer: clientKeys(selected) }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "保存できませんでした");
+        await loadOptions();
+        buildProps();
+        window.showToast(`スタイル「${data.name}」を保存しました`, "success");
+      } catch (err) { window.showToast(err.message, "error"); }
+      return;
+    }
     const tab = e.target.closest("[data-tab]");
     if (tab) { stampTab = tab.dataset.tab; buildProps(); return; }
     const stamp = e.target.closest("[data-stamp]");
@@ -332,12 +352,46 @@
   }
   $("ov-close").addEventListener("click", close);
   $("ov-cancel").addEventListener("click", close);
+  // テンプレート(レイヤーの組み合わせ全体)。保存したものは、あとから読み込める。一覧の「テロップ・スタンプを一括適用」でも使う
+  function refreshTemplates() {
+    const sel = $("ov-tpl");
+    sel.replaceChildren(new Option("テンプレートを読み込む…", ""), ...options.templates.map((t) => new Option(`${t.name}（${t.layers.length}個）`, t.id)));
+    $("ov-tpl-del").disabled = true;
+  }
+  $("ov-tpl").addEventListener("change", () => {
+    const t = options.templates.find((x) => x.id === $("ov-tpl").value);
+    $("ov-tpl-del").disabled = !t;
+    if (!t) return;
+    layers.splice(0).forEach((l) => l._img.remove());
+    selected = null;
+    t.layers.forEach((l) => addLayer(JSON.parse(JSON.stringify(l))));
+    select(layers[0] || null);
+    $("ov-tpl-name").value = t.name;
+  });
+  $("ov-tpl-del").addEventListener("click", async () => {
+    const t = options.templates.find((x) => x.id === $("ov-tpl").value);
+    if (!t || !(await window.confirmDialog(`テンプレート「${t.name}」を削除します。よろしいですか？`))) return;
+    await fetch(`/api/overlay/templates/${t.id}`, { method: "DELETE" });
+    await loadOptions();
+    refreshTemplates();
+  });
+  $("ov-tpl-save").addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/overlay/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: $("ov-tpl-name").value, layers: layers.map(clientKeys) }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "保存できませんでした");
+      await loadOptions();
+      refreshTemplates();
+      window.showToast(`テンプレート「${data.name}」を保存しました。一覧で複数の作品を選んで、一括適用できます`, "success");
+    } catch (err) { window.showToast(err.message, "error"); }
+  });
   $("ov-add-text").addEventListener("click", newText);
   $("ov-add-stamp").addEventListener("click", newStamp);
 
   window.openOverlay = async function () {
     showNotice("");
-    if (!options) await loadOptions();
+    await loadOptions();
+    refreshTemplates();
     layers.splice(0).forEach((l) => l._img.remove());
     selected = null;
     if (!media.getAttribute("src")) media.src = isVideo ? `${dialog.dataset.src}#t=0.1` : dialog.dataset.src;

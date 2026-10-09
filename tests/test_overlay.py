@@ -115,8 +115,40 @@ def test_overlay_video_end_to_end(env):
     subprocess.run([ffmpeg.find("ffmpeg"), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=2", "-pix_fmt", "yuv420p", str(src)], check=True)
     params = overlay.clean_params(conn, [
         text_layer(anim={"type": "scroll_left", "cycle": 2, "loop": True}),
-        {"type": "stamp", "stamp": "emoji:fire", "x": 0.2, "y": 0.2, "size": 0.2, "anim": {"type": "scroll_down", "cycle": 2, "loop": False, "start": 0.5, "end": 1.8}},
+        {"type": "stamp", "stamp": "emoji:fire", "x": 0.2, "y": 0.2, "size": 0.2, "anim": {"type": "scroll_down", "cycle": 2, "loop": False, "start": 0.5, "end": 1.8, "fade_in": 0.3, "fade_out": 0.3}},
     ])
     dest = tmp_path / "out.mp4"
     ffmpeg.overlay_video(conn, src, dest, params)
     assert ffmpeg.probe_size(dest) == (320, 240) and abs(ffmpeg.probe_duration(dest) - 2.0) < 0.3
+
+
+def test_saved_styles_and_templates_and_batch_apply(env):
+    config, conn, client, tmp_path = env
+    # スタイル(テロップ1つの見た目)
+    res = client.post("/api/overlay/styles", json={"name": "宣伝・黄色", "layer": text_layer(fill="#ffe600", stroke_color="#e60012")})
+    assert res.status_code == 201 and res.get_json()["style"]["fill"] == "#ffe600" and "text" not in res.get_json()["style"]
+    assert client.post("/api/overlay/styles", json={"name": "", "layer": text_layer()}).status_code == 400
+    assert client.post("/api/overlay/styles", json={"name": "x", "layer": {"type": "stamp", "stamp": "preset:bar-black"}}).status_code == 400
+    # 同じ名前は、上書き
+    client.post("/api/overlay/styles", json={"name": "宣伝・黄色", "layer": text_layer(fill="#00ff00")})
+    options = client.get("/api/overlay/options").get_json()
+    assert [s["style"]["fill"] for s in options["styles"]] == ["#00ff00"]
+
+    # テンプレート(組み合わせ全体)を保存して、複数の作品へ一括適用
+    layers = [text_layer(anim={"type": "scroll_left", "fade_in": 0.5, "fade_out": 0.5}), {"type": "stamp", "stamp": "emoji:fire", "x": 0.2, "y": 0.2}]
+    tpl = client.post("/api/overlay/templates", json={"name": "宣伝セット", "layers": layers}).get_json()
+    assert len(tpl["layers"]) == 2 and tpl["layers"][0]["anim"]["fade_in"] == 0.5
+    asset = db.get_asset(conn, "a1")
+    Image.new("RGB", (100, 80)).save(asset["file_path"], format="JPEG")
+    res = client.post("/api/overlay/apply-batch", json={"asset_ids": ["a1", "nope"], "template_id": tpl["id"]}).get_json()
+    assert res["queued"] == 1 and res["failed"][0]["id"] == "nope"
+    assert client.post("/api/overlay/apply-batch", json={"asset_ids": ["a1"], "template_id": "zzz"}).status_code == 404
+    assert client.delete(f"/api/overlay/templates/{tpl['id']}").status_code == 200
+    assert client.delete(f"/api/overlay/styles/{options['styles'][0]['id']}").status_code == 200
+    assert client.delete("/api/overlay/templates/zzz").status_code == 404
+
+
+def test_fade_filters_use_alpha_and_duration():
+    layer = {"x": 0.5, "y": 0.5, "anim": {"type": "none", "cycle": 6, "loop": True, "start": 1, "end": None, "fade_in": 0.5, "fade_out": 1}}
+    graph, _ = ffmpeg.overlay_filter({"layers": [layer]}, [(10, 10)], 100, 100, duration=10)
+    assert "fade=t=in:st=1:d=0.5:alpha=1" in graph and "fade=t=out:st=9:d=1:alpha=1" in graph

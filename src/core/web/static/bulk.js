@@ -81,6 +81,13 @@
   });
 
   // 今すぐ投稿: 選んだ作品を、1つの投稿にまとめて投稿する(ダイアログで、作品ごとのバージョンなどを選ぶ)
+  const overlayButton = document.getElementById("bulk-overlay");
+  if (overlayButton) {
+    overlayButton.addEventListener("click", () => {
+      if (selected.size === 0) return;
+      if (window.openOverlayBatch) window.openOverlayBatch(Array.from(selected));
+    });
+  }
   const postNowButton = document.getElementById("bulk-post-now");
   if (postNowButton) {
     postNowButton.addEventListener("click", () => {

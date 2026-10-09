@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import re
 import sqlite3
+import uuid
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -72,6 +74,8 @@ def clean_layer(conn: sqlite3.Connection, raw: dict) -> dict:
         "loop": bool(anim.get("loop", True)),
         "start": _num(anim.get("start"), "表示の開始", 0, 36000, 0),
         "end": None if end in (None, "") else _num(end, "表示の終了", 0.1, 36000, 0.1),
+        "fade_in": _num(anim.get("fade_in"), "フェードイン", 0, 30, 0),
+        "fade_out": _num(anim.get("fade_out"), "フェードアウト", 0, 30, 0),
     }
     if layer["anim"]["end"] is not None and layer["anim"]["end"] <= layer["anim"]["start"]:
         raise OverlayError("表示の終了は、開始より後にしてください")
@@ -122,7 +126,8 @@ def summarize(params: dict) -> str:
     if marks:
         parts.append(f"スタンプ{marks}件")
     moving = any(l["anim"]["type"] != "none" for l in params["layers"])
-    return "＋".join(parts) + ("（動きあり）" if moving else "")
+    fading = any(l["anim"]["fade_in"] or l["anim"]["fade_out"] for l in params["layers"])
+    return "＋".join(parts) + ("（動きあり）" if moving else "（フェードあり）" if fading else "")
 
 
 def has_motion_or_time(params: dict) -> bool:
@@ -235,3 +240,80 @@ def apply_image(conn: sqlite3.Connection, src: Path, dest: Path, params: dict) -
         base.save(dest, format=fmt)
     else:
         base.convert("RGB").save(dest, format="PNG" if dest.suffix.lower() == ".png" else "JPEG")
+
+
+# --------------------------------------------------------------------------- 保存したスタイル・テンプレート
+# スタイル: テロップ1つの見た目(文字・縁・影・帯など。文字の内容と位置は含まない)。
+# テンプレート: レイヤーの組み合わせ全体(位置・動きも含む)。名前をつけて保存し、あとから読み込んだり、複数の作品へ一括で適用できる。
+STYLE_FIELDS = ("font", "size", "bold", "italic", "fill", "stroke_color", "stroke_width", "shadow", "shadow_color", "shadow_dx", "shadow_dy",
+                "shadow_blur", "bg", "bg_color", "bg_opacity", "align", "opacity", "rotation")
+MAX_SAVED = 40
+
+
+def _store_path(conn: sqlite3.Connection) -> Path:
+    return fonts.state_dir(conn) / "overlay_presets.json"
+
+
+def load_store(conn: sqlite3.Connection) -> dict:
+    try:
+        data = json.loads(_store_path(conn).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    return {"styles": list(data.get("styles", [])), "templates": list(data.get("templates", []))}
+
+
+def _write_store(conn: sqlite3.Connection, store: dict) -> None:
+    path = _store_path(conn)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(store, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _name(value) -> str:
+    name = str(value or "").strip()[:30]
+    if not name:
+        raise OverlayError("名前を入力してください")
+    return name
+
+
+def save_style(conn: sqlite3.Connection, name, raw_layer: dict) -> dict:
+    """テロップの見た目を、名前をつけて保存する(同じ名前は、上書き)。"""
+    layer = clean_layer(conn, raw_layer)
+    if layer["type"] != "text":
+        raise OverlayError("スタイルとして保存できるのは、テロップだけです")
+    item = {"id": uuid.uuid4().hex[:10], "name": _name(name), "style": {k: layer[k] for k in STYLE_FIELDS}}
+    store = load_store(conn)
+    store["styles"] = [s for s in store["styles"] if s["name"] != item["name"]]
+    if len(store["styles"]) >= MAX_SAVED:
+        raise OverlayError(f"保存できるスタイルは、{MAX_SAVED}個までです。不要なものを削除してください")
+    store["styles"].append(item)
+    _write_store(conn, store)
+    return item
+
+
+def save_template(conn: sqlite3.Connection, name, raw_layers) -> dict:
+    """レイヤーの組み合わせを、名前をつけて保存する(同じ名前は、上書き)。"""
+    params = clean_params(conn, raw_layers)
+    item = {"id": uuid.uuid4().hex[:10], "name": _name(name), "layers": params["layers"]}
+    store = load_store(conn)
+    store["templates"] = [t for t in store["templates"] if t["name"] != item["name"]]
+    if len(store["templates"]) >= MAX_SAVED:
+        raise OverlayError(f"保存できるテンプレートは、{MAX_SAVED}個までです。不要なものを削除してください")
+    store["templates"].append(item)
+    _write_store(conn, store)
+    return item
+
+
+def delete_saved(conn: sqlite3.Connection, kind: str, item_id: str) -> bool:
+    store = load_store(conn)
+    before = len(store[kind])
+    store[kind] = [i for i in store[kind] if i["id"] != item_id]
+    if len(store[kind]) == before:
+        return False
+    _write_store(conn, store)
+    return True
+
+
+def get_template(conn: sqlite3.Connection, template_id: str) -> dict | None:
+    return next((t for t in load_store(conn)["templates"] if t["id"] == template_id), None)

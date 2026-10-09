@@ -239,6 +239,8 @@
 
 {% include "_post_now_dialog.html" %}
 
+{% include "_overlay_batch_dialog.html" %}
+
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
   <span id="bulk-count" class="bulk-count"></span>
   <button type="button" id="bulk-toggle" class="bulk-toggle" aria-expanded="false">操作 ▾</button>
@@ -294,6 +296,7 @@
   <span class="bulk-group">
     <button type="button" id="bulk-wm">透かしを入れる…</button>
     <button type="button" id="bulk-wm-clear" class="btn-ghost-inline">透かしを外す</button>
+    <button type="button" id="bulk-overlay" data-tip="保存したテロップ・スタンプのテンプレートを、選んだ作品すべてに、加工版として作ります">テロップ・スタンプ一括…</button>
   </span>
 
   <button type="button" id="bulk-trash" class="btn-danger-outline">ごみ箱へ</button>
@@ -309,6 +312,7 @@
 <script>window.POST_CHANNELS = {{ post_channels | tojson }}; window.WM_POSITIONS = {{ wm_positions | tojson }};</script>
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='post-now.js') }}"></script>
+<script src="{{ url_for('static', filename='overlay-batch.js') }}"></script>
 <script src="{{ url_for('static', filename='drag-select.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='infinite-scroll.js') }}"></script>

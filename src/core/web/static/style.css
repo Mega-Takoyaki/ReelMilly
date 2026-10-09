@@ -1936,3 +1936,9 @@ dialog.overlay-dialog { width: min(96vw, 66rem); }
 .ov-pos { display: flex; align-items: center; gap: 0.3rem; margin: 0.2rem 0 0.4rem; }
 .ov-anim { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.4rem 0.6rem; margin: 0.3rem 0 0; }
 .ov-anim legend { font-size: 0.8rem; color: var(--fg-muted); padding: 0 0.3rem; }
+
+.ov-tpl-row { align-items: center; gap: 0.4rem; flex-wrap: nowrap; }
+.ov-tpl-row select, .ov-tpl-row input[type=text], .ov-save-row input[type=text] { flex: 1; min-width: 0; }
+.ov-save-row { align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; flex-wrap: nowrap; }
+.ov-saved { display: inline-flex; align-items: center; }
+.ov-saved-del { background: none; border: 0; color: var(--fg-muted); cursor: pointer; padding: 0 0.3rem; }
