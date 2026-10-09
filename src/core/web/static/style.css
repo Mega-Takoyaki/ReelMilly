@@ -1942,3 +1942,10 @@ dialog.overlay-dialog { width: min(96vw, 66rem); }
 .ov-save-row { align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; flex-wrap: nowrap; }
 .ov-saved { display: inline-flex; align-items: center; }
 .ov-saved-del { background: none; border: 0; color: var(--fg-muted); cursor: pointer; padding: 0 0.3rem; }
+/* スマホ: 画面（プレビュー）を上に固定して、下の設定を操作しながら見られるようにする */
+@media (max-width: 760px) {
+  .ov-left { position: sticky; top: -1px; z-index: 3; background: var(--surface, #1a1d24); padding-bottom: 0.4rem; }
+  .ov-left .mk-stage img, .ov-left .mk-stage video { max-height: 32vh; }
+  .ov-left > .hint { display: none; }
+  .ov-props { max-height: none; overflow: visible; }
+}

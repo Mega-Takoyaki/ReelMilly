@@ -102,6 +102,8 @@
     select(layer);
     scheduleRender(layer, 0);
     refreshList();
+    // スマホでは、設定が画面の下にあるため、追加したら、そこまで動かす
+    if (window.innerWidth <= 760) $("ov-list").scrollIntoView({ behavior: "smooth", block: "center" });
   }
   function newText() {
     const l = {
@@ -225,7 +227,7 @@
       const groups = { preset: "図形・バッジ", emoji: "絵文字", upload: "自分の画像" };
       html += `<div class="ov-tabs">${Object.entries(groups).map(([k, t]) => `<button type="button" class="${k === stampTab ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</div>`;
       html += `<div class="ov-palette">${options.stamps.filter((s) => s.group === stampTab).map((s) =>
-        `<button type="button" class="ov-stamp ${s.id === l.stamp ? "on" : ""}" data-stamp="${s.id}" title="${esc(s.label)}"><img src="/api/overlay/stamps/${encodeURIComponent(s.id)}/image" alt="${esc(s.label)}" loading="lazy"></button>`).join("")
+        `<button type="button" class="ov-stamp ${s.id === l.stamp ? "on" : ""}" data-stamp="${s.id}" title="${esc(s.label)}"><img src="/api/overlay/stamps/${encodeURIComponent(s.id)}/image" alt="${esc(s.label)}"></button>`).join("")
         || '<span class="hint">まだありません。下のボタンから、追加できます。</span>'}</div>`;
       html += `<div class="ov-row"><label class="btn-ghost-inline ov-upload">画像を追加…<input type="file" id="ov-upload" accept="image/*" hidden></label>`;
       if (stampTab === "upload" && l.stamp.startsWith("upload:")) html += `<button type="button" class="btn-ghost-inline" id="ov-delstamp">この画像を削除</button>`;
