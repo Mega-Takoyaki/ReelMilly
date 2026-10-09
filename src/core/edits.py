@@ -11,10 +11,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core import ffmpeg, mask
+from core import ffmpeg, mask, overlay
 
 MAX_EDITS_PER_ASSET = 10
-KINDS = ("trim", "mask", "frame")
+KINDS = ("trim", "mask", "frame", "overlay")
 FRAME_FORMATS = {"jpg": "JPG", "png": "PNG"}
 FRAME_SCALES = (1, 2, 3, 4)
 TRIM_MODES = {"accurate": "正確", "fast": "高速"}
@@ -41,6 +41,8 @@ def summarize(kind: str, params: dict) -> str:
         return text + ("（高速）" if params.get("mode") == "fast" else "")
     if kind == "mask":
         return mask.summarize(params)
+    if kind == "overlay":
+        return overlay.summarize(params)
     if kind == "frame":
         text = f"静止画 {fmt_time(params['time'])} {FRAME_FORMATS.get(params['format'], params['format'])}"
         return text + (f"（{params['scale']}倍に拡大）" if params.get("scale", 1) > 1 else "")
@@ -51,14 +53,14 @@ def kind_label(edit: dict) -> str:
     """一覧に出す、加工の種類の名前。"""
     if edit["kind"] == "mask":
         return mask.STYLES.get(edit["params"].get("style"), "ぼかし・モザイク")
-    return "静止画" if edit["kind"] == "frame" else "切り出し"
+    return {"frame": "静止画", "overlay": "テロップ・スタンプ"}.get(edit["kind"], "切り出し")
 
 
 def media_type(asset: dict, edit: dict) -> str:
     """加工版の、メディアの種類(image|video)。切り出しは動画、ぼかし・モザイクは、原本と同じ。"""
     if edit["kind"] == "frame":
         return "image"
-    return asset["kind"] if edit["kind"] == "mask" else "video"
+    return asset["kind"] if edit["kind"] in ("mask", "overlay") else "video"
 
 
 def edits_dir(asset: dict) -> Path:
@@ -145,6 +147,25 @@ def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, str
     cur = conn.execute(
         "INSERT INTO asset_edits (asset_id, kind, params, summary, status, created_at) VALUES (?, 'mask', ?, ?, 'queued', ?)",
         (asset["id"], json.dumps(params), summarize("mask", params), _now()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def enqueue_overlay(conn: sqlite3.Connection, asset: dict, layers) -> int:
+    """テロップ・スタンプの挿入を待機中として登録する(静止画・動画とも)。登録したIDを返す。"""
+    try:
+        params = overlay.clean_params(conn, layers)
+    except overlay.OverlayError as exc:
+        raise EditError(str(exc)) from exc
+    if not Path(asset["file_path"]).exists():
+        raise EditError("元のファイルが見つかりません(ストレージを確認してください)")
+    if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
+        raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
+    conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
+    cur = conn.execute(
+        "INSERT INTO asset_edits (asset_id, kind, params, summary, status, created_at) VALUES (?, 'overlay', ?, ?, 'queued', ?)",
+        (asset["id"], json.dumps(params), summarize("overlay", params), _now()),
     )
     conn.commit()
     return cur.lastrowid
@@ -243,7 +264,7 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
             suffix = src.suffix if p.get("mode") == "fast" else ".mp4"
         elif edit["kind"] == "frame":
             suffix = ".png" if p.get("format") == "png" else ".jpg"
-        elif edit["kind"] == "mask":
+        elif edit["kind"] in ("mask", "overlay"):
             suffix = ".mp4" if asset["kind"] == "video" else src.suffix
         else:
             raise ffmpeg.FfmpegError(f"未対応の編集です: {edit['kind']}")
@@ -253,6 +274,11 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
             ffmpeg.trim(src, dest, p["start"], p["end"], p.get("mode", "accurate"))
         elif edit["kind"] == "frame":
             ffmpeg.extract_frame(src, dest, p["time"], p.get("scale", 1))
+        elif edit["kind"] == "overlay":
+            if asset["kind"] == "video":
+                ffmpeg.overlay_video(conn, src, dest, p)
+            else:
+                overlay.apply_image(conn, src, dest, p)
         elif asset["kind"] == "video":
             ffmpeg.mask_video(src, dest, p)
         else:

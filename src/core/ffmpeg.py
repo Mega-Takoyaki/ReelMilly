@@ -194,3 +194,76 @@ def extract_frame(src: Path, dest: Path, at: float, scale: int = 1, timeout: int
         dest.unlink(missing_ok=True)
         detail = (result.stderr or "").strip().splitlines()
         raise FfmpegError("コマを取り出せませんでした: " + (detail[-1] if detail else "指定の位置に、映像がありません"))
+
+
+def overlay_filter(params: dict, sizes: list[tuple[int, int]], width: int, height: int) -> tuple[str, str]:
+    """テロップ・スタンプ(レイヤーごとのPNG)を重ねる`-filter_complex`。入力0が動画、入力1以降がレイヤー(`sizes`は、その画像の大きさ)。
+
+    位置は、中心(x,y)の割合。動きは、画面の外から外へ、`cycle`秒かけて横切る(`loop`なら繰り返す)。表示の時間帯は、`start`〜`end`秒。
+    """
+    parts, last = [], "0:v"
+    for i, (layer, (w, h)) in enumerate(zip(params["layers"], sizes)):
+        anim = layer["anim"]
+        start, end, cycle = anim["start"], anim["end"], anim["cycle"]
+        x = f"{round(layer['x'] * width - w / 2)}"
+        y = f"{round(layer['y'] * height - h / 2)}"
+        stop = end if end is not None else 999999
+        if anim["type"] != "none":
+            t = f"(t-{start:g})"
+            p = f"mod({t},{cycle:g})/{cycle:g}" if anim["loop"] else f"clip({t}/{cycle:g},0,1)"
+            if anim["type"] == "scroll_left":
+                x = f"main_w-{p}*(main_w+overlay_w)"
+            elif anim["type"] == "scroll_right":
+                x = f"-overlay_w+{p}*(main_w+overlay_w)"
+            elif anim["type"] == "scroll_up":
+                y = f"main_h-{p}*(main_h+overlay_h)"
+            else:
+                y = f"-overlay_h+{p}*(main_h+overlay_h)"
+            if not anim["loop"]:
+                stop = min(stop, start + cycle)  # 1回だけ流れて、画面の外へ出たら、消える
+        timed = start > 0 or stop < 999999
+        enable = f":enable='between(t,{start:g},{stop:g})'" if timed else ""
+        parts.append(f"[{i + 1}:v]format=rgba[l{i}]")
+        parts.append(f"[{last}][l{i}]overlay=x='{x}':y='{y}':shortest=1:format=auto{enable}[o{i}]")
+        last = f"o{i}"
+    return ";".join(parts), last
+
+
+def overlay_video(conn, src: Path, dest: Path, params: dict, timeout: int = 7200) -> None:
+    """動画に、テロップ・スタンプを重ねて`dest`に書く(音声はそのまま、画質はほぼ劣化しない設定)。"""
+    import tempfile
+
+    from core import overlay
+
+    ffmpeg = _require("ffmpeg")
+    size = probe_size(src)
+    if size is None:
+        raise FfmpegError("動画の大きさを読めませんでした(ffprobeが見つからない、またはファイルが壊れています)")
+    width, height = size
+    with tempfile.TemporaryDirectory(prefix="reelmilly-overlay-") as tmp:
+        paths, sizes = [], []
+        for i, layer in enumerate(params["layers"]):
+            img = overlay.render_layer(conn, layer, width, height)
+            p = Path(tmp) / f"layer{i}.png"
+            img.save(p, format="PNG")
+            paths.append(p)
+            sizes.append(img.size)
+        graph, out_label = overlay_filter(params, sizes, width, height)
+        cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(src)]
+        for p in paths:
+            cmd += ["-loop", "1", "-framerate", "30", "-i", str(p)]
+        cmd += [
+            "-filter_complex", graph, "-map", f"[{out_label}]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dest),
+        ]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW)
+        except subprocess.TimeoutExpired as exc:
+            dest.unlink(missing_ok=True)
+            raise FfmpegError("ffmpegの処理が時間切れになりました") from exc
+    if result.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        dest.unlink(missing_ok=True)
+        detail = (result.stderr or "").strip().splitlines()
+        raise FfmpegError("ffmpegが失敗しました: " + (detail[-1] if detail else f"終了コード{result.returncode}"))

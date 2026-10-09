@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -12,10 +13,10 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
 
 from core import db, env_settings, generation
-from core import duplicates, edits, ffmpeg, notifications, storage, watermark
+from core import duplicates, edits, ffmpeg, fonts, notifications, overlay, stamps, storage, watermark
 from core import captions as captions_module
 from core import versions as versions_module
 from core.dimensions import read_dimensions
@@ -1003,7 +1004,9 @@ def create_app(config: Config) -> Flask:
             conn.close()
             return jsonify({"error": "ffmpegが見つかりません。`winget install Gyan.FFmpeg`で入れてから、アプリを再起動してください"}), 503
         try:
-            if payload.get("kind", "trim") == "frame":
+            if payload.get("kind", "trim") == "overlay":
+                edit_id = edits.enqueue_overlay(conn, asset, payload.get("layers"))
+            elif payload.get("kind", "trim") == "frame":
                 edit_id = edits.enqueue_frame(conn, asset, payload.get("time"), payload.get("format", "jpg"), payload.get("scale", 1))
             elif payload.get("kind", "trim") == "mask":
                 edit_id = edits.enqueue_mask(conn, asset, payload.get("regions"), payload.get("style"), payload.get("strength", 5))
@@ -1043,9 +1046,80 @@ def create_app(config: Config) -> Flask:
         if request.args.get("download"):
             stem = Path(asset.get("original_name") or asset_id).stem
             p = edit["params"]
-            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else (f"frame_{p.get('time', 0):g}s" if edit["kind"] == "frame" else f"{p.get('style', 'mask')}")
+            tag = f"trim_{p.get('start', 0):g}-{p.get('end', 0):g}s" if edit["kind"] == "trim" else (f"frame_{p.get('time', 0):g}s" if edit["kind"] == "frame" else ("overlay" if edit["kind"] == "overlay" else f"{p.get('style', 'mask')}"))
             return send_file(path, as_attachment=True, download_name=f"{stem}_{tag}{path.suffix}")
         return send_file(path)
+
+    # --- テロップ・スタンプ(フォント・スタンプの一覧、アップロード、1レイヤーのプレビュー) ---
+
+    @app.route("/api/overlay/options")
+    def api_overlay_options():
+        conn = get_conn()
+        data = {
+            "fonts": fonts.available(fonts.state_dir(conn)), "default_font": fonts.DEFAULT_FONT,
+            "stamps": stamps.list_all(conn), "anims": overlay.ANIMS, "max_layers": overlay.MAX_LAYERS,
+        }
+        conn.close()
+        return jsonify(data)
+
+    @app.route("/api/overlay/stamps/<path:stamp_id>/image")
+    def api_stamp_image(stamp_id):
+        conn = get_conn()
+        try:
+            img = stamps.load(conn, stamp_id)
+        except stamps.StampError:
+            conn.close()
+            abort(404)
+        conn.close()
+        img.thumbnail((256, 256))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        response = make_response(buf.getvalue())
+        response.headers["Content-Type"] = "image/png"
+        response.headers["Cache-Control"] = "private, max-age=3600"
+        return response
+
+    @app.route("/api/overlay/stamps", methods=["POST"])
+    def api_stamp_upload():
+        file = request.files.get("file")
+        if file is None:
+            return jsonify({"error": "画像のファイルを選んでください"}), 400
+        conn = get_conn()
+        try:
+            item = stamps.save_upload(conn, file.read(), file.filename or "")
+        except stamps.StampError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        conn.close()
+        return jsonify(item), 201
+
+    @app.route("/api/overlay/stamps/<path:stamp_id>", methods=["DELETE"])
+    def api_stamp_delete(stamp_id):
+        conn = get_conn()
+        deleted = stamps.delete_upload(conn, stamp_id)
+        conn.close()
+        return jsonify({"deleted": deleted}), (200 if deleted else 404)
+
+    @app.route("/api/overlay/layer-preview", methods=["POST"])
+    def api_layer_preview():
+        """1レイヤーを、実際の仕上がりと同じ描画で、透明なPNGにして返す(プレビュー用)。`width`,`height`は、載せる先の画像の大きさ。"""
+        payload = request.get_json(silent=True) or {}
+        try:
+            width = int(min(max(int(payload.get("width", 0)), 64), 4096))
+            height = int(min(max(int(payload.get("height", 0)), 64), 4096))
+        except (TypeError, ValueError):
+            return jsonify({"error": "width/heightが正しくありません"}), 400
+        conn = get_conn()
+        try:
+            layer = overlay.clean_layer(conn, payload.get("layer"))
+            data = overlay.render_png(conn, layer, width, height)
+        except overlay.OverlayError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        conn.close()
+        response = make_response(data)
+        response.headers["Content-Type"] = "image/png"
+        return response
 
     # --- 透かし(ウォーターマーク) ---
 

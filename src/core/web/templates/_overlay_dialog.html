@@ -1,0 +1,48 @@
+{% from "_info.html" import info %}
+{# 加工エディタ(テロップ・スタンプ)のポップアップ。静止画・動画とも。overlay-editor.jsが動かす。結果は、「ファイル(原本と加工版)」に、加工版として並ぶ #}
+<dialog id="overlay-dialog" class="wm-dialog edit-dialog overlay-dialog" data-asset-id="{{ asset.id }}" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}">
+  <form method="dialog" id="overlay-form">
+    <header class="pn-head">
+      <h2>加工版を作る: テロップ・スタンプ{{ info("文字（テロップ）や、図柄（スタンプ・ロゴ）を、作品の上に重ねます。画面の上で、ドラッグして位置を決め、右の設定で、文字・色・大きさ・縁・影などを変えます。重ねるものは、最大" ~ 12 ~ "個までで、好きな数を組み合わせられます。動画では、表示する時間帯や、流れる動き（右から左など）も指定できます。センシティブな部分を隠す用途には、黒帯・ハートなどのスタンプも使えます。原本は変わらず、別のファイル（加工版）として保存します。") }}</h2>
+      <button type="button" class="lightbox-close pn-close" id="ov-close" aria-label="閉じる">&times;</button>
+    </header>
+
+    <div class="ov-body">
+      <div class="ov-left">
+        <div class="mk-stage-wrap">
+          <div class="mk-stage ov-stage" id="ov-stage">
+            {% if asset.kind == 'video' %}<video id="ov-video" muted playsinline preload="none"></video>
+            {% else %}<img id="ov-image" alt="" draggable="false">{% endif %}
+            <div class="ov-layers" id="ov-layers"></div>
+          </div>
+        </div>
+        {% if asset.kind == 'video' %}
+        <div class="mk-player">
+          <button type="button" class="btn-ghost-inline" id="ov-play">▶ 再生</button>
+          <input type="range" id="ov-seek" min="0" max="1000" value="0" aria-label="再生位置">
+          <span class="hint" id="ov-time">0.0 / 0.0 秒</span>
+        </div>
+        {% endif %}
+        <p class="hint">重ねたものは、ドラッグで動かせます。{% if asset.kind == 'video' %}流れる動きは、保存後の動画で確認できます（ここでは、止めた位置を表示します）。{% endif %}</p>
+      </div>
+
+      <div class="ov-right">
+        <div class="ov-add">
+          <button type="button" class="btn-ghost-inline" id="ov-add-text">＋ テロップ</button>
+          <button type="button" class="btn-ghost-inline" id="ov-add-stamp">＋ スタンプ</button>
+        </div>
+        <ul class="ov-list" id="ov-list"></ul>
+        <div class="ov-props" id="ov-props"><p class="hint">「＋ テロップ」か「＋ スタンプ」で、追加してください。</p></div>
+      </div>
+    </div>
+    <p class="hint" id="ov-notice" hidden></p>
+
+    <footer class="pn-foot">
+      <span class="hint" id="ov-count"></span>
+      <div class="confirm-actions">
+        <button type="button" class="btn-ghost" id="ov-cancel">キャンセル</button>
+        <button type="button" class="btn-primary" id="ov-run" disabled>加工版として保存</button>
+      </div>
+    </footer>
+  </form>
+</dialog>
