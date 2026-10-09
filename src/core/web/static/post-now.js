@@ -87,12 +87,15 @@
       // センシティブ指定は、最後は人が決める(外せる)。sfwと承認されていない作品は、開いたときに、既定でオンにするだけ
       $("pn-sensitive-note").hidden = !ratings.some((r) => r !== "sfw");
       const weight = xWeight($("pn-text").value);
+      $("pn-count").hidden = false;
       $("pn-count").textContent = `Xの文字数: ${weight} / ${X_MAX_WEIGHT}（全角は2文字）`;
       $("pn-count").classList.toggle("pn-warn", weight > X_MAX_WEIGHT);
       if (!problem && weight > X_MAX_WEIGHT) problem = `Xの文字数の上限を超えています（${weight} / ${X_MAX_WEIGHT}）`;
     }
+    if (!isX) $("pn-count").hidden = true;
     showError(problem);
     $("pn-submit").disabled = !!problem;
+    updateSummary();
   }
 
   window.openPostNow = async function (ids) {
@@ -110,7 +113,7 @@
       assets = loaded;
       const xRadio = dialog.querySelector('input[name="pn-channel"][value="x"]');
       xRadio.disabled = !targets.x;
-      $("pn-x-note").textContent = targets.x ? "" : " （未連携。設定の「X」タブで連携）";
+      $("pn-x-note").textContent = targets.x ? "" : "Xは、未連携です（設定の「X」タブで連携すると、選べます）";
       dialog.querySelector('input[name="pn-channel"][value="fanvue"]').checked = true;
       dialog.querySelector('input[name="pn-channel"][value="fanvue"]').disabled = targets.fanvue === false;
     } catch (err) {
@@ -133,6 +136,18 @@
   };
 
   $("pn-cancel").addEventListener("click", () => dialog.close());
+  $("pn-close").addEventListener("click", () => dialog.close());
+
+  // 下部の要約(「Fanvue ・ 購読者のみ ・ 2件 ・ 今すぐ」)。何を押すと、何が起きるかを、ボタンのそばに出す
+  function updateSummary() {
+    const isX = currentChannel() === "x";
+    const parts = [isX ? "X" : "Fanvue"];
+    if (!isX) parts.push($("pn-audience").selectedOptions[0].textContent);
+    parts.push(`${assets.length}件を、1つの投稿に`);
+    parts.push(isLater() ? "予約" : "今すぐ");
+    $("pn-summary").textContent = parts.join(" ・ ");
+  }
+  $("pn-audience").addEventListener("change", updateSummary);
 
   // 投稿のタイミング(今すぐ/予約)。予約を選ぶと、日時の欄を出し、ボタンを「予約する」にする
   const isLater = () => (dialog.querySelector('input[name="pn-when"]:checked') || {}).value === "later";
@@ -142,8 +157,9 @@
   }
   function applyWhen() {
     const later = isLater();
-    $("pn-run-at").hidden = !later;
-    $("pn-submit").textContent = later ? "予約する" : "投稿する";
+    $("pn-when-detail").hidden = !later;
+    $("pn-submit").textContent = later ? "予約する" : "今すぐ投稿する";
+    updateSummary();
     if (later && !$("pn-run-at").value) {
       const soon = new Date(Date.now() + 60 * 60 * 1000);   // 既定: 1時間後(5分単位)
       soon.setMinutes(Math.ceil(soon.getMinutes() / 5) * 5, 0, 0);

@@ -72,8 +72,15 @@ window.confirmDialog = function confirmDialog(message) {
     pop.style.top = top + "px";
   }
 
+  // モーダルのダイアログは、画面の最前面の層に出るため、body直下の吹き出しは、その後ろに隠れる。ダイアログの中に移す
+  function host(el) {
+    const parent = el.closest("dialog[open]") || document.body;
+    if (pop.parentNode !== parent) parent.appendChild(pop);
+  }
+
   function show(icon) {
     current = icon;
+    host(icon);
     pop.textContent = icon.dataset.info;
     pop.hidden = false;
     place(icon);
@@ -141,6 +148,9 @@ window.confirmDialog = function confirmDialog(message) {
     const el = e.target.closest ? e.target.closest("[data-tip]") : null;
     if (!el || el === current) return;
     current = el;
+    // モーダルのダイアログの中では、ダイアログの中に出す(でないと、最前面の層の後ろに隠れる)
+    const parent = el.closest("dialog[open]") || document.body;
+    if (pop.parentNode !== parent) parent.appendChild(pop);
     pop.textContent = el.dataset.tip;
     pop.hidden = false;
     place(el);

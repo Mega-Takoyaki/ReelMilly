@@ -1,58 +1,95 @@
-{# 今すぐ投稿のダイアログ(一覧・詳細画面で共通)。post-now.jsが動かす #}
+{# 投稿・予約のダイアログ(一覧・詳細画面で共通)。post-now.jsが動かす。上から順に: いつ → どこへ → 何を → 文 → オプション #}
 {% from "_info.html" import info %}
 <dialog id="post-now-dialog" class="wm-dialog post-now-dialog">
   <form method="dialog" id="post-now-form">
-    <h2 style="margin-top: 0;">今すぐ投稿{{ info("選んだ作品を、いますぐ1つの投稿として投稿します(自動投稿のスケジュールとは別の操作です)。作品が複数あるときは、複数のメディアを1つの投稿にまとめます。作品ごとに、元のファイル・透かし入り・編集した動画のどれを投稿するか選べます。処理は裏で行われ、結果は右上のベルの通知に出ます。投稿すると、公開されます。") }}</h2>
+    <header class="pn-head">
+      <h2>投稿・予約{{ info("選んだ作品を、1つの投稿として、いますぐ投稿するか、日時を決めて予約します。作品が複数あるときは、複数のメディアを1つの投稿にまとめます。作品ごとに、投稿するファイル（原本・加工版）を選べます。処理は裏で行われ、結果は右上のベルの通知に出ます。投稿すると、公開されます。") }}</h2>
+      <button type="button" class="lightbox-close pn-close" id="pn-close" aria-label="閉じる">&times;</button>
+    </header>
 
-    <fieldset class="pn-channels">
-      <legend>投稿先</legend>
-      <label><input type="radio" name="pn-channel" value="fanvue" checked> Fanvue</label>
-      <label id="pn-x-label" data-tip="設定の「X」タブで連携すると、使えます"><input type="radio" name="pn-channel" value="x" disabled> X<span class="hint" id="pn-x-note"> （未連携）</span></label>
-    </fieldset>
+    <section class="pn-section">
+      <div class="pn-section-title">1. いつ投稿しますか</div>
+      <div class="pn-seg" role="radiogroup" aria-label="投稿のタイミング">
+        <label><input type="radio" name="pn-when" value="now" checked><span>今すぐ</span></label>
+        <label><input type="radio" name="pn-when" value="later"><span>日時を決めて予約</span></label>
+      </div>
+      <div class="pn-when-detail" id="pn-when-detail" hidden>
+        <input type="datetime-local" id="pn-run-at" aria-label="予約する日時">
+        <span class="hint">この日時に、ReelMilly（reelmilly watch が動いている間）が、自動で投稿します。予約は、設定の「投稿スケジュール」で、確認・取り消しができます。</span>
+      </div>
+      <p class="hint pn-warn" id="pn-scheduled-note" hidden></p>
+    </section>
 
-    <div class="pn-items" id="pn-items" aria-live="polite"></div>
+    <section class="pn-section">
+      <div class="pn-section-title">2. どこへ投稿しますか</div>
+      <div class="pn-seg" role="radiogroup" aria-label="投稿先">
+        <label><input type="radio" name="pn-channel" value="fanvue" checked><span>Fanvue</span></label>
+        <label id="pn-x-label" data-tip="設定の「X」タブで連携すると、使えます"><input type="radio" name="pn-channel" value="x" disabled><span>X</span></label>
+      </div>
+      <span class="hint" id="pn-x-note"></span>
+    </section>
 
-    <div class="pn-field">
-      <label for="pn-text">投稿文</label>
+    <section class="pn-section">
+      <div class="pn-section-title">3. 投稿するファイル{{ info("作品ごとに、元の作品（原本）か、加工版（切り出し・透かし入りなど）を選べます。選んだファイルの区分（sfw など）が、投稿の既定値（Xのセンシティブ指定など）に使われます。") }}</div>
+      <div class="pn-items" id="pn-items" aria-live="polite"></div>
+    </section>
+
+    <section class="pn-section">
+      <div class="pn-section-title"><label for="pn-text">4. 投稿文</label></div>
       <div class="pn-textwrap">
         <textarea id="pn-text" rows="5" placeholder="投稿文（未入力でも投稿できます）"></textarea>
-        <button type="button" class="pn-generate" id="pn-generate" aria-label="投稿文を生成する" data-tip="投稿文を生成する（設定のプロンプトとAIで、都度つくります）">
+        <button type="button" class="pn-generate" id="pn-generate" aria-label="投稿文をAIで生成する" data-tip="AIで投稿文をつくる（設定のプロンプトで、押すたびに作り直します）">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path>
             <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path>
           </svg>
         </button>
       </div>
-      <button type="button" class="btn-ghost-inline pn-undo" id="pn-undo" hidden>生成前の文に戻す</button>
-    </div>
-    <div class="pn-xonly" id="pn-xonly" hidden>
-      <label class="checkbox-label"><input type="checkbox" id="pn-sensitive"> センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。最後は、人が決めます(チェックを外して、投稿できます)。sfwと承認されていない作品(suggestive・explicit・未承認)は、開いたときに、既定でオンになります。") }}</label>
-      <p class="hint" id="pn-sensitive-note" hidden>sfwと承認されていない作品を含むため、既定でオンにしています（問題なければ、外せます）。</p>
-      <label class="checkbox-label"><input type="checkbox" id="pn-ai" checked> AI生成のメディアを含む、と表示する{{ info("Xの「AI生成」の申告(made_with_ai)を、投稿につけます。") }}</label>
-      <p class="hint" id="pn-count">Xの文字数: 0 / 280（全角は2文字）</p>
-    </div>
-    <div class="pn-row" id="pn-fanvueonly">
-      <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
-        <select id="pn-audience">
-          <option value="subscribers">購読者のみ</option>
-          <option value="followers-and-subscribers">フォロワーと購読者</option>
-        </select>
+      <div class="pn-text-foot">
+        <button type="button" class="btn-ghost-inline pn-undo" id="pn-undo" hidden>生成前の文に戻す</button>
+        <span class="hint" id="pn-count" hidden></span>
+      </div>
+    </section>
+
+    <section class="pn-section" id="pn-fanvueonly">
+      <div class="pn-section-title">5. Fanvueの設定</div>
+      <div class="pn-row">
+        <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
+          <select id="pn-audience">
+            <option value="subscribers">購読者のみ</option>
+            <option value="followers-and-subscribers">フォロワーと購読者</option>
+          </select>
+        </label>
+        <label class="pn-field">価格（ドル・任意）{{ info("入れると有料の投稿になります(3ドル以上)。空欄なら、無料です。") }}
+          <input type="number" id="pn-price" min="3" step="0.01" placeholder="空欄＝無料" inputmode="decimal">
+        </label>
+      </div>
+    </section>
+
+    <section class="pn-section" id="pn-xonly" hidden>
+      <div class="pn-section-title">5. Xの設定</div>
+      <label class="pn-check">
+        <input type="checkbox" id="pn-sensitive">
+        <span class="pn-check-body">
+          <span>センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。最後は、人が決めます(チェックを外して、投稿できます)。sfwと承認されていないファイル(suggestive・explicit・未承認)は、開いたときに、既定でオンになります。") }}</span>
+          <span class="hint" id="pn-sensitive-note" hidden>sfwと承認されていないファイルを含むため、既定でオンにしています（問題なければ、外せます）。</span>
+        </span>
       </label>
-      <label class="pn-field">価格（ドル、任意）{{ info("入れると有料の投稿になります(3ドル以上)。空欄なら、無料です。") }}
-        <input type="number" id="pn-price" min="3" step="0.01" placeholder="空欄=無料" inputmode="decimal">
+      <label class="pn-check">
+        <input type="checkbox" id="pn-ai" checked>
+        <span class="pn-check-body">
+          <span>AI生成のメディアを含む、と表示する{{ info("Xの「AI生成」の申告(made_with_ai)を、投稿につけます。") }}</span>
+        </span>
       </label>
-    </div>
-    <fieldset class="pn-channels pn-when">
-      <legend>投稿のタイミング{{ info("今すぐ: すぐに投稿します。予約: 決めた日時に、ReelMilly(reelmilly watch)が自動で投稿します。FanvueやXの予約機能は使わないため、予約は、設定の「投稿スケジュール」タブで、確認・取り消しができます。") }}</legend>
-      <label><input type="radio" name="pn-when" value="now" checked> 今すぐ</label>
-      <label><input type="radio" name="pn-when" value="later"> 予約する</label>
-      <input type="datetime-local" id="pn-run-at" hidden aria-label="予約する日時">
-    </fieldset>
-    <p class="hint pn-warn" id="pn-scheduled-note" hidden></p>
+    </section>
+
     <p class="hint pn-error" id="pn-error" hidden></p>
-    <div class="confirm-actions">
-      <button type="button" class="btn-ghost" id="pn-cancel">キャンセル</button>
-      <button type="submit" class="btn-primary" id="pn-submit">投稿する</button>
-    </div>
+    <footer class="pn-foot">
+      <span class="hint pn-summary" id="pn-summary"></span>
+      <div class="confirm-actions">
+        <button type="button" class="btn-ghost" id="pn-cancel">キャンセル</button>
+        <button type="submit" class="btn-primary" id="pn-submit">今すぐ投稿する</button>
+      </div>
+    </footer>
   </form>
 </dialog>

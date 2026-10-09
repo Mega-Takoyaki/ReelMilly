@@ -1811,3 +1811,35 @@ dialog.post-now-dialog { width: min(94vw, 40rem); max-height: 92vh; overflow: au
 .tc-alias-row { display: flex; align-items: center; gap: 0.6rem; }
 .tc-alias-add { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .tc-alias-add input { width: 12rem; }
+
+/* 投稿・予約のダイアログ(再構成) ---------------------------------------------------------*/
+dialog.post-now-dialog { width: min(94vw, 42rem); padding: 1.2rem 1.4rem; }
+.post-now-dialog .pn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+.post-now-dialog .pn-head h2 { margin: 0; }
+.post-now-dialog .pn-close { position: static; background: var(--surface-alt); color: var(--fg-muted); }
+.post-now-dialog .pn-section { margin-bottom: 1.1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.post-now-dialog .pn-section:last-of-type { border-bottom: none; }
+.post-now-dialog .pn-section[hidden] { display: none; }
+.post-now-dialog .pn-section-title { font-size: 0.8rem; font-weight: 700; color: var(--fg-muted); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.3rem; }
+.post-now-dialog .pn-section-title label { margin: 0; font: inherit; color: inherit; display: inline; }
+/* 切り替えボタン(ラジオ): 選んでいるほうが、色つきで、一目で分かる */
+.post-now-dialog .pn-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-alt); }
+.post-now-dialog .pn-seg label { display: block; position: relative; margin: 0; }
+.post-now-dialog .pn-seg input { position: absolute; opacity: 0; width: 0; height: 0; }
+.post-now-dialog .pn-seg span { display: block; padding: 0.5rem 1.2rem; cursor: pointer; font-size: 0.9rem; color: var(--fg-muted); user-select: none; }
+.post-now-dialog .pn-seg label + label span { border-left: 1px solid var(--border); }
+.post-now-dialog .pn-seg input:checked + span { background: var(--accent); color: #fff; font-weight: 700; }
+.post-now-dialog .pn-seg input:disabled + span { opacity: 0.45; cursor: not-allowed; }
+.post-now-dialog .pn-seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.post-now-dialog .pn-when-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; margin-top: 0.6rem; }
+.post-now-dialog .pn-when-detail input { width: auto; }
+.post-now-dialog .pn-when-detail .hint { flex: 1 1 14rem; margin: 0; }
+/* チェック欄: チェックを左に、文字を右に(ダイアログ共通の「ラベルを縦並び」を、打ち消す) */
+dialog.post-now-dialog label.pn-check { display: flex; flex-direction: row; align-items: flex-start; gap: 0.7rem; margin: 0 0 0.7rem; font-size: 0.9rem; cursor: pointer; }
+dialog.post-now-dialog label.pn-check input { width: 1.15rem; height: 1.15rem; margin: 0.1rem 0 0; flex: none; }
+.post-now-dialog .pn-check-body { display: flex; flex-direction: column; gap: 0.15rem; }
+.post-now-dialog .pn-text-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem; min-height: 1.2rem; }
+.post-now-dialog .pn-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.4rem; position: sticky; bottom: -1.2rem; padding: 0.7rem 0; background: var(--surface); }
+.post-now-dialog .pn-summary { flex: 1 1 12rem; margin: 0; }
+.post-now-dialog .pn-foot .confirm-actions { margin: 0; }
+.post-now-dialog .pn-items { max-height: 15rem; margin-bottom: 0; }
