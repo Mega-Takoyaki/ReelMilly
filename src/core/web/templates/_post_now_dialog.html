@@ -1,4 +1,4 @@
-{# 投稿・予約のダイアログ(一覧・詳細画面で共通)。post-now.jsが動かす。上から順に: いつ → どこへ → 何を → 文 → オプション #}
+{# 投稿・予約のダイアログ(一覧・詳細画面で共通)。post-now.jsが動かす。上から順に: いつ → どこへ(投稿先ごとの設定もここ) → 何を → 文 #}
 {% from "_info.html" import info %}
 <dialog id="post-now-dialog" class="wm-dialog post-now-dialog">
   <form method="dialog" id="post-now-form">
@@ -21,12 +21,43 @@
     </section>
 
     <section class="pn-section">
-      <div class="pn-section-title">2. どこへ投稿しますか</div>
+      <div class="pn-section-title">2. どこへ投稿しますか（投稿先ごとの設定つき）</div>
       <div class="pn-seg" role="radiogroup" aria-label="投稿先">
         <label><input type="radio" name="pn-channel" value="fanvue" checked><span>Fanvue</span></label>
         <label id="pn-x-label" data-tip="設定の「X」タブで連携すると、使えます"><input type="radio" name="pn-channel" value="x" disabled><span>X</span></label>
       </div>
       <span class="hint" id="pn-x-note"></span>
+    <div class="pn-channel-opts" id="pn-fanvueonly">
+      <div class="pn-opts-title">Fanvueの設定</div>
+      <div class="pn-row">
+        <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
+          <select id="pn-audience">
+            <option value="subscribers">購読者のみ</option>
+            <option value="followers-and-subscribers">フォロワーと購読者</option>
+          </select>
+        </label>
+        <label class="pn-field">価格（ドル・任意）{{ info("入れると有料の投稿になります(3ドル以上)。空欄なら、無料です。") }}
+          <input type="number" id="pn-price" min="3" step="0.01" placeholder="空欄＝無料" inputmode="decimal">
+        </label>
+      </div>
+    </div>
+
+    <div class="pn-channel-opts" id="pn-xonly" hidden>
+      <div class="pn-opts-title">Xの設定</div>
+      <label class="pn-check">
+        <input type="checkbox" id="pn-sensitive">
+        <span class="pn-check-body">
+          <span>センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。最後は、人が決めます(チェックを外して、投稿できます)。sfwと承認されていないファイル(suggestive・explicit・未承認)は、開いたときに、既定でオンになります。") }}</span>
+          <span class="hint" id="pn-sensitive-note" hidden>sfwと承認されていないファイルを含むため、既定でオンにしています（問題なければ、外せます）。</span>
+        </span>
+      </label>
+      <label class="pn-check">
+        <input type="checkbox" id="pn-ai" checked>
+        <span class="pn-check-body">
+          <span>AI生成のメディアを含む、と表示する{{ info("Xの「AI生成」の申告(made_with_ai)を、投稿につけます。") }}</span>
+        </span>
+      </label>
+    </div>
     </section>
 
     <section class="pn-section">
@@ -49,38 +80,6 @@
         <button type="button" class="btn-ghost-inline pn-undo" id="pn-undo" hidden>生成前の文に戻す</button>
         <span class="hint" id="pn-count" hidden></span>
       </div>
-    </section>
-
-    <section class="pn-section" id="pn-fanvueonly">
-      <div class="pn-section-title">5. Fanvueの設定</div>
-      <div class="pn-row">
-        <label class="pn-field">公開範囲{{ info("購読者のみ: 購読者だけが見られます。フォロワーと購読者: フォロワーも見られます。") }}
-          <select id="pn-audience">
-            <option value="subscribers">購読者のみ</option>
-            <option value="followers-and-subscribers">フォロワーと購読者</option>
-          </select>
-        </label>
-        <label class="pn-field">価格（ドル・任意）{{ info("入れると有料の投稿になります(3ドル以上)。空欄なら、無料です。") }}
-          <input type="number" id="pn-price" min="3" step="0.01" placeholder="空欄＝無料" inputmode="decimal">
-        </label>
-      </div>
-    </section>
-
-    <section class="pn-section" id="pn-xonly" hidden>
-      <div class="pn-section-title">5. Xの設定</div>
-      <label class="pn-check">
-        <input type="checkbox" id="pn-sensitive">
-        <span class="pn-check-body">
-          <span>センシティブ（成人向け）なメディアとして投稿する{{ info("メディアに、成人向けのセンシティブな内容の警告をつけます。最後は、人が決めます(チェックを外して、投稿できます)。sfwと承認されていないファイル(suggestive・explicit・未承認)は、開いたときに、既定でオンになります。") }}</span>
-          <span class="hint" id="pn-sensitive-note" hidden>sfwと承認されていないファイルを含むため、既定でオンにしています（問題なければ、外せます）。</span>
-        </span>
-      </label>
-      <label class="pn-check">
-        <input type="checkbox" id="pn-ai" checked>
-        <span class="pn-check-body">
-          <span>AI生成のメディアを含む、と表示する{{ info("Xの「AI生成」の申告(made_with_ai)を、投稿につけます。") }}</span>
-        </span>
-      </label>
     </section>
 
     <p class="hint pn-error" id="pn-error" hidden></p>

@@ -1876,3 +1876,7 @@ dialog.edit-dialog { width: min(94vw, 44rem); padding: 1.2rem 1.4rem; }
 .edit-dialog .pn-close { position: static; background: var(--surface-alt); color: var(--fg-muted); }
 .edit-dialog .pn-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.8rem; }
 .edit-dialog .confirm-actions { margin: 0; }
+
+.pn-channel-opts { margin-top: 0.6rem; padding: 0.6rem 0.8rem; border-left: 3px solid var(--accent); background: var(--surface-alt); border-radius: var(--radius-sm); }
+.pn-channel-opts[hidden] { display: none; }
+.pn-opts-title { font-size: 0.8rem; font-weight: 600; color: var(--fg-muted); margin-bottom: 0.4rem; }
