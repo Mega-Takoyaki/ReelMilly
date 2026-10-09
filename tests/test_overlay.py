@@ -152,3 +152,42 @@ def test_fade_filters_use_alpha_and_duration():
     layer = {"x": 0.5, "y": 0.5, "anim": {"type": "none", "cycle": 6, "loop": True, "start": 1, "end": None, "fade_in": 0.5, "fade_out": 1}}
     graph, _ = ffmpeg.overlay_filter({"layers": [layer]}, [(10, 10)], 100, 100, duration=10)
     assert "fade=t=in:st=1:d=0.5:alpha=1" in graph and "fade=t=out:st=9:d=1:alpha=1" in graph
+
+
+@pytest.mark.skipif(not ffmpeg.available(), reason="ffmpegなし")
+def test_edit_of_an_edit_chain_video_to_frame_to_stamp(env):
+    """動画から静止画を取り出し、その加工版に、スタンプ・ぼかしをつける(加工版の加工版)。"""
+    import subprocess
+    config, conn, client, tmp_path = env
+    video = tmp_path / "v.mp4"
+    subprocess.run([ffmpeg.find("ffmpeg"), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=2", "-pix_fmt", "yuv420p", str(video)], check=True)
+    db.update_asset(conn, "a1", kind="video", file_path=str(video))
+
+    def run_all():
+        while (edit := edits.claim_next(conn)) is not None:
+            assert edits.run_edit(conn, edit, db.get_asset(conn, "a1")) is None, edit
+
+    frame_id = edits.enqueue_frame(conn, db.get_asset(conn, "a1"), 1.0, "png", 2)
+    run_all()
+    key = f"edit:{frame_id}"
+    # 静止画(加工版)に、スタンプ → 画像の加工版になる
+    res = client.post("/api/assets/a1/edits", json={"kind": "overlay", "source": key, "layers": [{"type": "stamp", "stamp": "preset:bar-black", "x": 0.5, "y": 0.5, "size": 0.5}]})
+    assert res.status_code == 201
+    run_all()
+    rows = {r["key"]: r for r in __import__("core.versions", fromlist=["x"]).library_rows(conn, db.get_asset(conn, "a1"))}
+    stamped = rows[f"edit:{res.get_json()['id']}"]
+    assert stamped["media_type"] == "image" and stamped["state"] == "done" and "静止画" in stamped["detail"] and "から" in stamped["detail"]
+    path = edits.edit_path(db.get_asset(conn, "a1"), edits.get_edit(conn, "a1", res.get_json()["id"]))
+    out = Image.open(path).convert("RGB")
+    assert out.size == (320, 240) and out.getpixel((160, 120)) == (0, 0, 0)  # 2倍に拡大した静止画の中央に、黒帯
+    # さらに、その加工版にぼかし(加工版の加工版の加工版)
+    res2 = client.post("/api/assets/a1/edits", json={"kind": "mask", "source": f"edit:{res.get_json()['id']}", "regions": [{"x": 0, "y": 0, "w": 0.5, "h": 0.5}], "style": "mosaic", "strength": 3})
+    assert res2.status_code == 201
+    run_all()
+    assert edits.get_edit(conn, "a1", res2.get_json()["id"])["status"] == "done"
+    # 切り出しは、動画だけ。静止画のもとには、できない
+    assert client.post("/api/assets/a1/edits", json={"kind": "trim", "source": key, "start": 0, "end": 1}).status_code == 400
+    # 処理待ちの加工のもとになっている加工版は、削除できない。使えないもとは、拒否
+    res3 = client.post("/api/assets/a1/edits", json={"kind": "mask", "source": key, "regions": [{"x": 0, "y": 0, "w": 0.5, "h": 0.5}], "style": "blur"})
+    assert client.delete(f"/api/assets/a1/edits/{frame_id}").status_code == 409 and res3.status_code == 201
+    assert client.post("/api/assets/a1/edits", json={"kind": "mask", "source": "edit:999", "regions": [{"x": 0, "y": 0, "w": 0.5, "h": 0.5}], "style": "blur"}).status_code == 400

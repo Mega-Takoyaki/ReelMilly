@@ -135,6 +135,19 @@ def set_auto(conn: sqlite3.Connection, asset: dict, key: str, rating: str, confi
     conn.commit()
 
 
+def _from_suffix(conn: sqlite3.Connection, asset: dict, edit: dict) -> str:
+    """加工版を、原本ではなく、ほかのファイルをもとに作ったときの、もとの説明(例: 「（「静止画 0:02.0 JPG」から）」)。"""
+    source = (edit.get("params") or {}).get("source") or "original"
+    if source == "original":
+        return ""
+    if source == "wm":
+        return "（透かし入りから）"
+    if source.startswith("edit:") and source[5:].isdigit():
+        other = edits.get_edit(conn, asset["id"], int(source[5:]))
+        return f"（「{other['summary']}」から）" if other else "（削除された加工版から）"
+    return ""
+
+
 def library_rows(conn: sqlite3.Connection, asset: dict) -> list[dict]:
     """詳細画面の「ファイル(原本と加工版)」の一覧。原本を先頭に、加工版を新しい順に。処理中・失敗の加工版も含む。
 
@@ -168,7 +181,7 @@ def library_rows(conn: sqlite3.Connection, asset: dict) -> list[dict]:
     for edit in edits.list_edits(conn, asset["id"]):
         path = edits.edit_path(asset, edit)
         rows.append(with_rating(f"edit:{edit['id']}", {
-            "role": "edit", "label": edits.kind_label(edit), "detail": edit["summary"], "media_type": edits.media_type(asset, edit), "state": edit["status"] if edit["status"] != "done" else "done",
+            "role": "edit", "label": edits.kind_label(edit), "detail": edit["summary"] + _from_suffix(conn, asset, edit), "media_type": edits.media_type(asset, edit), "state": edit["status"] if edit["status"] != "done" else "done",
             "error": edit["error"], "size_bytes": edit["size_bytes"], "duration": edit["duration"], "edit_id": edit["id"],
             "exists": bool(path and path.exists()),
         }))

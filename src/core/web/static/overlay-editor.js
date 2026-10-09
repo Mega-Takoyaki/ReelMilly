@@ -5,9 +5,12 @@
   const dialog = document.getElementById("overlay-dialog");
   if (!dialog) return;
   const assetId = dialog.dataset.assetId;
-  const isVideo = dialog.dataset.kind === "video";
+  let isVideo = dialog.dataset.kind === "video";  // 開くたびに、加工のもと(動画か画像か)で、切り替える
   const $ = (id) => document.getElementById(id);
-  const media = isVideo ? $("ov-video") : $("ov-image");
+  const videoEl = $("ov-video");
+  const imageEl = $("ov-image");
+  let media = isVideo ? videoEl : imageEl;
+  let currentSource = null;
   const stage = $("ov-stage");
   const layersEl = $("ov-layers");
   const runButton = $("ov-run");
@@ -331,17 +334,16 @@
   });
 
   // ---------------------------------------------------------------- 動画のプレーヤー
-  if (isVideo) {
+  {
     const seek = $("ov-seek");
     const text = () => { $("ov-time").textContent = `${(media.currentTime || 0).toFixed(1)} / ${(media.duration || 0).toFixed(1)} 秒`; };
-    media.addEventListener("loadedmetadata", () => { text(); renderAll(); });
-    media.addEventListener("timeupdate", () => { if (media.duration) seek.value = String(Math.round((media.currentTime / media.duration) * 1000)); text(); });
-    media.addEventListener("play", () => { $("ov-play").textContent = "⏸ 一時停止"; });
-    media.addEventListener("pause", () => { $("ov-play").textContent = "▶ 再生"; });
+    videoEl.addEventListener("loadedmetadata", () => { text(); renderAll(); });
+    videoEl.addEventListener("timeupdate", () => { if (media.duration) seek.value = String(Math.round((media.currentTime / media.duration) * 1000)); text(); });
+    videoEl.addEventListener("play", () => { $("ov-play").textContent = "⏸ 一時停止"; });
+    videoEl.addEventListener("pause", () => { $("ov-play").textContent = "▶ 再生"; });
     $("ov-play").addEventListener("click", () => { media.paused ? media.play().catch(() => {}) : media.pause(); });
     seek.addEventListener("input", () => { if (media.duration) media.currentTime = (seek.value / 1000) * media.duration; });
-  } else {
-    media.addEventListener("load", renderAll);
+    imageEl.addEventListener("load", renderAll);
   }
 
   // ---------------------------------------------------------------- 開く・閉じる・保存
@@ -390,13 +392,28 @@
   $("ov-add-text").addEventListener("click", newText);
   $("ov-add-stamp").addEventListener("click", newStamp);
 
-  window.openOverlay = async function () {
+  // source: 加工のもと(original / wm / edit:<ID>)。mediaType: そのファイルが動画か画像か。from: 画面に出す、もとの説明
+  window.openOverlay = async function (source, mediaType, from) {
+    source = source || "original";
     showNotice("");
     await loadOptions();
     refreshTemplates();
     layers.splice(0).forEach((l) => l._img.remove());
     selected = null;
-    if (!media.getAttribute("src")) media.src = isVideo ? `${dialog.dataset.src}#t=0.1` : dialog.dataset.src;
+    isVideo = (mediaType || dialog.dataset.kind) === "video";
+    media = isVideo ? videoEl : imageEl;
+    videoEl.hidden = !isVideo;
+    imageEl.hidden = isVideo;
+    $("ov-player").hidden = !isVideo;
+    $("ov-video-hint").hidden = !isVideo;
+    dialog.dataset.source = source;
+    $("ov-from").hidden = source === "original";
+    $("ov-from").textContent = source === "original" ? "" : `もとにするファイル: ${from || source}`;
+    if (currentSource !== source + isVideo) {
+      videoEl.pause();
+      media.src = isVideo ? `${window.versionUrl(assetId, source)}#t=0.1` : window.versionUrl(assetId, source);
+      currentSource = source + isVideo;
+    }
     if (isVideo) { media.preload = "metadata"; media.load(); }
     refreshList();
     buildProps();
@@ -407,7 +424,7 @@
     if (!opener) return;
     const menu = opener.closest("details");
     if (menu) menu.open = false;
-    window.openOverlay();
+    window.openOverlay(opener.dataset.source, opener.dataset.media, opener.dataset.from);
   });
 
   runButton.addEventListener("click", async () => {
@@ -416,7 +433,7 @@
     try {
       const res = await fetch(`/api/assets/${assetId}/edits`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "overlay", layers: layers.map(clientKeys) }),
+        body: JSON.stringify({ kind: "overlay", source: dialog.dataset.source || "original", layers: layers.map(clientKeys) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `登録できませんでした (${res.status})`);

@@ -5,12 +5,15 @@
   const dialog = document.getElementById("mask-dialog");
   if (!dialog) return;
   const assetId = dialog.dataset.assetId;
-  const isVideo = dialog.dataset.kind === "video";
+  let isVideo = dialog.dataset.kind === "video";  // 開くたびに、加工のもと(動画か画像か)で、切り替える
   const $ = (id) => document.getElementById(id);
   const MAX_REGIONS = 8;
   const MIN_SIDE = 0.01;
 
-  const media = isVideo ? $("mk-video") : $("mk-image");
+  const videoEl = $("mk-video");
+  const imageEl = $("mk-image");
+  let media = isVideo ? videoEl : imageEl;
+  let currentSource = null;
   const stage = $("mk-stage");
   const layer = $("mk-layer");
   const runButton = $("mk-run");
@@ -163,23 +166,22 @@
   window.addEventListener("resize", repaintAll);
 
   // --- 動画: 再生位置の移動(範囲の位置を決めるために、止めて見られるようにする) ---
-  if (isVideo) {
+  {
     const seek = $("mk-seek");
     const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
     const timeText = () => { $("mk-time").textContent = `${fmt(media.currentTime || 0)} / ${fmt(media.duration || 0)}`; };
-    media.addEventListener("loadedmetadata", () => { timeText(); repaintAll(); });
-    media.addEventListener("timeupdate", () => {
+    videoEl.addEventListener("loadedmetadata", () => { timeText(); repaintAll(); });
+    videoEl.addEventListener("timeupdate", () => {
       if (media.duration) seek.value = String(Math.round((media.currentTime / media.duration) * 1000));
       timeText();
       if (style() === "mosaic") repaintAll();
     });
-    media.addEventListener("seeked", repaintAll);
-    media.addEventListener("play", () => { $("mk-play").textContent = "⏸ 一時停止"; });
-    media.addEventListener("pause", () => { $("mk-play").textContent = "▶ 再生"; });
+    videoEl.addEventListener("seeked", repaintAll);
+    videoEl.addEventListener("play", () => { $("mk-play").textContent = "⏸ 一時停止"; });
+    videoEl.addEventListener("pause", () => { $("mk-play").textContent = "▶ 再生"; });
     $("mk-play").addEventListener("click", () => { media.paused ? media.play().catch(() => {}) : media.pause(); });
     seek.addEventListener("input", () => { if (media.duration) media.currentTime = (seek.value / 1000) * media.duration; });
-  } else {
-    media.addEventListener("load", repaintAll);
+    imageEl.addEventListener("load", repaintAll);
   }
 
   function close() {
@@ -189,10 +191,24 @@
   $("mk-close").addEventListener("click", close);
   $("mk-cancel").addEventListener("click", close);
 
-  window.openMask = function () {
+  // source: 加工のもと(original / wm / edit:<ID>)。mediaType: そのファイルが動画か画像か。from: 画面に出す、もとの説明
+  window.openMask = function (source, mediaType, from) {
+    source = source || "original";
+    isVideo = (mediaType || dialog.dataset.kind) === "video";
+    media = isVideo ? videoEl : imageEl;
+    videoEl.hidden = !isVideo;
+    imageEl.hidden = isVideo;
+    $("mk-player").hidden = !isVideo;
+    dialog.dataset.source = source;
+    $("mk-from").hidden = source === "original";
+    $("mk-from").textContent = source === "original" ? "" : `もとにするファイル: ${from || source}`;
     regions = [];
     showNotice("");
-    if (!media.getAttribute("src")) media.src = isVideo ? `${dialog.dataset.src}#t=0.1` : dialog.dataset.src;
+    if (currentSource !== source + isVideo) {
+      videoEl.pause();
+      media.src = isVideo ? `${window.versionUrl(assetId, source)}#t=0.1` : window.versionUrl(assetId, source);
+      currentSource = source + isVideo;
+    }
     if (isVideo) { media.preload = "metadata"; media.load(); }
     render();
     if (!dialog.open) dialog.showModal();
@@ -203,7 +219,7 @@
     if (!opener) return;
     const menu = opener.closest("details");
     if (menu) menu.open = false;
-    window.openMask();
+    window.openMask(opener.dataset.source, opener.dataset.media, opener.dataset.from);
   });
 
   runButton.addEventListener("click", async () => {
@@ -213,7 +229,7 @@
       const res = await fetch(`/api/assets/${assetId}/edits`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "mask", regions, style: style(), strength: strength() }),
+        body: JSON.stringify({ kind: "mask", source: dialog.dataset.source || "original", regions, style: style(), strength: strength() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `登録できませんでした (${res.status})`);

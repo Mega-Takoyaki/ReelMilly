@@ -7,20 +7,19 @@
       <button type="button" class="lightbox-close pn-close" id="mk-close" aria-label="閉じる">&times;</button>
     </header>
 
+    <p class="hint" id="mk-from" hidden></p>
     <div class="mk-stage-wrap">
       <div class="mk-stage" id="mk-stage">
-        {% if asset.kind == 'video' %}<video id="mk-video" muted playsinline preload="none"></video>
-        {% else %}<img id="mk-image" alt="" draggable="false">{% endif %}
+        <video id="mk-video" muted playsinline preload="none" hidden></video>
+        <img id="mk-image" alt="" draggable="false" hidden>
         <div class="mk-layer" id="mk-layer" aria-label="ぼかす範囲を、ドラッグで囲みます"></div>
       </div>
     </div>
-    {% if asset.kind == 'video' %}
-    <div class="mk-player">
+    <div class="mk-player" id="mk-player" hidden>
       <button type="button" class="btn-ghost-inline" id="mk-play">▶ 再生</button>
       <input type="range" id="mk-seek" min="0" max="1000" value="0" aria-label="再生位置">
       <span class="hint" id="mk-time">0:00 / 0:00</span>
     </div>
-    {% endif %}
 
     <div class="mk-options">
       <div class="pn-seg" role="radiogroup" aria-label="種類">

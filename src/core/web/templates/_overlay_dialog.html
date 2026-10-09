@@ -7,23 +7,22 @@
       <button type="button" class="lightbox-close pn-close" id="ov-close" aria-label="閉じる">&times;</button>
     </header>
 
+    <p class="hint" id="ov-from" hidden></p>
     <div class="ov-body">
       <div class="ov-left">
         <div class="mk-stage-wrap">
           <div class="mk-stage ov-stage" id="ov-stage">
-            {% if asset.kind == 'video' %}<video id="ov-video" muted playsinline preload="none"></video>
-            {% else %}<img id="ov-image" alt="" draggable="false">{% endif %}
+            <video id="ov-video" muted playsinline preload="none" hidden></video>
+            <img id="ov-image" alt="" draggable="false" hidden>
             <div class="ov-layers" id="ov-layers"></div>
           </div>
         </div>
-        {% if asset.kind == 'video' %}
-        <div class="mk-player">
+        <div class="mk-player" id="ov-player" hidden>
           <button type="button" class="btn-ghost-inline" id="ov-play">▶ 再生</button>
           <input type="range" id="ov-seek" min="0" max="1000" value="0" aria-label="再生位置">
           <span class="hint" id="ov-time">0.0 / 0.0 秒</span>
         </div>
-        {% endif %}
-        <p class="hint">重ねたものは、ドラッグで動かせます。{% if asset.kind == 'video' %}流れる動きは、保存後の動画で確認できます（ここでは、止めた位置を表示します）。{% endif %}</p>
+        <p class="hint">重ねたものは、ドラッグで動かせます。<span id="ov-video-hint">流れる動きは、保存後の動画で確認できます（ここでは、止めた位置を表示します）。</span></p>
       </div>
 
       <div class="ov-right">

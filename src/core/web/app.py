@@ -1000,18 +1000,25 @@ def create_app(config: Config) -> Flask:
         if asset is None or asset.get("deleted_at"):
             conn.close()
             abort(404)
-        if asset["kind"] == "video" and not ffmpeg.available():
+        kind = payload.get("kind", "trim")
+        source = payload.get("source") or "original"
+        try:
+            _path, source_media = edits.source_info(conn, asset, source)
+        except edits.EditError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 400
+        if (kind in ("trim", "frame") or source_media == "video") and not ffmpeg.available():
             conn.close()
             return jsonify({"error": "ffmpegが見つかりません。`winget install Gyan.FFmpeg`で入れてから、アプリを再起動してください"}), 503
         try:
-            if payload.get("kind", "trim") == "overlay":
-                edit_id = edits.enqueue_overlay(conn, asset, payload.get("layers"))
-            elif payload.get("kind", "trim") == "frame":
-                edit_id = edits.enqueue_frame(conn, asset, payload.get("time"), payload.get("format", "jpg"), payload.get("scale", 1))
-            elif payload.get("kind", "trim") == "mask":
-                edit_id = edits.enqueue_mask(conn, asset, payload.get("regions"), payload.get("style"), payload.get("strength", 5))
+            if kind == "overlay":
+                edit_id = edits.enqueue_overlay(conn, asset, payload.get("layers"), source)
+            elif kind == "frame":
+                edit_id = edits.enqueue_frame(conn, asset, payload.get("time"), payload.get("format", "jpg"), payload.get("scale", 1), source)
+            elif kind == "mask":
+                edit_id = edits.enqueue_mask(conn, asset, payload.get("regions"), payload.get("style"), payload.get("strength", 5), source)
             else:
-                edit_id = edits.enqueue_trim(conn, asset, payload.get("start"), payload.get("end"), payload.get("mode", "accurate"))
+                edit_id = edits.enqueue_trim(conn, asset, payload.get("start"), payload.get("end"), payload.get("mode", "accurate"), source)
         except edits.EditError as exc:
             conn.close()
             return jsonify({"error": str(exc)}), 400

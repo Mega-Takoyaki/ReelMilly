@@ -72,6 +72,20 @@
           </div>
         </details>
         {% endif %}
+        {% if r.role != 'original' %}
+        <details class="menu lib-menu">
+          <summary class="menu-button lib-more">これを加工 <span aria-hidden="true">▾</span></summary>
+          <div class="menu-panel" role="menu">
+            <div class="menu-note">このファイルをもとに、新しい加工版を作ります（もとは変わりません）</div>
+            {% if r.media_type == 'video' %}
+            <button type="button" class="menu-item" role="menuitem" data-open-editor="trim" data-source="{{ r.key }}" data-from="{{ r.detail }}">切り出し（前後を削除）…</button>
+            <button type="button" class="menu-item" role="menuitem" data-open-frame data-source="{{ r.key }}">静止画を取り出す…</button>
+            {% endif %}
+            <button type="button" class="menu-item" role="menuitem" data-open-mask data-source="{{ r.key }}" data-media="{{ r.media_type }}" data-from="{{ r.detail }}">ぼかし・モザイク…</button>
+            <button type="button" class="menu-item" role="menuitem" data-open-overlay data-source="{{ r.key }}" data-media="{{ r.media_type }}" data-from="{{ r.detail }}">テロップ・スタンプ…</button>
+          </div>
+        </details>
+        {% endif %}
         {% if r.role == 'wm' %}<button type="button" class="btn-ghost-inline" id="wm-clear">削除</button>
         {% elif r.role == 'edit' and r.state != 'running' %}<button type="button" class="btn-ghost-inline" data-lib-delete-edit="{{ r.edit_id }}" data-label="{{ r.detail }}">削除</button>{% endif %}
       </div>

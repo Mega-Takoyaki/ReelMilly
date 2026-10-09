@@ -235,3 +235,11 @@ window.confirmDialog = function confirmDialog(message) {
     }
   };
 })();
+
+
+// 加工のもと(`original`/`wm`/`edit:<ID>`)のファイルのアドレス。加工エディタが、動画・画像を読み込むのに使う
+window.versionUrl = function (assetId, key) {
+  if (key && key.startsWith("edit:")) return `/assets/${assetId}/edits/${key.slice(5)}/media`;
+  if (key === "wm") return `/assets/${assetId}/media?variant=wm`;
+  return `/assets/${assetId}/media`;
+};

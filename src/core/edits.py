@@ -56,8 +56,24 @@ def kind_label(edit: dict) -> str:
     return {"frame": "静止画", "overlay": "テロップ・スタンプ"}.get(edit["kind"], "切り出し")
 
 
+def source_info(conn: sqlite3.Connection, asset: dict, source: str | None) -> tuple[Path, str]:
+    """加工のもとにするファイル(`original`/`wm`/`edit:<ID>`)の、パスとメディアの種類。使えないときは`EditError`。
+
+    原本だけでなく、完成した加工版や透かし入りも、もとにできる(例: 動画から取り出した静止画に、スタンプをつける)。
+    """
+    from core import versions
+
+    try:
+        return versions.resolve(conn, asset, source or "original")
+    except versions.VersionError as exc:
+        raise EditError(str(exc)) from exc
+
+
 def media_type(asset: dict, edit: dict) -> str:
-    """加工版の、メディアの種類(image|video)。切り出しは動画、ぼかし・モザイクは、原本と同じ。"""
+    """加工版の、メディアの種類(image|video)。切り出しは動画、静止画の取り出しは画像、ぼかし・テロップは、加工のもとと同じ。"""
+    recorded = (edit.get("params") or {}).get("media")
+    if recorded in ("image", "video"):
+        return recorded
     if edit["kind"] == "frame":
         return "image"
     return asset["kind"] if edit["kind"] in ("mask", "overlay") else "video"
@@ -98,9 +114,10 @@ def pending_count(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM asset_edits WHERE status IN ('queued', 'running')").fetchone()[0]
 
 
-def enqueue_trim(conn: sqlite3.Connection, asset: dict, start, end, mode: str = "accurate") -> int:
+def enqueue_trim(conn: sqlite3.Connection, asset: dict, start, end, mode: str = "accurate", source: str = "original") -> int:
     """切り出しを待機中として登録する。登録したIDを返す。入力が不正・上限なら`EditError`。"""
-    if asset["kind"] != "video":
+    path, media = source_info(conn, asset, source)
+    if media != "video":
         raise EditError("動画だけが対象です")
     try:
         start, end = round(float(start), 3), round(float(end), 3)
@@ -112,9 +129,6 @@ def enqueue_trim(conn: sqlite3.Connection, asset: dict, start, end, mode: str = 
         raise EditError("終了は、開始より後にしてください")
     if end - start < ffmpeg.MIN_CLIP_SECONDS:
         raise EditError("切り出す範囲が短すぎます(0.1秒以上にしてください)")
-    path = Path(asset["file_path"])
-    if not path.exists():
-        raise EditError("元の動画のファイルが見つかりません(ストレージを確認してください)")
     duration = ffmpeg.probe_duration(path)
     if duration is not None and start >= duration:
         raise EditError(f"開始が動画の長さ({duration:.1f}秒)を超えています")
@@ -122,7 +136,7 @@ def enqueue_trim(conn: sqlite3.Connection, asset: dict, start, end, mode: str = 
         end = round(duration, 3)  # 少し超える分は、最後までとして扱う
     if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
         raise EditError(f"1つの作品に登録できる編集動画は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
-    params = {"start": start, "end": end, "mode": mode}
+    params = {"start": start, "end": end, "mode": mode, "source": source or "original", "media": "video"}
     # 失敗の記録は、次の登録で片付ける
     conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
     cur = conn.execute(
@@ -133,14 +147,14 @@ def enqueue_trim(conn: sqlite3.Connection, asset: dict, start, end, mode: str = 
     return cur.lastrowid
 
 
-def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, strength) -> int:
+def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, strength, source: str = "original") -> int:
     """ぼかし・モザイクを待機中として登録する(静止画・動画とも)。登録したIDを返す。入力が不正・上限なら`EditError`。"""
+    _path, media = source_info(conn, asset, source)
     try:
         params = mask.clean_params(regions, style, strength)
     except mask.MaskError as exc:
         raise EditError(str(exc)) from exc
-    if not Path(asset["file_path"]).exists():
-        raise EditError("元のファイルが見つかりません(ストレージを確認してください)")
+    params.update(source=source or "original", media=media)
     if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
         raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
     conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
@@ -152,14 +166,14 @@ def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, str
     return cur.lastrowid
 
 
-def enqueue_overlay(conn: sqlite3.Connection, asset: dict, layers) -> int:
+def enqueue_overlay(conn: sqlite3.Connection, asset: dict, layers, source: str = "original") -> int:
     """テロップ・スタンプの挿入を待機中として登録する(静止画・動画とも)。登録したIDを返す。"""
+    _path, media = source_info(conn, asset, source)
     try:
         params = overlay.clean_params(conn, layers)
     except overlay.OverlayError as exc:
         raise EditError(str(exc)) from exc
-    if not Path(asset["file_path"]).exists():
-        raise EditError("元のファイルが見つかりません(ストレージを確認してください)")
+    params.update(source=source or "original", media=media)
     if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
         raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
     conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
@@ -171,9 +185,10 @@ def enqueue_overlay(conn: sqlite3.Connection, asset: dict, layers) -> int:
     return cur.lastrowid
 
 
-def enqueue_frame(conn: sqlite3.Connection, asset: dict, at, fmt: str = "jpg", scale=1) -> int:
+def enqueue_frame(conn: sqlite3.Connection, asset: dict, at, fmt: str = "jpg", scale=1, source: str = "original") -> int:
     """動画の1コマを、静止画の加工版として待機中に登録する。登録したIDを返す。入力が不正・上限なら`EditError`。"""
-    if asset["kind"] != "video":
+    path, media = source_info(conn, asset, source)
+    if media != "video":
         raise EditError("動画だけが対象です")
     try:
         at, scale = round(float(at), 3), int(scale or 1)
@@ -185,15 +200,12 @@ def enqueue_frame(conn: sqlite3.Connection, asset: dict, at, fmt: str = "jpg", s
         raise EditError("拡大の倍率は、1〜4倍です")
     if at < 0:
         raise EditError("位置は、0秒以上にしてください")
-    path = Path(asset["file_path"])
-    if not path.exists():
-        raise EditError("元の動画のファイルが見つかりません(ストレージを確認してください)")
     duration = ffmpeg.probe_duration(path)
     if duration is not None and at >= duration:
         at = round(max(duration - 0.05, 0.0), 3)  # 最後のコマ
     if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
         raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
-    params = {"time": at, "format": fmt, "scale": scale}
+    params = {"time": at, "format": fmt, "scale": scale, "source": source or "original", "media": "image"}
     conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
     cur = conn.execute(
         "INSERT INTO asset_edits (asset_id, kind, params, summary, status, created_at) VALUES (?, 'frame', ?, ?, 'queued', ?)",
@@ -210,6 +222,9 @@ def delete_edit(conn: sqlite3.Connection, asset: dict, edit_id: int) -> bool:
         return False
     if edit["status"] == "running":
         raise EditError("処理中のため削除できません。終わってからやり直してください")
+    for other in list_edits(conn, asset["id"]):
+        if other["status"] in ("queued", "running") and other["params"].get("source") == f"edit:{edit_id}":
+            raise EditError("この加工版をもとに、加工中のものがあります。終わってから削除してください")
     path = edit_path(asset, edit)
     if path is not None:
         try:
@@ -256,16 +271,19 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
             raise ffmpeg.FfmpegError("作品が見つかりません")
         if asset.get("deleted_at"):
             raise ffmpeg.FfmpegError("ごみ箱に入っている作品のため処理しませんでした")
-        src = Path(asset["file_path"])
-        if not src.exists():
-            raise ffmpeg.FfmpegError("元の動画のファイルが見つかりません(ストレージを確認してください)")
         p = edit["params"]
+        from core import versions
+
+        try:
+            src, src_media = versions.resolve(conn, asset, p.get("source") or "original")  # 加工のもと(原本・透かし入り・ほかの加工版)
+        except versions.VersionError as exc:
+            raise ffmpeg.FfmpegError(f"加工のもとのファイルを使えません: {exc}") from exc
         if edit["kind"] == "trim":
             suffix = src.suffix if p.get("mode") == "fast" else ".mp4"
         elif edit["kind"] == "frame":
             suffix = ".png" if p.get("format") == "png" else ".jpg"
         elif edit["kind"] in ("mask", "overlay"):
-            suffix = ".mp4" if asset["kind"] == "video" else src.suffix
+            suffix = ".mp4" if src_media == "video" else src.suffix
         else:
             raise ffmpeg.FfmpegError(f"未対応の編集です: {edit['kind']}")
         filename = f"{asset['id']}-edit-{edit['id']}{suffix}"
@@ -275,11 +293,11 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
         elif edit["kind"] == "frame":
             ffmpeg.extract_frame(src, dest, p["time"], p.get("scale", 1))
         elif edit["kind"] == "overlay":
-            if asset["kind"] == "video":
+            if src_media == "video":
                 ffmpeg.overlay_video(conn, src, dest, p)
             else:
                 overlay.apply_image(conn, src, dest, p)
-        elif asset["kind"] == "video":
+        elif src_media == "video":
             ffmpeg.mask_video(src, dest, p)
         else:
             mask.apply_image(src, dest, p)

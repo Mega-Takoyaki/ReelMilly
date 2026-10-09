@@ -94,9 +94,14 @@
   dialog.addEventListener("close", () => video.pause());
 
   // 開く: 動画を読み込み(開くまでは、読み込まない)、登録の上限・ffmpegの有無を確かめる
-  window.openEditor = async function () {
+  window.openEditor = async function (source, from) {
+    source = source || "original";
     showNotice("");
-    if (!video.getAttribute("src")) video.src = dialog.dataset.src;
+    dialog.dataset.source = source;
+    if (video.dataset.source !== source) {
+      video.src = window.versionUrl(assetId, source);
+      video.dataset.source = source;
+    }
     video.preload = "metadata";
     video.load();
     atLimit = false;
@@ -117,7 +122,7 @@
     if (!opener) return;
     const menu = opener.closest("details");
     if (menu) menu.open = false;
-    window.openEditor(opener.dataset.openEditor);
+    window.openEditor(opener.dataset.source, opener.dataset.from);
   });
 
   runButton.addEventListener("click", async () => {
@@ -128,7 +133,7 @@
       const res = await fetch(`/api/assets/${assetId}/edits`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "trim", start: num(startInput), end: num(endInput), mode }),
+        body: JSON.stringify({ kind: "trim", source: dialog.dataset.source || "original", start: num(startInput), end: num(endInput), mode }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `登録できませんでした (${res.status})`);

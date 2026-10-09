@@ -44,9 +44,14 @@
   $("fr-close").addEventListener("click", close);
   $("fr-cancel").addEventListener("click", close);
 
-  window.openFrame = function () {
+  window.openFrame = function (source) {
+    source = source || "original";
     showNotice("");
-    if (!video.getAttribute("src")) video.src = `${dialog.dataset.src}#t=0.1`;
+    dialog.dataset.source = source;
+    if (video.dataset.source !== source) {
+      video.src = `${window.versionUrl(assetId, source)}#t=0.1`;
+      video.dataset.source = source;
+    }
     video.preload = "metadata";
     video.load();
     refresh();
@@ -57,7 +62,7 @@
     if (!opener) return;
     const menu = opener.closest("details");
     if (menu) menu.open = false;
-    window.openFrame();
+    window.openFrame(opener.dataset.source);
   });
 
   $("fr-run").addEventListener("click", async () => {
@@ -68,7 +73,7 @@
       const res = await fetch(`/api/assets/${assetId}/edits`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "frame", time: video.currentTime, format: format(), scale: scale() }),
+        body: JSON.stringify({ kind: "frame", source: dialog.dataset.source || "original", time: video.currentTime, format: format(), scale: scale() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `登録できませんでした (${res.status})`);
