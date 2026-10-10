@@ -1949,3 +1949,6 @@ dialog.overlay-dialog { width: min(96vw, 66rem); }
   .ov-left > .hint { display: none; }
   .ov-props { max-height: none; overflow: visible; }
 }
+
+.lightbox-caption { position: absolute; left: 50%; bottom: 0.6rem; transform: translateX(-50%); max-width: 90%; padding: 0.25rem 0.8rem; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.lightbox-caption[hidden] { display: none; }

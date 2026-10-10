@@ -9,12 +9,13 @@
   const zoomSlider = zoomBar ? zoomBar.querySelector("input") : null;
   const zoomOutput = zoomBar ? zoomBar.querySelector("output") : null;
 
+  const captionEl = dialog ? dialog.querySelector(".lightbox-caption") : null;
   const prevButton = dialog ? dialog.querySelector(".lightbox-prev") : null;
   const nextButton = dialog ? dialog.querySelector(".lightbox-next") : null;
   let items = [];
   let index = -1;
 
-  if (!dialog || !mediaContainer || !closeButton || !zoomBar || !zoomSlider || !prevButton || !nextButton) return;
+  if (!dialog || !mediaContainer || !closeButton || !zoomBar || !zoomSlider || !prevButton || !nextButton || !captionEl) return;
 
   let baseWidth = 0;
 
@@ -31,10 +32,10 @@
 
   function show(i) {
     index = i;
-    const el = items[i];
+    const item = items[i];
     prevButton.hidden = i <= 0;
     nextButton.hidden = i >= items.length - 1;
-    openLightbox(el.dataset.src, el.dataset.kind, el.dataset.alt);
+    openLightbox(item.src, item.kind, item.alt, item.caption);
   }
 
   function step(delta) {
@@ -52,7 +53,9 @@
     if (window.scrollY !== y) window.scrollTo(x, y);
   }
 
-  function openLightbox(src, kind, alt) {
+  function openLightbox(src, kind, alt, caption) {
+    captionEl.textContent = caption || "";
+    captionEl.hidden = !caption;
     const video = mediaContainer.querySelector("video");
     if (video) video.pause();
     mediaContainer.innerHTML = "";
@@ -91,11 +94,12 @@
 
   // サムネイルのクリックを結び付ける。絞り込みで一覧が差し替わるたびに呼ぶ
   function bindItems() {
-    items = Array.from(document.querySelectorAll(".asset-media"));
-    items.forEach((el) => {
+    const els = Array.from(document.querySelectorAll(".asset-media"));
+    items = els.map((el) => ({ el, src: el.dataset.src, kind: el.dataset.kind, alt: el.dataset.alt }));
+    els.forEach((el) => {
       if (el.dataset.lbBound) return; // 続きの追加で呼ばれても、結び付け済みのものは重ねない
       el.dataset.lbBound = "1";
-      el.addEventListener("click", () => show(items.indexOf(el)));
+      el.addEventListener("click", () => show(items.findIndex((x) => x.el === el)));
     });
     document.querySelectorAll(".asset-detail-link").forEach((link) => {
       if (link.dataset.lbBound) return;
@@ -122,9 +126,17 @@
   // 一覧以外(詳細画面の「透かし入りを見る」など)から、1枚だけ同じポップアップで表示する
   window.openPreview = function (src, kind, alt) {
     index = -1;
+    items = [];
     prevButton.hidden = true;
     nextButton.hidden = true;
     openLightbox(src, kind || "image", alt);
+  };
+
+  // 詳細画面のファイル一覧(原本と加工版)など、並んだ複数のファイルを、左右キー・矢印で順に見られるようにして開く。
+  // list: [{src, kind, alt, caption}]、start: 最初に出す番号
+  window.openPreviewList = function (list, start) {
+    items = list;
+    show(Math.min(Math.max(start || 0, 0), list.length - 1));
   };
 
   zoomSlider.addEventListener("input", applyZoom);
@@ -139,5 +151,6 @@
     if (video) video.pause();
     mediaContainer.innerHTML = "";
     index = -1;
+    captionEl.hidden = true;
   });
 })();

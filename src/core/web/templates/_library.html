@@ -50,8 +50,7 @@
       {% if not asset.deleted_at %}
       <div class="lib-actions">
         {% if r.state == 'done' and r.exists %}
-        {% if r.role == 'wm' %}<a class="lib-link" href="{{ r.url }}" data-wm-view data-src="{{ r.url }}">開く</a>
-        {% else %}<a class="lib-link" href="{{ r.url }}" target="_blank" rel="noopener">{{ '再生' if r.media_type == 'video' else '開く' }}</a>{% endif %}
+        <a class="lib-link" href="{{ r.url }}" target="_blank" rel="noopener" data-lib-open data-src="{{ r.url }}" data-kind="{{ r.media_type }}" data-caption="{{ r.label }}: {{ r.detail }}">{{ '再生' if r.media_type == 'video' else '開く' }}</a>
         <a class="lib-link" href="{{ r.download_url }}" download>ダウンロード</a>
         <button type="button" class="btn-ghost-inline" data-lib-post="{{ r.key }}" data-tip="このファイルを、投稿・予約します">投稿・予約…</button>
         <details class="menu lib-menu">

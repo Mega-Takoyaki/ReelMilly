@@ -41,6 +41,18 @@
     const box = root();
     if (!box || !box.contains(e.target)) return;
 
+    // 開く・再生: 画面の中のポップアップで見る。左右キーで、一覧の前後のファイルに移れる
+    const open = e.target.closest("[data-lib-open]");
+    if (open && window.openPreviewList && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      const links = Array.from(box.querySelectorAll("[data-lib-open]"));
+      window.openPreviewList(
+        links.map((a) => ({ src: a.dataset.src, kind: a.dataset.kind, alt: a.dataset.caption, caption: a.dataset.caption })),
+        links.indexOf(open)
+      );
+      return;
+    }
+
     // 投稿・予約: このファイルを選んだ状態で、ダイアログを開く
     const postBtn = e.target.closest("[data-lib-post]");
     if (postBtn) {

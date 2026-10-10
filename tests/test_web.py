@@ -1192,7 +1192,7 @@ def test_watermark_view_popup_and_5x5_picker_and_settings_defaults(app_and_conn)
     db.update_asset(conn, "a1", wm_path=out, wm_text="@x", wm_position="r0c0,r4c4")
 
     detail = client.get("/assets/a1").get_data(as_text=True)
-    assert "data-wm-view" in detail and 'target="_blank"' not in detail.split("透かし入りを見る")[0][-200:]  # 新しいタブではなくポップアップ
+    assert "data-lib-open" in detail and "openPreviewList" in client.get("/static/library.js").get_data(as_text=True)  # 新しいタブではなく、ポップアップ(左右キーで前後のファイルへ)
     assert 'id="lightbox"' in detail and "lightbox.js" in detail
     assert "透かし入り" in detail and "live-library" in detail  # ファイル一覧に、加工版として並ぶ
 
