@@ -177,7 +177,7 @@ def run_fanvue_drop(
         )
         db.add_tag_to_asset(conn, asset_id, FANVUE_POSTED_TAG)
         notifications.add(
-            conn, "post", "Fanvueへ投稿しました", fanvue_url, "success", asset_id=asset_id
+            conn, "post", "Fanvueへ投稿しました", fanvue_url, "success", asset_id=asset_id, url=fanvue_url
         )
         log_event(
             config.paths.events_path,
@@ -294,7 +294,7 @@ def run_fanvue_post_now(
     label = FANVUE_AUDIENCES.get(audience, audience)
     notifications.add(
         conn, "post", "Fanvueへ投稿しました", f"{len(asset_ids)}件（公開範囲: {label}）", "success",
-        asset_id=asset_ids[0] if len(asset_ids) == 1 else None,
+        asset_id=asset_ids[0] if len(asset_ids) == 1 else None, url=fanvue_url,
     )
     log_event(config.paths.events_path, "post_now_ok", asset_ids=asset_ids, audience=audience, fanvue_url=fanvue_url)
     return PostNowResult(ok=True, asset_ids=asset_ids, fanvue_url=fanvue_url)
@@ -340,7 +340,7 @@ def run_x_post_now(
         db.update_asset(conn, asset["id"], status="ready", updated_at=_now())
     notifications.add(
         conn, "post", "Xへ投稿しました", f"{len(asset_ids)}件{'（センシティブ指定）' if sensitive else ''}", "success",
-        asset_id=asset_ids[0] if len(asset_ids) == 1 else None,
+        asset_id=asset_ids[0] if len(asset_ids) == 1 else None, url=url,
     )
     log_event(config.paths.events_path, "x_post_now_ok", asset_ids=asset_ids, sensitive=sensitive, url=url)
     return PostNowResult(ok=True, asset_ids=asset_ids, fanvue_url=url)

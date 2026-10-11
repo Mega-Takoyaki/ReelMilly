@@ -80,6 +80,7 @@ def test_post_now_combines_several_assets_into_one_post(env):
     assert db.get_asset(conn, "a1")["fanvue_text"] == "まとめて投稿"
     item = notifications.list_notifications(conn, 1)[0]
     assert item["kind"] == "post" and "3件" in item["body"] and item["level"] == "success"
+    assert item["url"] and item["url"].startswith("http")  # 投稿先へのリンク(別タブで開く)
 
 
 def test_post_now_failure_marks_all_assets_failed_and_notifies(env):
@@ -199,3 +200,11 @@ def test_list_remembers_filters_across_restarts(env):
     assert 'localStorage.getItem("reelmilly:listQuery")' in page and 'location.replace("/?" + saved)' in page
     assert 'localStorage.setItem("reelmilly:listQuery", location.search.slice(1))' in page  # 条件つきで開いたときに記憶する
     assert 'localStorage.setItem("reelmilly:listQuery", qs)' in client.get("/static/filters.js").get_data(as_text=True)  # 絞り込みのたびに記憶する
+
+
+def test_notification_url_only_accepts_http_links(env):
+    config, conn, _client = env
+    notifications.add(conn, "post", "a", "", "info", url="javascript:alert(1)")
+    assert notifications.list_notifications(conn, 1)[0]["url"] is None
+    notifications.add(conn, "post", "b", "", "info", url="https://example.com/p/1")
+    assert notifications.list_notifications(conn, 1)[0]["url"] == "https://example.com/p/1"

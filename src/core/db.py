@@ -25,6 +25,8 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """既存DBへ後から追加した列を補う(マイグレーションツールは未導入のため最小限の対応)。"""
+    if "url" not in {row["name"] for row in conn.execute("PRAGMA table_info(notifications)")}:
+        conn.execute("ALTER TABLE notifications ADD COLUMN url TEXT")
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(assets)")}
     if "analysis_error" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN analysis_error TEXT")

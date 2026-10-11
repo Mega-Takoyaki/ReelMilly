@@ -55,6 +55,14 @@
       });
       actions.append(b);
     }
+    if (n.url) {
+      const link = document.createElement("a");
+      link.href = n.url;
+      link.target = "_blank";  // 投稿先は、別タブで開く
+      link.rel = "noopener noreferrer";
+      link.textContent = "投稿を開く ↗";
+      actions.append(link);
+    }
     if (n.asset_id) {
       const a = document.createElement("a");
       a.href = `/assets/${n.asset_id}`;

@@ -35,15 +35,17 @@ def add(
     level: str = "info",
     action: str | None = None,
     asset_id: str | None = None,
+    url: str | None = None,
 ) -> int:
-    """通知を1件追加する。追加した通知のIDを返す。"""
+    """通知を1件追加する。追加した通知のIDを返す。`url`は、投稿先など、外部のページ(http/httpsだけ。画面では、別タブで開くリンクになる)。"""
     if level not in LEVELS:
         level = "info"
     if kind not in KINDS:
         kind = "system"
     cur = conn.execute(
-        "INSERT INTO notifications (created_at, kind, level, title, body, action, asset_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (_now(), kind, level, title, body or None, action if action in ACTIONS else None, asset_id),
+        "INSERT INTO notifications (created_at, kind, level, title, body, action, asset_id, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (_now(), kind, level, title, body or None, action if action in ACTIONS else None, asset_id,
+         url if url and url.startswith(("http://", "https://")) else None),
     )
     conn.commit()
     return cur.lastrowid

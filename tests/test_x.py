@@ -212,6 +212,7 @@ def test_run_x_post_now_records_posts_and_notifies(env):
         assert db.get_asset(conn, f"a{i}")["status"] == "ready"
     item = notifications.list_notifications(conn, 1)[0]
     assert "Xへ投稿しました" in item["title"] and "センシティブ指定" in item["body"]
+    assert item["url"] == "https://x.com/i/web/status/777"
 
 
 def test_run_x_post_now_failure_marks_failed(env):

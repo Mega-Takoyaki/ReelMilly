@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     body TEXT,
     action TEXT,             -- クリックで開くポップアップ('duplicates'など)。無ければNULL
     asset_id TEXT,           -- 関連する作品(詳細画面へのリンク)
+    url TEXT,                -- 関連する外部のアドレス(投稿先のURLなど。別タブで開く)
     read_at TEXT             -- 既読にした日時。NULL=未読
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(id);
