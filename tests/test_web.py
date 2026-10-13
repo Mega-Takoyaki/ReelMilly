@@ -763,7 +763,7 @@ def test_analysis_status_endpoint(app_and_conn):
     app = app_and_conn[0]
     data = app.test_client().get("/api/ai-live?ids=a1").get_json()
     assert set(data["status"]) == {
-        "queued", "running", "failed", "worker_alive", "current", "upcoming", "next_schedule",
+        "queued", "running", "failed", "worker_alive", "paused", "current", "upcoming", "next_schedule",
     }
     assert data["assets"]["a1"]["nsfw_auto_rating"] == "nsfw"
 
