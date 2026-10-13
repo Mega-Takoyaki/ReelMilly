@@ -1625,6 +1625,43 @@ def create_app(config: Config) -> Flask:
         conn.close()
         return jsonify(out)
 
+    # --- AI処理の負荷(一時停止・CPUスレッド数・優先度) ---
+
+    def _ai_limits_payload(conn) -> dict:
+        status = worker_module.get_status(conn, config.timezone)
+        return {
+            "limits": settings_module.get_ai_limits(conn),
+            "cpu_count": os.cpu_count() or 1,
+            "status": {k: status[k] for k in ("queued", "running", "worker_alive", "paused", "current")},
+        }
+
+    @app.route("/api/ai/limits")
+    def api_ai_limits():
+        conn = get_conn()
+        data = _ai_limits_payload(conn)
+        conn.close()
+        return jsonify(data)
+
+    @app.route("/api/ai/limits", methods=["POST"])
+    def api_ai_limits_save():
+        """AI処理の一時停止・再開、使うCPUスレッド数、優先度を変える。ワーカーは、次の1件から反映する(再起動は要らない)。"""
+        payload = request.get_json(silent=True) or {}
+        conn = get_conn()
+        try:
+            threads = payload.get("cpu_threads")
+            settings_module.set_ai_limits(
+                conn,
+                paused=payload.get("paused") if isinstance(payload.get("paused"), bool) else None,
+                cpu_threads=int(threads) if threads not in (None, "") else None,
+                low_priority=payload.get("low_priority") if isinstance(payload.get("low_priority"), bool) else None,
+            )
+        except (TypeError, ValueError):
+            conn.close()
+            return jsonify({"error": "スレッド数は、0以上の整数で指定してください"}), 400
+        data = _ai_limits_payload(conn)
+        conn.close()
+        return jsonify(data)
+
     # --- 通知(ベル・履歴) ---
 
     @app.route("/api/notifications")

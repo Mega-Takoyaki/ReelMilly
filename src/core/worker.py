@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -122,6 +123,7 @@ def get_status(conn: sqlite3.Connection, timezone_name: str | None = None) -> di
         "running": counts["running"],
         "failed": counts["failed"],
         "worker_alive": alive,
+        "paused": settings_module.get_ai_limits(conn)["paused"],
         "current": {"asset_id": running["asset_id"], "kind": running["kind"]} if running and alive else None,
         "upcoming": upcoming,
         "next_schedule": next_scheduled(conn, timezone_name) if timezone_name else None,
@@ -158,6 +160,25 @@ def enqueue_scheduled(conn: sqlite3.Connection, timezone_name: str, now: datetim
         queued += enqueue_for_assets(conn, db.unprocessed_asset_ids(conn, kind, since), [kind])
         db.set_last_run_date(conn, job_name, today)
     return queued
+
+
+def _set_process_priority(low: bool) -> None:
+    """このプロセスの優先度を、他のアプリより低く(または通常に)する。PCが重くなるのを避けるため。"""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            below_normal, normal = 0x00004000, 0x00000020
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE  # 64bitでは、型を指定しないと、ハンドルが壊れて、変更に失敗する
+            kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel32.SetPriorityClass.restype = wintypes.BOOL
+            kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), below_normal if low else normal)
+        elif low:
+            os.nice(5)
+    except (OSError, AttributeError):
+        pass  # 変えられなくても、処理は続ける
 
 
 class AnalysisWorker:
@@ -212,6 +233,32 @@ class AnalysisWorker:
 
     # --- モデル(種別ごとに遅延ロード・再利用) ---------------------------------
 
+    def apply_limits(self, conn: sqlite3.Connection) -> None:
+        """設定の「AI処理の負荷」(優先度・CPUスレッド数)を、このプロセスに反映する。1件ごとに呼ぶ(設定の変更が、すぐ効く)。"""
+        limits = settings_module.get_ai_limits(conn)
+        if getattr(self, "_applied_low_priority", None) != limits["low_priority"]:
+            _set_process_priority(limits["low_priority"])
+            self._applied_low_priority = limits["low_priority"]
+        torch = sys.modules.get("torch")  # まだ読み込んでいなければ、モデルを読み込んだ直後に、もう一度呼ぶ
+        if torch is not None and limits["cpu_threads"] > 0 and getattr(self, "_applied_threads", None) != limits["cpu_threads"]:
+            try:
+                torch.set_num_threads(limits["cpu_threads"])
+                self._applied_threads = limits["cpu_threads"]
+            except RuntimeError:
+                pass
+
+    def release_models(self) -> None:
+        """一時停止中は、モデルを手放して、メモリ(数GB)を空ける。再開すると、必要になったときに、読み込み直す。"""
+        if self._generator is None and not self._classifier_loaded:
+            return
+        self._generator = None
+        self._generator_key = None
+        self._classifier = None
+        self._classifier_loaded = False
+        import gc
+
+        gc.collect()
+
     def _get_classifier(self):
         if not self._classifier_loaded:
             self._classifier = try_create_classifier(self._config.nsfw)
@@ -226,6 +273,7 @@ class AnalysisWorker:
         if self._generator is None or key != self._generator_key:
             self._generator = generation.try_create_generator(conn)
             self._generator_key = key
+            self.apply_limits(conn)  # モデルの読み込みで、torchが使えるようになった直後に、スレッド数を反映する
         return self._generator
 
     # --- 実行 ---------------------------------------------------------------
@@ -333,6 +381,15 @@ class AnalysisWorker:
             if queued:
                 log(f"[schedule] 定期実行でAI処理を{queued}件キューに追加しました")
             while True:
+                if settings_module.get_ai_limits(conn)["paused"]:
+                    # 一時停止中: 待機中のタスクは、そのまま残す(再開すると、続きから処理する)。メモリも空ける
+                    if not getattr(self, "_pause_logged", False):
+                        log("[analyze] AI処理を一時停止しています(設定の「AI処理の負荷」で再開できます)")
+                        self._pause_logged = True
+                    self.release_models()
+                    break
+                self._pause_logged = False
+                self.apply_limits(conn)
                 task = db.claim_next_ai_task(conn)
                 if task is None:
                     break

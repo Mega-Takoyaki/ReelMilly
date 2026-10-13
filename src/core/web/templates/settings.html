@@ -281,6 +281,18 @@
   </section>
 
   <section class="card settings-tab" id="sec-auto">
+    <div class="ai-limits" id="ai-limits">
+      <h2 style="margin-top: 0;">AI処理の負荷{{ info("AI処理（説明文・タグ・sfw/nsfw判定）は、このPCのCPUで動くため、待ちが多いと、長時間、PCに負荷がかかります。ここで、一時停止したり、使うCPUを減らしたりできます。設定は、次の1件から、すぐ反映されます（ワーカーの再起動は要りません）。一時停止中は、待機中のものはそのまま残り、再開すると続きから処理します。") }}</h2>
+      <p class="hint" id="ail-state">読み込み中…</p>
+      <div class="ail-row">
+        <button type="button" class="btn-primary" id="ail-toggle" disabled>AI処理を一時停止する</button>
+        <label class="ail-field">使うCPUスレッド数{{ info("少ないほど、PCが軽くなりますが、1件ごとの処理は遅くなります。「自動」は、制限しません（全部使います）。目安: このPCの半分以下にすると、ほかの作業がしやすくなります。") }}
+          <select id="ail-threads"></select>
+        </label>
+        <label class="ail-check"><input type="checkbox" id="ail-low" checked> 他のアプリを優先する（低優先度）{{ info("オンにすると、AI処理は、ほかのアプリより後回しになり、PCの操作が重くなりにくくなります（CPUが空いているときは、普通に使います）。") }}</label>
+      </div>
+    </div>
+    <hr style="border: 0; border-top: 1px solid var(--border); margin: 1rem 0;">
     <h2 style="margin-top: 0;">AI処理の定期実行{{ info("sfw/nsfw判定と説明文生成を、毎日決まった時刻に自動で始める設定です。画像を取り込むたびに手動で実行する手間を省けます。個別の実行は、一覧の選択メニューや詳細画面からいつでもできます。") }}</h2>
     <p class="hint">
       指定した時刻になると、条件に合う<strong>未処理</strong>のアセット（判定結果・説明がまだ無いもの）を自動でキューに追加します（1日1回）。
@@ -494,6 +506,7 @@
 
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='storage.js') }}"></script>
+<script src="{{ url_for('static', filename='ai-limits.js') }}"></script>
 <script>
 (function () {
   const choices = {{ model_choices | tojson }};

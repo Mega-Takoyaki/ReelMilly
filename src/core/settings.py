@@ -113,6 +113,36 @@ def get_caption_mode(conn: sqlite3.Connection) -> str:
     return db.get_setting(conn, _KEY_CAPTION_MODE) or DEFAULT_CAPTION_MODE
 
 
+# --- AI処理の負荷(一時停止・CPUスレッド数・優先度) ----------------------------------
+# ワーカー(reelmilly watch)が、1件ごとに読み直すので、ワーカーを再起動しなくても、すぐ(次の1件から)反映される
+_KEY_AI_PAUSED = "ai_paused"
+_KEY_AI_CPU_THREADS = "ai_cpu_threads"
+_KEY_AI_LOW_PRIORITY = "ai_low_priority"
+
+
+def get_ai_limits(conn: sqlite3.Connection) -> dict:
+    """AI処理の負荷の設定。`paused`: 一時停止中 / `cpu_threads`: 使うCPUスレッド数(0=自動・制限なし) / `low_priority`: 他のアプリを優先する(既定オン)。"""
+    try:
+        threads = max(int(db.get_setting(conn, _KEY_AI_CPU_THREADS) or 0), 0)
+    except ValueError:
+        threads = 0
+    return {
+        "paused": db.get_setting(conn, _KEY_AI_PAUSED) == "1",
+        "cpu_threads": threads,
+        "low_priority": db.get_setting(conn, _KEY_AI_LOW_PRIORITY) != "0",
+    }
+
+
+def set_ai_limits(conn: sqlite3.Connection, paused=None, cpu_threads=None, low_priority=None) -> dict:
+    if paused is not None:
+        db.set_setting(conn, _KEY_AI_PAUSED, "1" if paused else "0")
+    if cpu_threads is not None:
+        db.set_setting(conn, _KEY_AI_CPU_THREADS, str(min(max(int(cpu_threads), 0), 64)))
+    if low_priority is not None:
+        db.set_setting(conn, _KEY_AI_LOW_PRIORITY, "1" if low_priority else "0")
+    return get_ai_limits(conn)
+
+
 def get_auto_ingest(conn: sqlite3.Connection) -> bool:
     stored = db.get_setting(conn, _KEY_AUTO_INGEST)
     if stored is None:
