@@ -22,7 +22,7 @@ if /i "%~1"=="/startup" ping -n 31 127.0.0.1 >nul
 :loop
 echo [%date% %time%] ===== start: claude remote-control ===== >> "%LOG%"
 echo Claude Remote Control is running. Output goes to %LOG%  (close this window to stop it)
-"%CLAUDE%" remote-control --name "ReelMilly" --permission-mode acceptEdits >> "%LOG%" 2>&1
+"%CLAUDE%" remote-control --name "ReelMilly" --permission-mode acceptEdits --spawn=same-dir >> "%LOG%" 2>&1
 echo [%date% %time%] ===== exited: claude remote-control (code %errorlevel%), restarting in 30 seconds ===== >> "%LOG%"
 echo claude remote-control exited (code %errorlevel%). Restarting in 30 seconds...
 ping -n 31 127.0.0.1 >nul
