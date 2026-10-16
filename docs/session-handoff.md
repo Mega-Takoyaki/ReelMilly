@@ -27,6 +27,12 @@ Grok Imagine で作った画像・動画を管理し、Fanvue と X へ投稿す
 - シェル: Git Bash とPowerShell。複数行の文字列をbashのヒアドキュメントに入れるとクォートで失敗しやすい。長いスクリプトは、ファイルに書いてから実行する(終わったら削除。ゴミを残さない)
 - DB: `data/state/reelmilly.db`(SQLite)。スキーマ変更は `core/schema.sql` と `core/db.py` の `_migrate`(冪等)
 
+### スマホからの接続(Remote Control)
+- デスクトップアプリのセッションは、アプリやOSの再起動のあと、**Remote Controlが自動では再接続されない**(「新しく始めるセッション」だけが、自動接続の対象)。スマホには「Remote controlセッションがオフラインです」と出る
+- 対策として、ログオン時に `claude remote-control`(サーバーモード)を起動するスクリプトを用意した: `scripts/run-claude-remote.bat`。有効化は `powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1 -EnableRemote`(無効化は `-DisableRemote`)。ログは `data/logs/claude-remote.log`
+- 初回だけ、ユーザーが手で、`claude remote-control` を実行して、確認(y)に答える必要がある。組織設定で「信頼するデバイス」の登録を求められたら、`claude` で `/login` する
+- CLIは `C:\Users\tando\.local\bin\claude.exe`(2.1.301に更新済み)。権限モードは `acceptEdits`
+
 ## 4. ユーザーの作業スタイル(重要)
 - MVP段階。**区切りごとに、自分でコミット&プッシュして、動作確認してもらう**(許可は毎回取らない)。コミットの末尾に、指定の共同作成者の行を付ける
 - 説明の長文は画面に出さず、ⓘのツールチップ(`info()` マクロ、`data-tip`)に集約する
