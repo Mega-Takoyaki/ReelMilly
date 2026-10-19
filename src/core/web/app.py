@@ -1591,6 +1591,14 @@ def create_app(config: Config) -> Flask:
         conn.close()
         return jsonify({"pending": pending, "groups": groups})
 
+    @app.route("/api/duplicates/scan", methods=["POST"])
+    def api_duplicates_scan():
+        """重複の検出を、いま実行する(見た目の指紋を補って、グループを探し直す)。"""
+        conn = get_conn()
+        out = duplicates.scan(conn)
+        conn.close()
+        return jsonify(out)
+
     @app.route("/api/duplicates/pending/<token>/<path:name>")
     def api_duplicate_pending_file(token, name):
         path = duplicates.pending_file(config, token, name)

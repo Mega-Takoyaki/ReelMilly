@@ -2,7 +2,7 @@
 {% from "_info.html" import info %}
 <dialog id="dup-dialog" class="dup-dialog">
   <div class="dup-head">
-    <h2 style="margin: 0;">重複の確認{{ info("ファイルの中身が完全に同じ画像・動画を『重複』として扱います。アップロードしようとしたものは、取り込まずに保留にしてあります。登録済みの重複は、定期処理で検出して通知します。再エンコードや縮小などで中身が変わったものは、別のファイルとして扱います(見た目が似ているだけのものは検出しません)。") }}</h2>
+    <h2 style="margin: 0;">重複の確認{{ info("ファイル名ではなく、中身で判定します。中身が完全に同じものに加えて、再エンコード・縮小・形式変換で中身が変わっていても、見た目がそっくりな画像・動画(動画は前・中・後の3コマ)を『重複』の候補にします。アップロードしようとしたものは、中身が完全に同じ場合だけ、取り込まずに保留にします。登録済みの重複は定期処理で検出して通知します。『いま重複を検出』で、あとからでも調べ直せます。似ているだけで別物のものは『すべて残す』を選べば、通知されなくなります。") }}</h2>
     <button type="button" class="lightbox-close dup-close" id="dup-close" aria-label="閉じる">&times;</button>
   </div>
 
@@ -31,6 +31,7 @@
   </section>
 
   <div class="confirm-actions">
+    <button type="button" class="btn-ghost" id="dup-scan">いま重複を検出</button>
     <button type="button" class="btn-ghost" id="dup-later">あとで決める</button>
     <button type="button" class="btn-primary" id="dup-run">選んだ内容で実行</button>
   </div>

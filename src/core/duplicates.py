@@ -1,7 +1,8 @@
-"""同じ画像・動画(ファイルの内容が完全に同じもの)の検出と、その扱い。
+"""同じ画像・動画の検出と、その扱い。ファイル名は見ない(中身だけで判定する)。
 
-- 中身のSHA-256を`assets.content_hash`に持ち、同じ値の作品を「重複」とする(再エンコードや縮小で中身が変わったものは、
-  別のファイルとして扱う。見た目が似ているだけのものまでは、検出しない)
+- 中身のSHA-256を`assets.content_hash`に持ち、同じ値の作品を「重複」とする(アップロード時の保留は、こちらだけ)
+- 見た目の指紋(dHash)を`assets.visual_hash`に持ち、近い作品も「重複」の候補にする。再エンコード・縮小・形式変換で
+  中身が変わっていても見つかる(動画は、前・中・後の3コマを比べる)。登録済みの作品が対象で、`scan()`でいつでも実行できる
 - アップロード時: 既にある作品と同じ中身のファイルは、取り込まずに保留(`inbox/.dup-pending/`)にして、取り込むかどうかを聞く
 - 登録済みの重複: インボックスからの取り込み等で後から増えた重複は、定期処理で検出して通知し、まとめて扱いを決められる
 - ユーザーが「重複のまま残す」と決めたものは、`dup_ignores`に記録して、二度と通知しない
@@ -47,6 +48,101 @@ def backfill_hashes(conn: sqlite3.Connection) -> int:
     return updated
 
 
+# ---------------------------------------------------------------- 見た目の指紋
+
+HASH_SIZE = 8  # 9x8に縮小して、隣との明暗を比べる(64ビット=16桁)
+CHUNK = 16
+VIDEO_POSITIONS = (0.1, 0.5, 0.9)
+IMAGE_MAX_DISTANCE = 6  # 64ビットのうち、これ以下の違いなら「同じ見た目」
+VIDEO_MAX_DISTANCE = 8  # 動画は、3コマすべてがこれ以下
+MIN_INFORMATIVE_BITS = 4  # 明暗の差がほぼ無い(単色に近い)コマは、それだけでは一致とみなさない
+
+
+def _dhash(gray) -> str:
+    """グレースケールのnumpy配列を9x8に縮小して、隣との明暗の大小を64ビットにする。"""
+    import cv2
+
+    small = cv2.resize(gray, (HASH_SIZE + 1, HASH_SIZE), interpolation=cv2.INTER_AREA)
+    bits = (small[:, 1:] > small[:, :-1]).flatten()
+    value = 0
+    for b in bits:
+        value = (value << 1) | int(b)
+    return f"{value:016x}"
+
+
+def visual_hash(path: Path, kind: str) -> str | None:
+    """見た目の指紋。読めなければNone(あとで再試行)。"""
+    try:
+        import numpy as np
+
+        if kind == "image":
+            from PIL import Image, ImageOps
+
+            with Image.open(path) as img:
+                img = ImageOps.exif_transpose(img).convert("L")
+                return _dhash(np.asarray(img))
+        import cv2
+
+        cap = cv2.VideoCapture(str(path))
+        try:
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            if total <= 0:
+                return None
+            parts = []
+            for pos in VIDEO_POSITIONS:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, int(total * pos)))
+                ok, frame = cap.read()
+                if not ok:
+                    return None
+                parts.append(_dhash(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)))
+            return "".join(parts)
+        finally:
+            cap.release()
+    except Exception:  # noqa: BLE001 - 壊れたファイルでも、処理を止めない
+        return None
+
+
+def backfill_visual_hashes(conn: sqlite3.Connection) -> int:
+    """見た目の指紋が未記録の作品について、ファイルから計算して記録する(ファイルが見えない作品は、あとで再試行)。"""
+    updated = 0
+    for row in conn.execute("SELECT id, kind, file_path FROM assets WHERE visual_hash IS NULL AND deleted_at IS NULL").fetchall():
+        value = visual_hash(Path(row["file_path"]), row["kind"])
+        if value is not None:
+            conn.execute("UPDATE assets SET visual_hash = ? WHERE id = ?", (value, row["id"]))
+            updated += 1
+    conn.commit()
+    return updated
+
+
+def _informative(chunk: str) -> bool:
+    return MIN_INFORMATIVE_BITS <= bin(int(chunk, 16)).count("1") <= HASH_SIZE * HASH_SIZE - MIN_INFORMATIVE_BITS
+
+
+def similar_pairs(rows: list[dict]) -> list[tuple[int, int]]:
+    """見た目の指紋が近い作品の組(rowsの添字)。種類(画像/動画)が違うもの同士は比べない。"""
+    import numpy as np
+
+    pairs: list[tuple[int, int]] = []
+    by_len: dict[int, list[int]] = {}
+    for i, r in enumerate(rows):
+        vh = r.get("visual_hash")
+        if vh and len(vh) % CHUNK == 0:
+            by_len.setdefault(len(vh), []).append(i)
+    table = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+    for length, idxs in by_len.items():
+        n_chunks = length // CHUNK
+        limit = IMAGE_MAX_DISTANCE if n_chunks == 1 else VIDEO_MAX_DISTANCE
+        chunks = [[rows[i]["visual_hash"][c * CHUNK:(c + 1) * CHUNK] for c in range(n_chunks)] for i in idxs]
+        arr = np.array([[int(c, 16) for c in cs] for cs in chunks], dtype=np.uint64)
+        info = np.array([[_informative(c) for c in cs] for cs in chunks])
+        for a in range(len(idxs) - 1):
+            x = np.ascontiguousarray(arr[a + 1:] ^ arr[a])  # (m, n_chunks)
+            dist = table[x.view(np.uint8).reshape(x.shape[0], n_chunks, 8)].sum(axis=2)
+            ok = (dist <= limit).all(axis=1) & (info[a + 1:] & info[a]).any(axis=1)
+            pairs.extend((idxs[a], idxs[a + 1 + int(j)]) for j in np.nonzero(ok)[0])
+    return pairs
+
+
 # ---------------------------------------------------------------- 登録済みの重複
 
 def _ignored(conn: sqlite3.Connection) -> set[str]:
@@ -76,27 +172,65 @@ def _keep_score(conn: sqlite3.Connection, asset: dict) -> tuple:
 
 
 def duplicate_groups(conn: sqlite3.Connection) -> list[dict]:
-    """登録済み(ごみ箱以外)の重複グループ。ユーザーが「残す」と決めたものは除く。"""
-    ignored = _ignored(conn)
-    hashes = [
-        r["content_hash"]
+    """登録済み(ごみ箱以外)の重複グループ(中身が同じ、または見た目が近い作品)。ユーザーが「残す」と決めたものは除く。
+
+    グループの`hash`は、全員の中身が同じならそのSHA-256、見た目が近いだけのものを含むなら「v:」で始まる識別子。
+    """
+    rows = [
+        dict(r)
         for r in conn.execute(
-            "SELECT content_hash FROM assets WHERE content_hash IS NOT NULL AND deleted_at IS NULL "
-            "GROUP BY content_hash HAVING COUNT(*) > 1 ORDER BY MIN(created_at)"
+            "SELECT id, original_name, created_at, status, deleted_at, is_broken, content_rating_confirmed, content_hash, visual_hash "
+            "FROM assets WHERE deleted_at IS NULL ORDER BY created_at, id"
         )
-        if r["content_hash"] not in ignored
     ]
+    parent = list(range(len(rows)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    first_by_hash: dict[str, int] = {}
+    for i, r in enumerate(rows):
+        if r["content_hash"]:
+            if r["content_hash"] in first_by_hash:
+                parent[find(i)] = find(first_by_hash[r["content_hash"]])
+            else:
+                first_by_hash[r["content_hash"]] = i
+    for a, b in similar_pairs(rows):
+        parent[find(a)] = find(b)
+    components: dict[int, list[dict]] = {}
+    for i, r in enumerate(rows):
+        components.setdefault(find(i), []).append(r)
+
+    ignored = _ignored(conn)
     groups = []
-    for h in hashes:
-        members = [a for a in assets_with_hash(conn, h) if not a["deleted_at"]]
+    for members in components.values():
         if len(members) < 2:
+            continue
+        hashes = {m["content_hash"] for m in members}
+        if len(hashes) == 1 and None not in hashes:
+            key = hashes.pop()
+        else:
+            key = "v:" + hashlib.sha1(",".join(sorted(m["id"] for m in members)).encode()).hexdigest()[:16]
+        if key in ignored:
             continue
         keep = max(members, key=lambda a: _keep_score(conn, a))["id"]
         for a in members:
             a["posted_to"] = [r["channel"] for r in conn.execute("SELECT channel FROM posts WHERE asset_id = ?", (a["id"],))]
             a["keep"] = a["id"] == keep  # 既定で残す作品
-        groups.append({"hash": h, "assets": members})
+        groups.append({"hash": key, "similar": key.startswith("v:"), "assets": members})
+    groups.sort(key=lambda g: g["assets"][0]["created_at"])
     return groups
+
+
+def scan(conn: sqlite3.Connection) -> dict:
+    """重複の検出を、いま実行する(中身・見た目の指紋を補い、新しい重複があれば通知する)。"""
+    hashed = backfill_hashes(conn)
+    visual = backfill_visual_hashes(conn)
+    notify_new_duplicates(conn)
+    return {"hashed": hashed, "visual": visual, "groups": len(duplicate_groups(conn))}
 
 
 def notify_new_duplicates(conn: sqlite3.Connection) -> int:
@@ -109,7 +243,7 @@ def notify_new_duplicates(conn: sqlite3.Connection) -> int:
         return 0
     notifications.add(
         conn, "duplicates", f"重複している画像が{len(hashes)}組あります",
-        "同じ内容のファイルが複数登録されています。クリックして、扱いをまとめて決められます", "warning", action="duplicates",
+        "同じ内容、または見た目がそっくりなファイルが複数登録されています。クリックして、扱いをまとめて決められます", "warning", action="duplicates",
     )
     return len(hashes)
 
@@ -117,11 +251,16 @@ def notify_new_duplicates(conn: sqlite3.Connection) -> int:
 def resolve_groups(conn: sqlite3.Connection, decisions: list[dict]) -> dict:
     """登録済みの重複グループの扱いを実行する。
 
-    decision: {"hash", "action": "trash_others"(残す1つ以外をごみ箱へ)/"keep_all"(重複のまま残す), "keep_id"}
+    decision: {"hash", "ids"(見た目が近いグループの作品ID), "action": "trash_others"(残す1つ以外をごみ箱へ)/"keep_all"(重複のまま残す), "keep_id"}
     """
     trashed = ignored = 0
     for d in decisions:
-        members = [a for a in assets_with_hash(conn, d.get("hash", "")) if not a["deleted_at"]]
+        if str(d.get("hash", "")).startswith("v:"):
+            ids = [i for i in d.get("ids") or [] if isinstance(i, str)]
+            marks = ",".join("?" * len(ids))
+            members = [dict(r) for r in conn.execute(f"SELECT id FROM assets WHERE deleted_at IS NULL AND id IN ({marks})", ids)] if ids else []
+        else:
+            members = [a for a in assets_with_hash(conn, d.get("hash", "")) if not a["deleted_at"]]
         if len(members) < 2:
             continue
         if d.get("action") == "keep_all":

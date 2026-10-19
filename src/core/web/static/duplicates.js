@@ -78,8 +78,9 @@
         const mode = el("div", { class: "dup-choices" },
           radio(`mode-${i}`, "trash_others", "選んだ1つ以外を、ごみ箱へ移す", true),
           radio(`mode-${i}`, "keep_all", "すべて残す（重複と承知している）"));
-        return el("li", { class: "dup-item", dataset: { hash: g.hash } },
-          el("div", { class: "dup-members" }, ...members), mode);
+        const label = g.similar ? [el("div", { class: "hint" }, "見た目が近いもの（中身は完全には一致しません）")] : [];
+        return el("li", { class: "dup-item", dataset: { hash: g.hash, ids: JSON.stringify(g.assets.map((a) => a.id)) } },
+          ...label, el("div", { class: "dup-members" }, ...members), mode);
       })
     );
     $("dup-groups").hidden = data.groups.length === 0;
@@ -123,6 +124,7 @@
     }));
     const groups = Array.from($("dup-groups-list").children).map((li, i) => ({
       hash: li.dataset.hash,
+      ids: JSON.parse(li.dataset.ids || "[]"),
       action: (li.querySelector(`input[name="mode-${i}"]:checked`) || {}).value || "keep_all",
       keep_id: (li.querySelector(`input[name="keep-${i}"]:checked`) || {}).value,
     }));
@@ -149,6 +151,25 @@
     } catch (e) {
       window.showToast(`処理できませんでした: ${e.message}`, "error");
       $("dup-run").disabled = false;
+    }
+  });
+
+  // --- いま検出する(登録済みの作品すべてを、中身と見た目で調べ直す) ---
+  $("dup-scan").addEventListener("click", async () => {
+    const btn = $("dup-scan");
+    btn.disabled = true;
+    btn.textContent = "検出中…";
+    try {
+      const res = await fetch("/api/duplicates/scan", { method: "POST" });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || res.status);
+      await load();
+      window.showToast(`重複を検出しました（${out.groups}組）`, "success");
+    } catch (e) {
+      window.showToast(`検出できませんでした: ${e.message}`, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "いま重複を検出";
     }
   });
 

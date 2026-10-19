@@ -34,6 +34,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assets ADD COLUMN deleted_at TEXT")
     if "content_hash" not in columns:
         conn.execute("ALTER TABLE assets ADD COLUMN content_hash TEXT")
+    if "visual_hash" not in columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN visual_hash TEXT")
     # 列を足したあとに作る(既存DBでは、schema.sqlの時点では列が無いため、そこでは作れない)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_content_hash ON assets(content_hash)")
     for column in ("width", "height"):
