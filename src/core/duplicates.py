@@ -43,8 +43,8 @@ def backfill_hashes(conn: sqlite3.Connection) -> int:
         value = file_hash(Path(row["file_path"]))
         if value:
             conn.execute("UPDATE assets SET content_hash = ? WHERE id = ?", (value, row["id"]))
+            conn.commit()
             updated += 1
-    conn.commit()
     return updated
 
 
@@ -109,8 +109,8 @@ def backfill_visual_hashes(conn: sqlite3.Connection) -> int:
         value = visual_hash(Path(row["file_path"]), row["kind"])
         if value is not None:
             conn.execute("UPDATE assets SET visual_hash = ? WHERE id = ?", (value, row["id"]))
+            conn.commit()  # 1件ごとに確定する(長い処理の間、書き込みのロックを握り続けない)
             updated += 1
-    conn.commit()
     return updated
 
 
