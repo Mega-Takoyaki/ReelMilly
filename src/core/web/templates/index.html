@@ -240,6 +240,7 @@
 {% include "_post_now_dialog.html" %}
 
 {% include "_overlay_batch_dialog.html" %}
+{% include "_automask_dialog.html" %}
 
 <div id="bulk-toolbar" class="bulk-toolbar" hidden>
   <span id="bulk-count" class="bulk-count"></span>
@@ -296,6 +297,7 @@
   <span class="bulk-group">
     <button type="button" id="bulk-wm">透かしを入れる…</button>
     <button type="button" id="bulk-wm-clear" class="btn-ghost-inline">透かしを外す</button>
+    <button type="button" id="bulk-automask" data-tip="選んだ作品の、センシティブな領域を自動で探して、ぼかし・モザイクをかけた加工版を作ります(原本は変わりません)">自動で隠す…</button>
     <button type="button" id="bulk-overlay" data-tip="保存したテロップ・スタンプのテンプレートを、選んだ作品すべてに、加工版として作ります">テロップ・スタンプ一括…</button>
   </span>
 
@@ -313,6 +315,7 @@
 <script src="{{ url_for('static', filename='ai-live.js') }}"></script>
 <script src="{{ url_for('static', filename='post-now.js') }}"></script>
 <script src="{{ url_for('static', filename='overlay-batch.js') }}"></script>
+<script src="{{ url_for('static', filename='automask.js') }}"></script>
 <script src="{{ url_for('static', filename='drag-select.js') }}"></script>
 <script src="{{ url_for('static', filename='lightbox.js') }}"></script>
 <script src="{{ url_for('static', filename='infinite-scroll.js') }}"></script>

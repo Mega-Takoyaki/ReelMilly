@@ -15,6 +15,7 @@
         <button type="button" class="menu-item" role="menuitem" id="wm-open">透かしを入れる…</button>
         {% endif %}
         <button type="button" class="menu-item" role="menuitem" data-open-mask>ぼかし・モザイク…（範囲を囲む）</button>
+        <button type="button" class="menu-item" role="menuitem" data-open-automask>センシティブ領域を自動で隠す…</button>
         <button type="button" class="menu-item" role="menuitem" data-open-overlay>テロップ・スタンプ（ロゴ）…</button>
       </div>
     </details>
@@ -81,6 +82,7 @@
             <button type="button" class="menu-item" role="menuitem" data-open-frame data-source="{{ r.key }}">静止画を取り出す…</button>
             {% endif %}
             <button type="button" class="menu-item" role="menuitem" data-open-mask data-source="{{ r.key }}" data-media="{{ r.media_type }}" data-from="{{ r.detail }}">ぼかし・モザイク…</button>
+            <button type="button" class="menu-item" role="menuitem" data-open-automask data-source="{{ r.key }}" data-media="{{ r.media_type }}">センシティブ領域を自動で隠す…</button>
             <button type="button" class="menu-item" role="menuitem" data-open-overlay data-source="{{ r.key }}" data-media="{{ r.media_type }}" data-from="{{ r.detail }}">テロップ・スタンプ…</button>
           </div>
         </details>

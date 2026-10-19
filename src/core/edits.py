@@ -11,13 +11,14 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core import ffmpeg, mask, overlay
+from core import autodetect, ffmpeg, mask, overlay
 
 MAX_EDITS_PER_ASSET = 10
 KINDS = ("trim", "mask", "frame", "overlay")
 FRAME_FORMATS = {"jpg": "JPG", "png": "PNG"}
 FRAME_SCALES = (1, 2, 3, 4)
 TRIM_MODES = {"accurate": "正確", "fast": "高速"}
+NOTHING_DETECTED = "センシティブな領域は、見つかりませんでした"  # 自動検出で何も無かったときの理由(加工版は作らず、通知だけ残す)
 
 
 class EditError(ValueError):
@@ -40,7 +41,10 @@ def summarize(kind: str, params: dict) -> str:
         text = f"トリム {fmt_time(params['start'])}～{fmt_time(params['end'])}"
         return text + ("（高速）" if params.get("mode") == "fast" else "")
     if kind == "mask":
-        return mask.summarize(params)
+        if params.get("auto") and not params.get("regions"):  # 自動検出の、検出前
+            return f"自動検出（{autodetect.describe(params['auto'])}）{mask.STYLES.get(params['style'], params['style'])}・強さ{params['strength']}"
+        text = mask.summarize(params)
+        return f"自動検出 {text}" if params.get("auto") else text
     if kind == "overlay":
         return overlay.summarize(params)
     if kind == "frame":
@@ -155,6 +159,28 @@ def enqueue_mask(conn: sqlite3.Connection, asset: dict, regions, style: str, str
     except mask.MaskError as exc:
         raise EditError(str(exc)) from exc
     params.update(source=source or "original", media=media)
+    if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
+        raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
+    conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
+    cur = conn.execute(
+        "INSERT INTO asset_edits (asset_id, kind, params, summary, status, created_at) VALUES (?, 'mask', ?, ?, 'queued', ?)",
+        (asset["id"], json.dumps(params), summarize("mask", params), _now()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def enqueue_automask(conn: sqlite3.Connection, asset: dict, options, style: str, strength, source: str = "original") -> int:
+    """センシティブ領域の自動検出→ぼかし・モザイクを、待機中として登録する(静止画・動画とも)。検出は、ワーカーが行う。"""
+    _path, media = source_info(conn, asset, source)
+    if not autodetect.available():
+        raise EditError('検出モデル(NudeNet)が入っていません。`pip install -e ".[detect]"`で入れてから、アプリを再起動してください')
+    try:
+        auto = autodetect.clean_options(options)
+        base = mask.clean_params([{"x": 0, "y": 0, "w": 1, "h": 1}], style, strength)  # 種類・強さの検証だけ(範囲は、検出後に入る)
+    except mask.MaskError as exc:
+        raise EditError(str(exc)) from exc
+    params = {"regions": [], "style": base["style"], "strength": base["strength"], "auto": auto, "source": source or "original", "media": media}
     if active_count(conn, asset["id"]) >= MAX_EDITS_PER_ASSET:
         raise EditError(f"1つの作品に登録できる加工版は{MAX_EDITS_PER_ASSET}件までです。不要なものを削除してください")
     conn.execute("DELETE FROM asset_edits WHERE asset_id = ? AND status = 'failed'", (asset["id"],))
@@ -286,6 +312,16 @@ def run_edit(conn: sqlite3.Connection, edit: dict, asset: dict | None) -> str | 
             suffix = ".mp4" if src_media == "video" else src.suffix
         else:
             raise ffmpeg.FfmpegError(f"未対応の編集です: {edit['kind']}")
+        if edit["kind"] == "mask" and p.get("auto") and not p.get("regions"):  # 自動検出: ここで範囲を決めて、記録する
+            regions = autodetect.detect_regions(src, src_media, p["auto"])
+            if not regions:
+                conn.execute("DELETE FROM asset_edits WHERE id = ?", (edit["id"],))
+                conn.commit()
+                return NOTHING_DETECTED
+            p["regions"] = regions
+            edit["summary"] = summarize("mask", p)
+            conn.execute("UPDATE asset_edits SET params = ?, summary = ? WHERE id = ?", (json.dumps(p), edit["summary"], edit["id"]))
+            conn.commit()
         filename = f"{asset['id']}-edit-{edit['id']}{suffix}"
         dest = edits_dir(asset) / filename
         if edit["kind"] == "trim":
@@ -334,7 +370,10 @@ def run_pending(conn: sqlite3.Connection, config, log=print) -> int:
         asset = conn.execute("SELECT * FROM assets WHERE id = ?", (edit["asset_id"],)).fetchone()
         error = run_edit(conn, edit, dict(asset) if asset else None)
         count += 1
-        if error:
+        if error == NOTHING_DETECTED:
+            log(f"[edit] {edit['asset_id']}: {edit['summary']} 検出なし")
+            notifications.add(conn, "edit", "センシティブな領域は見つかりませんでした", f"{edit['summary']}（加工版は作っていません）", "info", asset_id=edit["asset_id"])
+        elif error:
             log(f"[edit] {edit['asset_id']}: {edit['summary']} 失敗 ({error})")
             notifications.add(conn, "edit", "加工版の作成に失敗しました", f"{edit['summary']}: {error}", "error", asset_id=edit["asset_id"])
             log_event(config.paths.events_path, "edit_failed", asset_id=edit["asset_id"], error=error)

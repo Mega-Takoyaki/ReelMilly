@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
 
 from core import db, env_settings, generation
-from core import duplicates, edits, ffmpeg, fonts, notifications, overlay, stamps, storage, watermark
+from core import autodetect, duplicates, edits, ffmpeg, fonts, mask, notifications, overlay, stamps, storage, watermark
 from core import captions as captions_module
 from core import versions as versions_module
 from core.dimensions import read_dimensions
@@ -1167,6 +1167,48 @@ def create_app(config: Config) -> Flask:
                     queued += 1
                 except edits.EditError as exc:
                     failed.append({"id": asset_id, "error": str(exc)})
+        conn.close()
+        return jsonify({"queued": queued, "failed": failed})
+
+    # --- センシティブ領域の自動検出 → ぼかし・モザイクの加工版 ---
+
+    @app.route("/api/automask/options")
+    def api_automask_options():
+        return jsonify({
+            "available": autodetect.available(),
+            "parts": [{"id": p, "label": autodetect.PART_LABELS[p], "default": p in autodetect.DEFAULT_PARTS} for p in autodetect.PARTS],
+            "sensitivity": {"min": autodetect.SENSITIVITY_RANGE[0], "max": autodetect.SENSITIVITY_RANGE[1], "default": autodetect.DEFAULT_SENSITIVITY},
+            "padding": {"min": autodetect.PADDING_RANGE[0], "max": autodetect.PADDING_RANGE[1], "default": autodetect.DEFAULT_PADDING},
+            "interval": {"min": autodetect.INTERVAL_RANGE[0], "max": autodetect.INTERVAL_RANGE[1], "default": autodetect.DEFAULT_INTERVAL},
+            "strength": {"min": mask.STRENGTH_RANGE[0], "max": mask.STRENGTH_RANGE[1], "default": mask.DEFAULT_STRENGTH},
+        })
+
+    @app.route("/api/automask/apply-batch", methods=["POST"])
+    def api_automask_apply_batch():
+        """選んだ作品(画像・動画)で、センシティブ領域を自動検出して、ぼかし・モザイクをかけた加工版を作る(原本は変えない)。"""
+        payload = request.get_json(silent=True) or {}
+        ids = [i for i in (payload.get("asset_ids") or []) if isinstance(i, str)][:200]
+        if not ids:
+            return jsonify({"error": "作品を選んでください"}), 400
+        if not autodetect.available():
+            return jsonify({"error": ' 検出モデル(NudeNet)が入っていません。`pip install -e ".[detect]"`で入れてから、アプリを再起動してください'}), 503
+        require_storage()
+        source = payload.get("source") or "original"
+        conn = get_conn()
+        queued, failed = 0, []
+        for asset_id in ids:
+            asset = db.get_asset(conn, asset_id)
+            if asset is None or asset.get("deleted_at"):
+                failed.append({"id": asset_id, "error": "作品が見つかりません"})
+                continue
+            try:
+                _path, media = edits.source_info(conn, asset, source)
+                if media == "video" and not ffmpeg.available():
+                    raise edits.EditError("ffmpegが見つかりません")
+                edits.enqueue_automask(conn, asset, payload.get("options"), payload.get("style"), payload.get("strength", mask.DEFAULT_STRENGTH), source)
+                queued += 1
+            except edits.EditError as exc:
+                failed.append({"id": asset_id, "error": str(exc)})
         conn.close()
         return jsonify({"queued": queued, "failed": failed})
 

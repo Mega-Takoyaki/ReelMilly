@@ -1,0 +1,45 @@
+{% from "_info.html" import info %}
+{# センシティブ領域を自動検出して、ぼかし・モザイクの加工版を作るポップアップ(詳細画面と一覧の一括操作で共通)。automask.jsが動かす #}
+<dialog id="automask-dialog" class="wm-dialog edit-dialog">
+  <form method="dialog">
+    <header class="pn-head">
+      <h2>センシティブ領域を自動で隠す{{ info("このPC上のモデル(NudeNet)で、画像・動画の中の、露出した部位を探し、その範囲にぼかし・モザイクをかけた加工版を作ります。原本は変わりません。画像は外部に送りません。見つからなかった作品は、加工版を作らず、通知に残します。モデルは完全ではないので、できた加工版は、目で確かめてください(見逃しも、誤検出もあります)。動画は、一定間隔でコマを調べ、見つかった範囲を、最初から最後まで同じ位置にかけます(被写体が動く動画では、範囲が広くなります)。") }}</h2>
+      <button type="button" class="lightbox-close pn-close" id="am-close" aria-label="閉じる">&times;</button>
+    </header>
+
+    <p class="hint pn-error" id="am-missing" hidden>検出モデル(NudeNet)が入っていません。<code>pip install -e ".[detect]"</code> で入れて、アプリを再起動してください。</p>
+    <p class="hint" id="am-summary"></p>
+
+    <section class="pn-section">
+      <div class="pn-section-title">隠す部位{{ info("この部位で、露出しているものを探します。服などで隠れているものは、対象外です。") }}</div>
+      <div class="am-parts" id="am-parts"></div>
+    </section>
+
+    <section class="pn-section">
+      <div class="pn-section-title">検出{{ info("感度が高いほど、見逃しにくくなりますが、関係ない場所に、かかることが増えます。広げ幅は、見つけた範囲を、四方に広げて隠す割合です(検出した範囲の大きさに対する%)。") }}</div>
+      <label class="mk-strength">感度 <input type="range" id="am-sensitivity" min="1" max="10" value="7"> <b id="am-sensitivity-value">7</b></label>
+      <label class="mk-strength">広げ幅 <input type="range" id="am-padding" min="0" max="100" step="5" value="25"> <b id="am-padding-value">25</b>%</label>
+      <label class="mk-strength" id="am-interval-wrap">動画の検査間隔 <input type="number" id="am-interval" min="0.2" max="30" step="0.2" value="1" style="width: 5em;"> 秒{{ info("動画の中から、この間隔でコマを取り出して調べます(最大40コマ。長い動画は、間隔が自動で広がります)。短いほど見逃しにくく、時間がかかります。") }}</label>
+    </section>
+
+    <section class="pn-section">
+      <div class="pn-section-title">かけ方</div>
+      <div class="mk-options">
+        <div class="pn-seg" role="radiogroup" aria-label="種類">
+          <label><input type="radio" name="am-style" value="blur"><span>ぼかし</span></label>
+          <label><input type="radio" name="am-style" value="mosaic" checked><span>モザイク</span></label>
+        </div>
+        <label class="mk-strength">強さ <input type="range" id="am-strength" min="1" max="10" value="6"> <b id="am-strength-value">6</b></label>
+      </div>
+    </section>
+
+    <p class="hint pn-error" id="am-error" hidden></p>
+    <footer class="pn-foot">
+      <span class="hint">原本は変わりません</span>
+      <div class="confirm-actions">
+        <button type="button" class="btn-ghost" id="am-cancel">キャンセル</button>
+        <button type="button" class="btn-primary" id="am-run" disabled>検出して加工版を作る</button>
+      </div>
+    </footer>
+  </form>
+</dialog>

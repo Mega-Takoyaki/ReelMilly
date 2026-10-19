@@ -23,6 +23,10 @@ nsfw = [
     "torch",
     "timm",
 ]
+# detect: センシティブ領域の自動検出(NudeNet。ONNX・CPUで動く。画像は外部に送らない)→ぼかし・モザイクの加工版を作る
+detect = [
+    "nudenet",
+]
 # ai: 画像内容説明・Fanvue投稿文生成(ADR-0015)。既定プロバイダーのClaude API用SDK。
 # OpenAI APIを使う場合は別途 `pip install openai` する(README参照)
 ai = [

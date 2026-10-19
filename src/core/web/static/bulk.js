@@ -88,6 +88,13 @@
       if (window.openOverlayBatch) window.openOverlayBatch(Array.from(selected));
     });
   }
+  const automaskButton = document.getElementById("bulk-automask");
+  if (automaskButton) {
+    automaskButton.addEventListener("click", () => {
+      if (selected.size === 0) return;
+      if (window.openAutomask) window.openAutomask(Array.from(selected));
+    });
+  }
   const postNowButton = document.getElementById("bulk-post-now");
   if (postNowButton) {
     postNowButton.addEventListener("click", () => {

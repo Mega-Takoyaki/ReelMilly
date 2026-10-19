@@ -245,6 +245,8 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1            # 現�
 
 ### 動画の編集（切り出し）
 
+センシティブ領域(性器・肛門・胸・臀部)の自動検出とぼかし・モザイクの加工版: `pip install -e ".[detect]"`(NudeNet。ONNX・CPU・ローカルで動き、画像は外部に送らない)で有効になる。詳細画面の「＋加工版を作る」と、一覧の一括操作「自動で隠す…」から実行する(`core/autodetect.py`)。原本は変わらず、見つからなければ加工版は作らない。
+
 動画の作品の詳細画面で、前後を削除した別の動画（サブ動画）を作れます。元の動画は変えず、結果は作品のフォルダの`edits/`に置き、1作品に最大10件まで登録できます（`asset_edits`テーブル）。処理はffmpegで、`reelmilly watch`の編集用スレッドが、AI処理とは別に、登録されてすぐ（数秒以内に）行います。ffmpegは`winget install Gyan.FFmpeg`で入れます（`REELMILLY_FFMPEG`、PATH、wingetの場所の順に探します。`reelmilly doctor`で確認できます）。テロップ・ロゴ・モザイクは、今後同じ仕組みに足す予定です。
 
 ### 投稿スケジュールと「今すぐ投稿」
