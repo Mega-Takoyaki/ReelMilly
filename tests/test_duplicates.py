@@ -211,64 +211,70 @@ def test_dialog_is_available_on_every_page_and_upload_opens_it(env):
     assert "openDuplicates" in client.get("/static/notifications.js").get_data(as_text=True)  # 通知の「確認する」から開く
 
 
-def _gradient_png(size, *, fmt="PNG", invert=False) -> bytes:
+def _pattern(seed, size=(60, 40), meta=None, fmt="PNG") -> bytes:
     import numpy as np
+    from PIL import PngImagePlugin
 
-    w, h = size
-    xs = np.linspace(0, 255, w)[None, :].repeat(h, axis=0)
-    ys = np.linspace(0, 255, h)[:, None].repeat(w, axis=1)
-    arr = ((xs * 0.6 + ys * 0.4) * (np.sin(xs / 20) * 0.3 + 0.7)).astype("uint8")
-    if invert:  # 別の絵: 低解像度の乱数模様
-        arr = np.kron(np.random.default_rng(1).integers(0, 256, (12, 16)), np.ones((h // 12 + 1, w // 16 + 1)))[:h, :w].astype("uint8")
+    arr = np.random.default_rng(seed).integers(0, 256, (size[1], size[0], 3)).astype("uint8")
     buf = io.BytesIO()
-    Image.fromarray(arr).convert("RGB").save(buf, format=fmt)
+    info = PngImagePlugin.PngInfo()
+    if meta:
+        info.add_text("note", meta)
+    Image.fromarray(arr).save(buf, format=fmt, pnginfo=info if fmt == "PNG" else None, **({"quality": 70} if fmt == "JPEG" else {}))
     return buf.getvalue()
 
 
-def test_visually_same_image_is_grouped_even_if_reencoded_resized_and_renamed(env):
+def test_same_pixels_with_different_bytes_and_names_are_duplicates(env):
     config, conn = env
-    (config.paths.inbox / "original.png").write_bytes(_gradient_png((200, 150)))
-    (config.paths.inbox / "totally-different-name.jpg").write_bytes(_gradient_png((100, 75), fmt="JPEG"))
-    (config.paths.inbox / "other.png").write_bytes(_gradient_png((200, 150), invert=True))
+    (config.paths.inbox / "original.png").write_bytes(_pattern(1))
+    (config.paths.inbox / "totally-different-name.png").write_bytes(_pattern(1, meta="re-saved with metadata"))
+    (config.paths.inbox / "similar-but-other.png").write_bytes(_pattern(2))
     ingest_inbox(config, conn, defer_analysis=True)
-    assert duplicates.duplicate_groups(conn) == []  # 指紋が未計算の間は、中身が違えば検出されない
+    assert duplicates.duplicate_groups(conn) == []  # 画素の指紋が未計算の間は、中身が違えば検出されない
     out = duplicates.scan(conn)
-    assert out["visual"] == 3
+    assert out["pixels"] == 3
     groups = duplicates.duplicate_groups(conn)
-    assert len(groups) == 1 and groups[0]["similar"] and groups[0]["hash"].startswith("v:")
-    assert len(groups[0]["assets"]) == 2
+    assert len(groups) == 1 and groups[0]["hash"].startswith("p:")
+    assert {a["original_name"] for a in groups[0]["assets"]} == {"original.png", "totally-different-name.png"}
 
 
-def test_solid_color_images_are_not_treated_as_similar(env):
+def test_similar_but_not_identical_images_are_not_duplicates(env):
     config, conn = env
-    (config.paths.inbox / "a.png").write_bytes(png_bytes((255, 0, 0)))
-    (config.paths.inbox / "b.png").write_bytes(png_bytes((0, 0, 255)))
+    import numpy as np
+
+    base = np.random.default_rng(3).integers(0, 256, (40, 60, 3)).astype("uint8")
+    near = base.copy()
+    near[0, 0] = 0  # 1画素だけ違う
+    for name, arr in (("a.png", base), ("b.png", near)):
+        buf = io.BytesIO()
+        Image.fromarray(arr).save(buf, format="PNG")
+        (config.paths.inbox / name).write_bytes(buf.getvalue())
     ingest_inbox(config, conn, defer_analysis=True)
     duplicates.scan(conn)
     assert duplicates.duplicate_groups(conn) == []
 
 
-def test_resolve_similar_group_trashes_others_and_keep_all_is_remembered(env):
+def test_resolve_pixel_group_trashes_others_and_keep_all_is_remembered(env):
     config, conn = env
-    (config.paths.inbox / "a.png").write_bytes(_gradient_png((200, 150)))
-    (config.paths.inbox / "b.jpg").write_bytes(_gradient_png((100, 75), fmt="JPEG"))
+    (config.paths.inbox / "a.png").write_bytes(_pattern(1))
+    (config.paths.inbox / "b.png").write_bytes(_pattern(1, meta="x"))
     ingest_inbox(config, conn, defer_analysis=True)
     duplicates.scan(conn)
     g = duplicates.duplicate_groups(conn)[0]
     ids = [a["id"] for a in g["assets"]]
-    out = duplicates.resolve_groups(conn, [{"hash": g["hash"], "ids": ids, "action": "keep_all"}])
+    out = duplicates.resolve_groups(conn, [{"hash": g["hash"], "action": "keep_all"}])
     assert out["kept_all"] == 1 and duplicates.duplicate_groups(conn) == []
     conn.execute("DELETE FROM dup_ignores")
     conn.commit()
-    out = duplicates.resolve_groups(conn, [{"hash": g["hash"], "ids": ids, "action": "trash_others", "keep_id": ids[0]}])
+    out = duplicates.resolve_groups(conn, [{"hash": g["hash"], "action": "trash_others", "keep_id": ids[0]}])
     assert out["trashed"] == 1 and duplicates.duplicate_groups(conn) == []
 
 
 def test_scan_api(env):
     config, conn = env
-    (config.paths.inbox / "a.png").write_bytes(_gradient_png((200, 150)))
-    (config.paths.inbox / "b.jpg").write_bytes(_gradient_png((100, 75), fmt="JPEG"))
+    (config.paths.inbox / "a.png").write_bytes(_pattern(1))
+    (config.paths.inbox / "b.png").write_bytes(_pattern(1, meta="x"))
     ingest_inbox(config, conn, defer_analysis=True)
     client = create_app(config).test_client()
     assert client.post("/api/duplicates/scan").get_json()["groups"] == 1
-    assert client.get("/api/duplicates").get_json()["groups"][0]["similar"] is True
+    assert len(client.get("/api/duplicates").get_json()["groups"]) == 1

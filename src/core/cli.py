@@ -161,14 +161,14 @@ def _notify_duplicates(config: Config) -> None:
     try:
         init_db(conn)
         duplicates.backfill_hashes(conn)
-        duplicates.backfill_visual_hashes(conn)
+        duplicates.backfill_pixel_hashes(conn)
         duplicates.notify_new_duplicates(conn)
     finally:
         conn.close()
 
 
 def cmd_duplicates(config: Config) -> int:
-    """重複(中身が同じ・見た目がそっくり)の検出を、いま実行する。"""
+    """重複(同じ画像・動画)の検出を、いま実行する。"""
     from core import duplicates
 
     conn = get_connection(config.paths.db_path)
@@ -177,7 +177,7 @@ def cmd_duplicates(config: Config) -> int:
         out = duplicates.scan(conn)
     finally:
         conn.close()
-    print(f"重複の検出: 指紋を補った作品 {out['visual']}件、重複グループ {out['groups']}組")
+    print(f"重複の検出: 画素の指紋を補った作品 {out['pixels']}件、重複グループ {out['groups']}組")
     return 0
 
 
@@ -561,7 +561,7 @@ def cmd_web(config: Config) -> int:
             try:
                 backfill_dimensions(bg)
                 duplicates.backfill_hashes(bg)  # 旧バージョンで取り込んだ作品の、中身のハッシュ(重複の検出用)
-                duplicates.backfill_visual_hashes(bg)  # 見た目の指紋(再エンコード・縮小した重複の検出用)
+                duplicates.backfill_pixel_hashes(bg)  # 画素の指紋(保存し直した同じ画像の検出用)
                 duplicates.notify_new_duplicates(bg)
             finally:
                 bg.close()
@@ -592,7 +592,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "analyze", help="analyzing状態のアセットにNSFW自動仕分け・内容説明取得を再試行する"
     )
-    subparsers.add_parser("duplicates", help="重複(中身が同じ・見た目がそっくり)の検出を、いま実行する")
+    subparsers.add_parser("duplicates", help="重複(同じ画像・動画)の検出を、いま実行する")
     subparsers.add_parser("web", help="本体UI(ローカルWebアプリ)を起動する")
     run_parser = subparsers.add_parser("run", help="投稿ジョブを実行する")
     run_parser.add_argument("job", choices=["drop"], help="実行するジョブ名")

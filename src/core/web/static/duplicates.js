@@ -78,9 +78,8 @@
         const mode = el("div", { class: "dup-choices" },
           radio(`mode-${i}`, "trash_others", "選んだ1つ以外を、ごみ箱へ移す", true),
           radio(`mode-${i}`, "keep_all", "すべて残す（重複と承知している）"));
-        const label = g.similar ? [el("div", { class: "hint" }, "見た目が近いもの（中身は完全には一致しません）")] : [];
-        return el("li", { class: "dup-item", dataset: { hash: g.hash, ids: JSON.stringify(g.assets.map((a) => a.id)) } },
-          ...label, el("div", { class: "dup-members" }, ...members), mode);
+        return el("li", { class: "dup-item", dataset: { hash: g.hash } },
+          el("div", { class: "dup-members" }, ...members), mode);
       })
     );
     $("dup-groups").hidden = data.groups.length === 0;
@@ -127,7 +126,6 @@
     }));
     const groups = Array.from($("dup-groups-list").children).map((li, i) => ({
       hash: li.dataset.hash,
-      ids: JSON.parse(li.dataset.ids || "[]"),
       action: (li.querySelector(`input[name="mode-${i}"]:checked`) || {}).value || "keep_all",
       keep_id: (li.querySelector(`input[name="keep-${i}"]:checked`) || {}).value,
     }));

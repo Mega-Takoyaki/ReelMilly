@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS assets (
     fanvue_caption_draft TEXT,
     analysis_error TEXT,
     content_hash TEXT,  -- ファイルの中身のSHA-256(重複の検出用)
-    visual_hash TEXT,   -- 見た目の指紋(dHash。動画は3コマ分をつなぐ)。再エンコード・縮小しても近い値になる。空=未計算
+    pixel_hash TEXT,    -- 画像の、デコードした画素のSHA-256(保存し直しても同じ絵なら同じ値)。動画は空。NULL=未計算
     width INTEGER,   -- 画像・動画の幅と高さ(一覧の「フル」表示で、縦横比どおりの枠を先に確保する)
     height INTEGER,
     is_broken INTEGER NOT NULL DEFAULT 0,  -- 破綻画像(AI生成特有の崩れ。キメラ)。既定の一覧・投稿から除外する
