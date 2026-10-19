@@ -1,5 +1,5 @@
 // 重複の確認ダイアログ: アップロードしようとした重複(保留中)と、登録済みの重複グループの扱いを、まとめて決める。
-// - window.openDuplicates() で開く(アップロード直後、通知のボタン、一覧のベル)
+// - window.openDuplicates() で開く(アップロード直後、通知のボタン、設定の「重複」タブ)
 (function () {
   const dialog = document.getElementById("dup-dialog");
   if (!dialog) return;
@@ -105,6 +105,9 @@
     }
     if (!dialog.open) dialog.showModal();
   };
+
+  const openBtn = document.getElementById("dup-open");  // 設定画面の「重複」タブのボタン
+  if (openBtn) openBtn.addEventListener("click", () => window.openDuplicates());
 
   // --- まとめて選ぶ ---
   function setAll(selector, value) {
