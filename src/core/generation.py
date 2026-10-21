@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import os
+import threading
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -381,9 +382,12 @@ class LocalVlmGenerator:
 
     def __init__(self, model_id: str = DEFAULT_LOCAL_VLM_MODEL, quantize: str | None = None):
         """`quantize="int8"`で、重みをint8に圧縮して動かす(CPU向け。メモリが約1/4。大きなモデルを、この環境で動かすため)。"""
+        import threading
+
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
+        self._lock = threading.Lock()
         self._torch = torch
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self._dtype = torch.float16 if self._device == "cuda" else torch.float32
@@ -406,6 +410,10 @@ class LocalVlmGenerator:
         self._model.eval()
 
     def _generate(self, messages: list, max_new_tokens: int = 256) -> str:
+        with self._lock:  # 使い回すモデルを、同時に動かさない(順番に処理する)
+            return self._generate_locked(messages, max_new_tokens)
+
+    def _generate_locked(self, messages: list, max_new_tokens: int) -> str:
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -485,7 +493,7 @@ class LocalVlmGenerator:
             {"role": "user", "content": [{"type": "text", "text": TRANSLATE_USER_PREFIX + text}]},
         ]
         try:
-            return self._generate(messages, max_new_tokens=768)
+            return self._generate(messages, max_new_tokens=max(96, min(768, len(text) * 2)))
         except Exception as exc:  # noqa: BLE001
             raise GenerationError(str(exc)) from exc
 
@@ -576,6 +584,39 @@ def _create_for(provider: str, model: str):
 
 _CLOUD_PROVIDERS = ("claude", "openai")
 
+# 自前ホスト型VLMは、読み込みに数十秒かかる(約2Bで38秒)。投稿画面の「英訳」「AI生成」で、押すたびに読み込み直さないよう、
+# Webのプロセスの中で、使い終わってから一定時間は、読み込み済みのものを使い回す(メモリを抱え続けないよう、使われなければ手放す)
+LOCAL_IDLE_SECONDS = 600
+_local_cache: dict = {"model": None, "generator": None, "timer": None}
+_local_lock = threading.Lock()
+
+
+def _release_local() -> None:
+    with _local_lock:
+        _local_cache.update(model=None, generator=None, timer=None)
+
+
+def _create_cached(provider: str, model: str):
+    """`_create_for`と同じ。自前ホスト型VLMだけ、読み込み済みを使い回す。"""
+    if provider != "local":
+        return _create_for(provider, model)
+    key = model or DEFAULT_LOCAL_VLM_MODEL
+    with _local_lock:
+        if _local_cache["generator"] is not None and _local_cache["model"] == key:
+            generator = _local_cache["generator"]
+        else:
+            generator = _create_for(provider, model)
+            if not isinstance(generator, LocalVlmGenerator):  # 作れなかった(None)・差し替え(テスト)は、保持しない
+                return generator
+            _local_cache.update(model=key, generator=generator)
+        if _local_cache["timer"] is not None:
+            _local_cache["timer"].cancel()
+        timer = threading.Timer(LOCAL_IDLE_SECONDS, _release_local)
+        timer.daemon = True
+        timer.start()
+        _local_cache["timer"] = timer
+        return generator
+
 
 def try_create_caption_generator(conn: sqlite3.Connection, ratings: list[str | None] | None = None):
     """投稿文の生成に使うGeneratorを返す(設定の「投稿文の生成に使うモデル」)。
@@ -596,8 +637,8 @@ def try_create_caption_generator(conn: sqlite3.Connection, ratings: list[str | N
         local_model = (
             settings_module.get_generation_model(conn) if settings_module.get_generation_provider(conn) == "local" else ""
         )
-        return _create_for("local", local_model)  # 使えなければNone(sfwでない作品を、クラウドへは送らない)
-    return _create_for(provider, model)
+        return _create_cached("local", local_model)  # 使えなければNone(sfwでない作品を、クラウドへは送らない)
+    return _create_cached(provider, model)
 
 
 def try_create_generator(conn: sqlite3.Connection):

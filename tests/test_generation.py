@@ -185,6 +185,7 @@ def _make_local_generator():
     """
     generator = generation.LocalVlmGenerator.__new__(generation.LocalVlmGenerator)
     generator._device = "cpu"
+    generator._lock = __import__("threading").Lock()
     generator._torch = MagicMock()
 
     fake_input_ids = MagicMock()

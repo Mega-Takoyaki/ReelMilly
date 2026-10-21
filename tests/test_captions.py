@@ -266,3 +266,23 @@ def test_translate_api(env):
         assert res.status_code == 200 and res.get_json()["text"] == "Hi\n---\nこんにちは"
         assert client.post("/api/captions/translate", json={"asset_ids": ["nope"], "text": "x"}).status_code == 404
         assert client.post("/api/captions/translate", json={"asset_ids": ["a1"], "text": ""}).status_code == 422
+
+
+def test_local_vlm_is_reused_until_idle_release(env, monkeypatch):
+    """読み込みに数十秒かかる自前VLMは、使い回す(押すたびに読み込み直さない)。使われなければ手放す。"""
+    config, conn = env
+    created = []
+
+    class FakeLocal(generation.LocalVlmGenerator):
+        def __init__(self, model_id):
+            created.append(model_id)
+
+    monkeypatch.setattr(generation, "_create_for", lambda provider, model: FakeLocal(model or "m"))
+    generation._release_local()
+    first = generation._create_cached("local", "m")
+    assert generation._create_cached("local", "m") is first and created == ["m"]
+    assert generation._create_cached("local", "other") is not first and created == ["m", "other"]  # モデルが違えば、作り直す
+    generation._release_local()
+    assert generation._create_cached("local", "other") is not None and created == ["m", "other", "other"]
+    assert generation._create_cached("claude", "x") is not None  # クラウドは、保持しない
+    generation._release_local()
