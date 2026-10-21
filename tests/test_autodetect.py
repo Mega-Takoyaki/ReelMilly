@@ -137,3 +137,35 @@ def test_large_frames_are_detected_at_full_and_reduced_size_and_combined():
         boxes = autodetect._boxes_in(np.zeros((1008, 1792, 3), np.uint8), {"ANUS_EXPOSED"}, 0.3)
     assert len(seen) == 2 and seen[0] == (1008, 1792) and max(seen[1]) == autodetect.DETECT_MAX_SIDE  # 縮小のほうだけで見つかっても、拾う
     assert len(boxes) == 1
+
+
+def test_automask_defaults_can_be_saved_and_feed_the_dialog_options(env):
+    from core import settings
+
+    config, conn, client, tmp_path = env
+    d = settings.get_automask_defaults(conn)
+    assert d["parts"] == ["genitals", "anus", "breasts", "buttocks"] and d["style"] == "mosaic" and d["strength"] == 6
+    settings.set_automask_defaults(conn, ["genitals"], 9, 40, 2, "blur", 3)
+    d = settings.get_automask_defaults(conn)
+    assert d["parts"] == ["genitals"] and d["sensitivity"] == 9 and d["padding"] == 40 and d["interval"] == 2.0 and d["style"] == "blur" and d["strength"] == 3
+    with pytest.raises(mask.MaskError):  # 不正な値は、保存しない
+        settings.set_automask_defaults(conn, [], 9, 40, 2, "blur", 3)
+    assert settings.get_automask_defaults(conn)["parts"] == ["genitals"]
+    opts = client.get("/api/automask/options").get_json()
+    assert opts["style"] == "blur" and opts["strength"]["default"] == 3 and opts["sensitivity"]["default"] == 9
+    assert [p["id"] for p in opts["parts"] if p["default"]] == ["genitals"]
+
+
+def test_settings_form_saves_automask_and_translate_defaults(env):
+    from core import settings
+
+    config, conn, client, tmp_path = env
+    res = client.post("/settings", data={
+        "am_part": ["breasts", "buttocks"], "am_sensitivity": "4", "am_padding": "10", "am_interval": "3", "am_style": "blur", "am_strength": "8",
+        "translate_mode": "replace", "translate_order": "original_first",
+    })
+    assert res.status_code in (200, 302)
+    conn2 = db.get_connection(config.paths.db_path)
+    d = settings.get_automask_defaults(conn2)
+    assert d["parts"] == ["breasts", "buttocks"] and d["style"] == "blur" and d["strength"] == 8 and d["sensitivity"] == 4
+    assert settings.get_translate_settings(conn2) == {"mode": "replace", "order": "original_first"}

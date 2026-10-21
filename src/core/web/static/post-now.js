@@ -214,6 +214,35 @@
       button.classList.remove("is-busy");
     }
   });
+  // 英訳(設定の「投稿文の英訳」に従って、追記または置き換え)。訳す前の文は、「戻す」で復元できる
+  $("pn-translate").addEventListener("click", async () => {
+    const button = $("pn-translate");
+    showError("");
+    if (!$("pn-text").value.trim()) { showError("訳す投稿文を入れてください"); return; }
+    button.disabled = true;
+    button.classList.add("is-busy");
+    button.textContent = "英訳中…";
+    try {
+      const res = await fetch("/api/captions/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_ids: assets.map((a) => a.asset_id), text: $("pn-text").value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `英訳できませんでした (${res.status})`);
+      beforeGenerate = $("pn-text").value;
+      $("pn-text").value = data.text;
+      $("pn-undo").hidden = false;
+      applyChannel();
+      window.showToast("英訳しました", "success");
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-busy");
+      button.textContent = "英訳";
+    }
+  });
   $("pn-undo").addEventListener("click", () => {
     if (beforeGenerate !== null) $("pn-text").value = beforeGenerate;
     $("pn-undo").hidden = true;

@@ -832,6 +832,27 @@ def create_app(config: Config) -> Flask:
         conn.close()
         return jsonify({"text": result.text, "attempts": result.attempts})
 
+    @app.route("/api/captions/translate", methods=["POST"])
+    def api_translate_caption():
+        """投稿文を英訳して、設定(追記/置換・英文を上/下)に従って並べた文を返す。作品は、送ってよい(クラウドのAIを使えるか)の判断に使う。"""
+        from core import captions
+
+        payload = request.get_json(silent=True) or {}
+        text = str(payload.get("text") or "")
+        ids = [str(i) for i in (payload.get("asset_ids") or [])]
+        conn = get_conn()
+        assets = [a for a in (db.get_asset(conn, i) for i in ids) if a]
+        if len(assets) != len(ids):
+            conn.close()
+            return jsonify({"error": "見つからない作品が含まれています"}), 404
+        try:
+            result = captions.translate(conn, assets, text)
+        except captions.CaptionError as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 422
+        conn.close()
+        return jsonify(result)
+
     @app.route("/api/post-targets")
     def api_post_targets():
         """今すぐ投稿で選べる投稿先(連携済みかどうか)。"""
@@ -1174,13 +1195,17 @@ def create_app(config: Config) -> Flask:
 
     @app.route("/api/automask/options")
     def api_automask_options():
+        conn = get_conn()
+        d = settings_module.get_automask_defaults(conn)  # 設定画面で決めた既定値
+        conn.close()
         return jsonify({
             "available": autodetect.available(),
-            "parts": [{"id": p, "label": autodetect.PART_LABELS[p], "default": p in autodetect.DEFAULT_PARTS} for p in autodetect.PARTS],
-            "sensitivity": {"min": autodetect.SENSITIVITY_RANGE[0], "max": autodetect.SENSITIVITY_RANGE[1], "default": autodetect.DEFAULT_SENSITIVITY},
-            "padding": {"min": autodetect.PADDING_RANGE[0], "max": autodetect.PADDING_RANGE[1], "default": autodetect.DEFAULT_PADDING},
-            "interval": {"min": autodetect.INTERVAL_RANGE[0], "max": autodetect.INTERVAL_RANGE[1], "default": autodetect.DEFAULT_INTERVAL},
-            "strength": {"min": mask.STRENGTH_RANGE[0], "max": mask.STRENGTH_RANGE[1], "default": mask.DEFAULT_STRENGTH},
+            "parts": [{"id": p, "label": autodetect.PART_LABELS[p], "default": p in d["parts"]} for p in autodetect.PARTS],
+            "sensitivity": {"min": autodetect.SENSITIVITY_RANGE[0], "max": autodetect.SENSITIVITY_RANGE[1], "default": d["sensitivity"]},
+            "padding": {"min": autodetect.PADDING_RANGE[0], "max": autodetect.PADDING_RANGE[1], "default": d["padding"]},
+            "interval": {"min": autodetect.INTERVAL_RANGE[0], "max": autodetect.INTERVAL_RANGE[1], "default": d["interval"]},
+            "strength": {"min": mask.STRENGTH_RANGE[0], "max": mask.STRENGTH_RANGE[1], "default": d["strength"]},
+            "style": d["style"],
         })
 
     @app.route("/api/automask/preview", methods=["POST"])
@@ -1541,6 +1566,16 @@ def create_app(config: Config) -> Flask:
                 )
             except watermark.WatermarkError:
                 pass  # 入力が不正なら、既存の既定値を変えない
+            if "am_style" in request.form:  # 自動検出の既定値(画面に欄があるときだけ)
+                try:
+                    settings_module.set_automask_defaults(
+                        conn, request.form.getlist("am_part"), request.form.get("am_sensitivity"), request.form.get("am_padding"),
+                        request.form.get("am_interval"), request.form.get("am_style"), request.form.get("am_strength"),
+                    )
+                except mask.MaskError:
+                    pass  # 入力が不正なら、既存の既定値を変えない
+            if "translate_mode" in request.form:
+                settings_module.set_translate_settings(conn, request.form.get("translate_mode"), request.form.get("translate_order"))
             env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
             env_settings.update_connection_values(config.env_path, env_updates)
             conn.close()
@@ -1579,9 +1614,17 @@ def create_app(config: Config) -> Flask:
         x_store = XTokenStore(config.paths.state_dir / "x_oauth_tokens.json")
         x_connected = x_store.load() is not None
         x_needs_reconnect = x_store.needs_reconnect()
+        _conn = get_conn()
+        am_defaults = settings_module.get_automask_defaults(_conn)
+        _conn.close()
 
         return render_template(
             "settings.html",
+            am_defaults=am_defaults,
+            am_parts=[(p, autodetect.PART_LABELS[p]) for p in autodetect.PARTS],
+            am_ranges={"sensitivity": autodetect.SENSITIVITY_RANGE, "padding": autodetect.PADDING_RANGE, "interval": autodetect.INTERVAL_RANGE, "strength": mask.STRENGTH_RANGE},
+            translate_modes=settings_module.TRANSLATE_MODES,
+            translate_orders=settings_module.TRANSLATE_ORDERS,
             settings=current_settings,
             model_choices=model_choices,
             schedules=schedules,

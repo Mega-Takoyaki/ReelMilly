@@ -56,6 +56,7 @@ def test_get_all_settings_returns_dict(conn):
         "caption_provider": "same",  # 投稿文の生成に使うAI: 既定は、画像内容説明と同じ
         "caption_model": "",
         "auto_ingest": False,
+        "translate": {"mode": "append", "order": "english_first"},  # 英訳: 既定は、追記・英文を上
         "post_schedule": {"enabled": False, "entries": []},  # 未設定のときの既定: 自動投稿はオフ
     }
 

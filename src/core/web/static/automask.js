@@ -79,6 +79,13 @@
   async function load() {
     if (loaded) return;
     loaded = await (await fetch("/api/automask/options")).json();
+    const setRange = (id, outId, v) => { $(id).value = v; $(outId).textContent = v; };
+    setRange("am-sensitivity", "am-sensitivity-value", loaded.sensitivity.default);
+    setRange("am-padding", "am-padding-value", loaded.padding.default);
+    setRange("am-strength", "am-strength-value", loaded.strength.default);
+    $("am-interval").value = loaded.interval.default;
+    const radio = dialog.querySelector(`input[name="am-style"][value="${loaded.style}"]`);
+    if (radio) radio.checked = true;
     $("am-parts").replaceChildren(...loaded.parts.map((p) => {
       const input = Object.assign(document.createElement("input"), { type: "checkbox", value: p.id, checked: p.default });
       input.addEventListener("change", () => { refresh(); schedulePreview(); });

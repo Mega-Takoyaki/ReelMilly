@@ -41,6 +41,9 @@ _TAG_LINE_PATTERN = re.compile(r"タグ[:：]\s*(.+)")
 _DESCRIPTION_LINE_PATTERN = re.compile(r"説明[:：]\s*(.+)", re.DOTALL)
 
 
+TRANSLATE_USER_PREFIX = "以下の投稿文を翻訳してください。\n\n"
+
+
 class GenerationError(Exception):
     """画像解析・投稿文生成の呼び出しに失敗したことを示す。"""
 
@@ -212,6 +215,18 @@ class ClaudeGenerator:
             raise GenerationError(str(exc)) from exc
         return _extract_text(response)
 
+    def translate(self, text: str, system_prompt: str) -> str:
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=[{"role": "user", "content": TRANSLATE_USER_PREFIX + text}],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GenerationError(str(exc)) from exc
+        return _extract_text(response)
+
 
 def _extract_text(response) -> str:
     parts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
@@ -285,6 +300,19 @@ class OpenAiGenerator:
                         "role": "user",
                         "content": f"以下は画像の内容説明です。これをもとに投稿文を作成してください。\n\n{content_description}",
                     },
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GenerationError(str(exc)) from exc
+        return (response.choices[0].message.content or "").strip()
+
+    def translate(self, text: str, system_prompt: str) -> str:
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": TRANSLATE_USER_PREFIX + text},
                 ],
             )
         except Exception as exc:  # noqa: BLE001
@@ -448,6 +476,16 @@ class LocalVlmGenerator:
         ]
         try:
             return self._generate(messages)
+        except Exception as exc:  # noqa: BLE001
+            raise GenerationError(str(exc)) from exc
+
+    def translate(self, text: str, system_prompt: str) -> str:
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+            {"role": "user", "content": [{"type": "text", "text": TRANSLATE_USER_PREFIX + text}]},
+        ]
+        try:
+            return self._generate(messages, max_new_tokens=768)
         except Exception as exc:  # noqa: BLE001
             raise GenerationError(str(exc)) from exc
 

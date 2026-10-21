@@ -270,6 +270,7 @@ def get_all_settings(conn: sqlite3.Connection) -> dict:
         "caption_provider": get_caption_provider(conn),
         "caption_model": get_caption_model(conn),
         "auto_ingest": get_auto_ingest(conn),
+        "translate": get_translate_settings(conn),
         "post_schedule": get_post_schedule(conn) or {"enabled": False, "entries": []},
     }
 
@@ -427,6 +428,58 @@ def tag_category_instructions(conn: sqlite3.Connection) -> str:
 
 
 # --- 透かしの既定値(設定画面で編集。ダイアログの初期値になる) ----------------------
+
+def get_automask_defaults(conn: sqlite3.Connection) -> dict:
+    """センシティブ領域の自動検出ダイアログの既定値(部位・感度・広げ幅・動画の検査間隔・種類・強さ)。設定画面で編集する。"""
+    import json
+
+    from core import autodetect, mask
+
+    result = {**autodetect.clean_options(None), "style": autodetect.DEFAULT_STYLE, "strength": autodetect.DEFAULT_STRENGTH}
+    raw = db.get_setting(conn, "automask_defaults")
+    if raw:
+        try:
+            saved = json.loads(raw)
+            result.update(autodetect.clean_options({**result, **saved}))
+            result.update(mask.clean_params([{"x": 0, "y": 0, "w": 1, "h": 1}], saved.get("style", result["style"]), saved.get("strength", result["strength"])))
+            result.pop("regions", None)
+        except (ValueError, TypeError, mask.MaskError):
+            pass  # 壊れた保存値は、既定に戻す
+    return result
+
+
+def set_automask_defaults(conn: sqlite3.Connection, parts, sensitivity, padding, interval, style, strength) -> None:
+    """検証に通らない値は保存せず、例外(MaskError)を送出する。"""
+    import json
+
+    from core import autodetect, mask
+
+    options = autodetect.clean_options({"parts": list(parts or []), "sensitivity": sensitivity, "padding": padding, "interval": interval})
+    base = mask.clean_params([{"x": 0, "y": 0, "w": 1, "h": 1}], style, strength)
+    db.set_setting(conn, "automask_defaults", json.dumps({**options, "style": base["style"], "strength": base["strength"]}, ensure_ascii=False))
+
+
+# --- 投稿文の英訳(追記/置換、英文を上/下) ----------------------------------------------
+
+TRANSLATE_MODES = {"append": "追記する", "replace": "置き換える"}
+TRANSLATE_ORDERS = {"english_first": "英文を上、原文を下に置く", "original_first": "原文を上、英文を下に置く"}
+
+
+def get_translate_settings(conn: sqlite3.Connection) -> dict:
+    mode = db.get_setting(conn, "translate_mode")
+    order = db.get_setting(conn, "translate_order")
+    return {
+        "mode": mode if mode in TRANSLATE_MODES else "append",
+        "order": order if order in TRANSLATE_ORDERS else "english_first",
+    }
+
+
+def set_translate_settings(conn: sqlite3.Connection, mode, order) -> None:
+    if mode in TRANSLATE_MODES:
+        db.set_setting(conn, "translate_mode", mode)
+    if order in TRANSLATE_ORDERS:
+        db.set_setting(conn, "translate_order", order)
+
 
 def get_watermark_defaults(conn: sqlite3.Connection) -> dict:
     import json

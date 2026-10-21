@@ -58,6 +58,7 @@
     <button type="button" role="tab" data-tab="sec-dups">重複</button>
     <button type="button" role="tab" data-tab="sec-storage">ストレージ</button>
     <button type="button" role="tab" data-tab="sec-wm">透かし</button>
+    <button type="button" role="tab" data-tab="sec-detect">センシティブ検出</button>
     <button type="button" role="tab" data-tab="sec-watch">自動取り込み</button>
   </nav>
 
@@ -220,6 +221,20 @@
           {% for provider, names in caption_model_choices.items() %}{% for name in names %}<option value="{{ name }}">{{ provider }}</option>{% endfor %}{% endfor %}
         </datalist>
       </label>
+
+      <fieldset class="translate-settings">
+        <legend>投稿文の英訳{{ info("投稿画面の投稿文の欄にある「英訳」ボタンで、投稿文を英語に訳します。追記は、英文と原文を、水平線(---)をはさんで並べます。置き換えは、原文を英文に差し替えます。訳には、上の「投稿文の生成に使うAI」を使います(承認済みのsfwでない作品は、クラウドのAIへは送らず、自前ホスト型VLMで訳します)。") }}</legend>
+        <label>訳したあと{{ info("追記の場合は、英文→水平線(---)→原文(または、原文→---→英文)の順に、改行で区切って並べます。") }}
+          <select name="translate_mode">
+            {% for key, label in translate_modes.items() %}<option value="{{ key }}" {% if settings.translate.mode == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>追記するときの並び
+          <select name="translate_order">
+            {% for key, label in translate_orders.items() %}<option value="{{ key }}" {% if settings.translate.order == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+      </fieldset>
 
       <label>Fanvue投稿文生成のシステムプロンプト{{ info("画像の説明文をもとに、Fanvueの投稿文を作るときにAIへ渡す指示文です。文体・長さ・絵文字の量などをここで調整できます。") }}
         <textarea name="caption_system_prompt" rows="4">{{ settings.caption_system_prompt }}</textarea>
@@ -485,6 +500,35 @@
         <legend>既定の挿入位置（複数選べます）{{ info("5x5の格子から、透かしを入れる場所を選びます。複数選ぶと、それぞれの場所に入ります。「全面に繰り返す」は画像全体に並べて入れます。") }}</legend>
         {{ position_picker("wm_position", wm_defaults.positions, wm_grid, wm_positions) }}
       </fieldset>
+    </div>
+  </section>
+
+  <section class="card settings-tab" id="sec-detect">
+    <h2 style="margin-top: 0;">センシティブ領域の自動検出の既定値{{ info("「センシティブ領域を自動で隠す」のダイアログを開いたときの初期値です。ダイアログで変えた値は、その画面を開いている間だけ引き継がれ、画面を開き直すと、ここで決めた既定値に戻ります。") }}</h2>
+    <div class="settings-form">
+      <fieldset class="am-defaults-parts">
+        <legend>既定の隠す部位{{ info("この部位で、露出しているものを探します。服などで隠れているものは、対象外です。") }}</legend>
+        <div class="am-parts">
+          {% for pid, label in am_parts %}<label class="checkbox-label"><input type="checkbox" name="am_part" value="{{ pid }}" {% if pid in am_defaults.parts %}checked{% endif %}> {{ label }}</label>{% endfor %}
+        </div>
+      </fieldset>
+      <label>既定の感度{{ info("大きいほど、見逃しにくくなりますが、関係ない場所に、かかることが増えます。") }}
+        <span class="range-row"><input type="range" name="am_sensitivity" min="{{ am_ranges.sensitivity[0] }}" max="{{ am_ranges.sensitivity[1] }}" step="1" value="{{ am_defaults.sensitivity }}" data-output="am-sensitivity-set"><output id="am-sensitivity-set">{{ am_defaults.sensitivity }}</output></span>
+      </label>
+      <label>既定の広げ幅（%）{{ info("見つけた範囲を、四方に広げて隠す割合です(検出した範囲の大きさに対する%)。") }}
+        <span class="range-row"><input type="range" name="am_padding" min="{{ am_ranges.padding[0] }}" max="{{ am_ranges.padding[1] }}" step="5" value="{{ am_defaults.padding }}" data-output="am-padding-set"><output id="am-padding-set">{{ am_defaults.padding }}</output></span>
+      </label>
+      <label>既定の動画の検査間隔（秒）{{ info("動画の中から、この間隔でコマを取り出して調べます(最大40コマ)。短いほど見逃しにくく、時間がかかります。") }}
+        <input type="number" name="am_interval" min="{{ am_ranges.interval[0] }}" max="{{ am_ranges.interval[1] }}" step="0.2" value="{{ am_defaults.interval }}" style="width: 6em;">
+      </label>
+      <fieldset>
+        <legend>既定のかけ方</legend>
+        <label class="checkbox-label"><input type="radio" name="am_style" value="blur" {% if am_defaults.style == 'blur' %}checked{% endif %}> ぼかし</label>
+        <label class="checkbox-label"><input type="radio" name="am_style" value="mosaic" {% if am_defaults.style == 'mosaic' %}checked{% endif %}> モザイク</label>
+      </fieldset>
+      <label>既定の強さ{{ info("大きいほど強くかかります(画像の大きさに合わせて、見た目の強さがそろいます)。ダイアログのプレビューで、見え方を確かめられます。") }}
+        <span class="range-row"><input type="range" name="am_strength" min="{{ am_ranges.strength[0] }}" max="{{ am_ranges.strength[1] }}" step="1" value="{{ am_defaults.strength }}" data-output="am-strength-set"><output id="am-strength-set">{{ am_defaults.strength }}</output></span>
+      </label>
     </div>
   </section>
 

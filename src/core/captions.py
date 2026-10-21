@@ -117,3 +117,46 @@ def generate(
             return CaptionResult(text=text, attempts=attempt)
         last_problem = problem
     raise CaptionError(f"形式に合う文を作れませんでした（{MAX_ATTEMPTS}回試して、「{last_problem}」）。もう一度試すか、手で書いてください")
+
+
+# ---------------------------------------------------------------- 英訳
+
+TRANSLATE_PROMPT = (
+    "You translate Japanese social media post captions into natural, fluent English for an English-speaking audience. "
+    "Keep the tone and intent. Keep emojis, hashtags, @mentions, URLs and line breaks as they are. "
+    "Output only the English translation, with no explanation, notes or quotation marks."
+)
+SEPARATOR = "---"
+
+
+def compose_translation(original: str, english: str, mode: str, order: str) -> str:
+    """英訳を、原文に追記する(英文→改行→水平線→原文、または原文→改行→水平線→英文)か、原文と置き換える。"""
+    if mode == "replace":
+        return english
+    if order == "original_first":
+        return f"{original}\n{SEPARATOR}\n{english}"
+    return f"{english}\n{SEPARATOR}\n{original}"
+
+
+def translate(conn: sqlite3.Connection, assets: list[dict], text: str, generator=None) -> dict:
+    """投稿文を英訳して、設定(追記/置換・上下)に従って並べた文を返す。`{"text", "english"}`。
+
+    使うAIは、投稿文の生成と同じ(クラウドのモデルは、承認済みsfwの作品だけ。それ以外は自前VLM)。
+    """
+    original = text.strip()
+    if not original:
+        raise CaptionError("訳す投稿文が、空です")
+    if generator is None:
+        ratings = [a.get("content_rating") if a.get("content_rating_confirmed") else None for a in assets]
+        generator = generation.try_create_caption_generator(conn, ratings if assets else None)
+    if generator is None:
+        raise CaptionError("英訳に使えるAIがありません（設定の「生成AI」で、APIキーやモデルを確認してください。承認済みのsfwでない作品は、クラウドのAIへは送らず、自前ホスト型VLMで訳します）")
+    try:
+        raw = generator.translate(original, TRANSLATE_PROMPT)
+    except generation.GenerationError as exc:
+        raise CaptionError(f"英訳に失敗しました: {exc}") from exc
+    english = clean(raw)
+    if not english:
+        raise CaptionError("英訳が空でした。もう一度試してください")
+    cfg = settings_module.get_translate_settings(conn)
+    return {"text": compose_translation(original, english, cfg["mode"], cfg["order"]), "english": english}

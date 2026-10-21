@@ -203,3 +203,66 @@ def test_quantize_linear_int8_replaces_big_linear_layers_and_keeps_outputs_close
     assert all(p.dtype == torch.float32 for p in model.parameters())  # 量子化しない部品は、fp32にそろう(bf16のまま残らない)
     got = model(ids)
     assert torch.allclose(got, expected, atol=0.15, rtol=0.15)
+
+
+# ---------------------------------------------------------------- 英訳
+
+def test_compose_translation_modes():
+    assert captions.compose_translation("原文", "English", "append", "english_first") == "English\n---\n原文"
+    assert captions.compose_translation("原文", "English", "append", "original_first") == "原文\n---\nEnglish"
+    assert captions.compose_translation("原文", "English", "replace", "english_first") == "English"
+
+
+def _translator(output="Hello 💋"):
+    generator = MagicMock()
+    generator.translate.return_value = output
+    return generator
+
+
+def test_translate_appends_english_above_by_default_and_follows_settings(env):
+    config, conn = env
+    assets = [db.get_asset(conn, "a1")]
+    generator = _translator()
+    out = captions.translate(conn, assets, "  こんにちは💋 ", generator=generator)
+    assert out == {"text": "Hello 💋\n---\nこんにちは💋", "english": "Hello 💋"}
+    assert generator.translate.call_args.args[0] == "こんにちは💋"
+    settings.set_translate_settings(conn, "append", "original_first")
+    assert captions.translate(conn, assets, "こんにちは", generator=_translator("Hi"))["text"] == "こんにちは\n---\nHi"
+    settings.set_translate_settings(conn, "replace", "english_first")
+    assert captions.translate(conn, assets, "こんにちは", generator=_translator("Hi"))["text"] == "Hi"
+    settings.set_translate_settings(conn, "bogus", "bogus")  # 不正な値は、保存しない
+    assert settings.get_translate_settings(conn) == {"mode": "replace", "order": "english_first"}
+
+
+def test_translate_errors(env):
+    config, conn = env
+    with pytest.raises(captions.CaptionError, match="空"):
+        captions.translate(conn, [], "  ", generator=_translator())
+    broken = MagicMock()
+    broken.translate.side_effect = generation.GenerationError("API error")
+    with pytest.raises(captions.CaptionError, match="API error"):
+        captions.translate(conn, [], "こんにちは", generator=broken)
+    with pytest.raises(captions.CaptionError, match="空"):
+        captions.translate(conn, [], "こんにちは", generator=_translator("  "))
+
+
+def test_translate_uses_local_model_for_non_sfw(env):
+    """承認済みのsfwでない作品の投稿文は、クラウドのAIへは送らない(投稿文の生成と同じ決まり)。"""
+    config, conn = env
+    settings.set_caption_model(conn, "claude", "")
+    created = []
+    with patch("core.generation._create_for", side_effect=lambda p, m: created.append(p) or _translator()):
+        captions.translate(conn, [db.get_asset(conn, "a1")], "こんにちは")  # a1: 承認済みsfw
+        db.update_asset(conn, "a1", content_rating="explicit")
+        captions.translate(conn, [db.get_asset(conn, "a1")], "こんにちは")
+    assert created == ["claude", "local"]
+
+
+def test_translate_api(env):
+    config, conn = env
+    client = create_app(config).test_client()
+    with patch("core.generation.try_create_caption_generator", return_value=_translator("Hi")):
+        res = client.post("/api/captions/translate", json={"asset_ids": ["a1"], "text": "こんにちは"})
+        assert res.status_code == 200 and res.get_json()["text"] == "Hi\n---\nこんにちは"
+        assert client.post("/api/captions/translate", json={"asset_ids": ["nope"], "text": "x"}).status_code == 404
+        assert client.post("/api/captions/translate", json={"asset_ids": ["a1"], "text": ""}).status_code == 422

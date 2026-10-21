@@ -20,6 +20,8 @@ PARTS = {
 }
 PART_LABELS = {"genitals": "性器", "anus": "肛門", "breasts": "胸", "buttocks": "臀部"}
 DEFAULT_PARTS = ("genitals", "anus", "breasts", "buttocks")
+DEFAULT_STYLE = "mosaic"
+DEFAULT_STRENGTH = 6
 SENSITIVITY_RANGE = (1, 10)
 DEFAULT_SENSITIVITY = 7
 PADDING_RANGE = (0, 100)  # 検出した範囲を、四方に広げる割合(%。検出した範囲の大きさに対して)
