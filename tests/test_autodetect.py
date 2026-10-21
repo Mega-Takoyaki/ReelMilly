@@ -120,3 +120,20 @@ def test_preview_api(env):
         assert data["detected"] and data["image"].startswith("data:image/jpeg")
         assert client.post("/api/automask/preview", json={**body, "options": {"parts": []}}).status_code == 400
         assert client.post("/api/automask/preview", json={**body, "asset_id": "nope"}).status_code == 404
+
+
+def test_large_frames_are_detected_at_full_and_reduced_size_and_combined():
+    import numpy as np
+
+    seen = []
+
+    class Fake:
+        def detect(self, frame):
+            seen.append(frame.shape[:2])
+            h, w = frame.shape[:2]
+            return [{"class": "ANUS_EXPOSED", "score": 0.9, "box": [w * 0.1, h * 0.1, w * 0.2, h * 0.2]}] if len(seen) == 2 else []
+
+    with patch.object(autodetect, "_get_detector", lambda: Fake()):
+        boxes = autodetect._boxes_in(np.zeros((1008, 1792, 3), np.uint8), {"ANUS_EXPOSED"}, 0.3)
+    assert len(seen) == 2 and seen[0] == (1008, 1792) and max(seen[1]) == autodetect.DETECT_MAX_SIDE  # 縮小のほうだけで見つかっても、拾う
+    assert len(boxes) == 1

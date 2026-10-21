@@ -85,15 +85,25 @@ def _get_detector():
     return _detector
 
 
+DETECT_MAX_SIDE = 720  # 大きい画像は、原寸に加えて、この大きさに縮めたものでも検出する(モデルは内部で粗く縮めるため、縮めて渡したほうが拾えることがある)
+
+
 def _boxes_in(frame_bgr, labels: set[str], threshold: float) -> list[tuple[float, float, float, float]]:
-    """1枚の画像(BGRのnumpy配列)から、対象の部位の矩形(x0, y0, x1, y1。割合)を集める。"""
-    height, width = frame_bgr.shape[:2]
+    """1枚の画像(BGRのnumpy配列)から、対象の部位の矩形(x0, y0, x1, y1。割合)を集める(原寸と縮小の両方で検出して、合わせる)。"""
+    import cv2
+
+    variants = [frame_bgr]
+    if max(frame_bgr.shape[:2]) > DETECT_MAX_SIDE:
+        scale = DETECT_MAX_SIDE / max(frame_bgr.shape[:2])
+        variants.append(cv2.resize(frame_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA))
     boxes = []
-    for d in _get_detector().detect(frame_bgr):
-        if d["class"] not in labels or d["score"] < threshold:
-            continue
-        x, y, w, h = d["box"]
-        boxes.append((max(0.0, x / width), max(0.0, y / height), min(1.0, (x + w) / width), min(1.0, (y + h) / height)))
+    for v in variants:
+        height, width = v.shape[:2]
+        for d in _get_detector().detect(v):
+            if d["class"] not in labels or d["score"] < threshold:
+                continue
+            x, y, w, h = d["box"]
+            boxes.append((max(0.0, x / width), max(0.0, y / height), min(1.0, (x + w) / width), min(1.0, (y + h) / height)))
     return boxes
 
 
@@ -243,14 +253,15 @@ def preview(path: Path, media: str, options: dict, style: str, strength: int, re
     import numpy as np
     from PIL import Image
 
-    img = _preview_frame(path, media)
+    full = _preview_frame(path, media)
+    detected = bool(regions)
+    if not detected:  # 実際の作成と同じ処理(原寸の画像で検出)
+        regions = regions_in_frames([np.asarray(full)[:, :, ::-1].copy()], options)
+        detected = bool(regions)
+    img = full
     scale = PREVIEW_MAX_SIDE / max(img.size)
     if scale < 1:
         img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
-    detected = bool(regions)
-    if not detected:
-        regions = regions_in_frames([np.asarray(img)[:, :, ::-1].copy()], options)
-        detected = bool(regions)
     shown = regions if detected else [SAMPLE_REGION]
     params = mask.clean_params(shown, style, strength)
     out = mask.render(img.copy(), params)
