@@ -1183,6 +1183,31 @@ def create_app(config: Config) -> Flask:
             "strength": {"min": mask.STRENGTH_RANGE[0], "max": mask.STRENGTH_RANGE[1], "default": mask.DEFAULT_STRENGTH},
         })
 
+    @app.route("/api/automask/preview", methods=["POST"])
+    def api_automask_preview():
+        """プレビュー: 1つの作品(動画はサムネイル)で、検出した範囲に、いまの種類・強さをかけた見た目を返す。"""
+        payload = request.get_json(silent=True) or {}
+        if not autodetect.available():
+            return jsonify({"error": "検出モデル(NudeNet)が入っていません"}), 503
+        require_storage()
+        conn = get_conn()
+        try:
+            asset = db.get_asset(conn, str(payload.get("asset_id") or ""))
+            if asset is None or asset.get("deleted_at"):
+                abort(404)
+            try:
+                path, media = edits.source_info(conn, asset, payload.get("source") or "original")
+                options = autodetect.clean_options(payload.get("options"))
+                regions = payload.get("regions") if isinstance(payload.get("regions"), list) and payload.get("regions") else None
+                if regions:
+                    regions = mask.clean_params(regions, "blur", 1)["regions"]
+                base = mask.clean_params([autodetect.SAMPLE_REGION], payload.get("style"), payload.get("strength", mask.DEFAULT_STRENGTH))
+                return jsonify(autodetect.preview(path, media, options, base["style"], base["strength"], regions))
+            except (edits.EditError, mask.MaskError, autodetect.DetectError) as exc:
+                return jsonify({"error": str(exc)}), 400
+        finally:
+            conn.close()
+
     @app.route("/api/automask/apply-batch", methods=["POST"])
     def api_automask_apply_batch():
         """選んだ作品(画像・動画)で、センシティブ領域を自動検出して、ぼかし・モザイクをかけた加工版を作る(原本は変えない)。"""

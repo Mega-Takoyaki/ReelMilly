@@ -10,6 +10,11 @@
     <p class="hint pn-error" id="am-missing" hidden>検出モデル(NudeNet)が入っていません。<code>pip install -e ".[detect]"</code> で入れて、アプリを再起動してください。</p>
     <p class="hint" id="am-summary"></p>
 
+    <div class="am-preview" id="am-preview-wrap" hidden>
+      <div class="am-preview-stage" id="am-preview-stage"><img id="am-preview" alt="プレビュー"></div>
+      <p class="hint am-preview-note" id="am-preview-note"></p>
+    </div>
+
     <section class="pn-section">
       <div class="pn-section-title">隠す部位{{ info("この部位で、露出しているものを探します。服などで隠れているものは、対象外です。") }}</div>
       <div class="am-parts" id="am-parts"></div>

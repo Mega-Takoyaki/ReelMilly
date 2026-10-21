@@ -76,9 +76,30 @@ def pixel_regions(regions: list[dict], width: int, height: int, even: bool = Fal
     return out
 
 
+def render(work, params: dict):
+    """Pillowの画像の指定範囲に、ぼかし・モザイクをかけて返す(`work`は書き換える)。静止画の加工と、プレビューで共通。"""
+    from PIL import Image, ImageFilter
+
+    width, height = work.size
+    long_side = max(width, height)
+    boxes = pixel_regions(params["regions"], width, height)
+    if not boxes:
+        raise MaskError("範囲が小さすぎます")
+    for x, y, w, h in boxes:
+        part = work.crop((x, y, x + w, y + h))
+        if params["style"] == "blur":
+            part = part.filter(ImageFilter.GaussianBlur(blur_sigma(params["strength"], long_side)))
+        else:
+            block = mosaic_block(params["strength"], long_side)
+            small = part.resize((max(1, round(w / block)), max(1, round(h / block))), Image.BOX)
+            part = small.resize((w, h), Image.NEAREST)
+        work.paste(part, (x, y))
+    return work
+
+
 def apply_image(src: Path, dest: Path, params: dict) -> None:
     """静止画の指定範囲に、ぼかし・モザイクをかけて`dest`に書く(元のファイルは変えない)。"""
-    from PIL import Image, ImageFilter
+    from PIL import Image
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(src) as img:
@@ -86,20 +107,7 @@ def apply_image(src: Path, dest: Path, params: dict) -> None:
             raise MaskError("アニメーション画像は、ぼかし・モザイクに未対応です")
         img.load()
         work = img.convert("RGB") if img.mode not in ("RGB", "RGBA", "L") else img.copy()
-        width, height = work.size
-        long_side = max(width, height)
-        boxes = pixel_regions(params["regions"], width, height)
-        if not boxes:
-            raise MaskError("範囲が小さすぎます")
-        for x, y, w, h in boxes:
-            part = work.crop((x, y, x + w, y + h))
-            if params["style"] == "blur":
-                part = part.filter(ImageFilter.GaussianBlur(blur_sigma(params["strength"], long_side)))
-            else:
-                block = mosaic_block(params["strength"], long_side)
-                small = part.resize((max(1, round(w / block)), max(1, round(h / block))), Image.BOX)
-                part = small.resize((w, h), Image.NEAREST)
-            work.paste(part, (x, y))
+        work = render(work, params)
         fmt = (img.format or dest.suffix.lstrip(".")).upper()
         options = {"quality": 95, "subsampling": 0} if fmt in ("JPEG", "JPG") else {}
         if fmt in ("JPEG", "JPG") and work.mode == "RGBA":

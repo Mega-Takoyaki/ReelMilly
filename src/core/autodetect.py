@@ -19,7 +19,7 @@ PARTS = {
     "buttocks": ("BUTTOCKS_EXPOSED",),
 }
 PART_LABELS = {"genitals": "性器", "anus": "肛門", "breasts": "胸", "buttocks": "臀部"}
-DEFAULT_PARTS = ("genitals", "anus")
+DEFAULT_PARTS = ("genitals", "anus", "breasts", "buttocks")
 SENSITIVITY_RANGE = (1, 10)
 DEFAULT_SENSITIVITY = 7
 PADDING_RANGE = (0, 100)  # 検出した範囲を、四方に広げる割合(%。検出した範囲の大きさに対して)
@@ -181,10 +181,85 @@ def _video_frames(path: Path, interval: float):
 
 def detect_regions(path: Path, media: str, options: dict) -> list[dict]:
     """ファイルから、対象の部位の範囲(割合の矩形)を検出する。見つからなければ空のリスト。"""
+    frames = _video_frames(path, options["interval"]) if media == "video" else [_image_bgr(path)]
+    return regions_in_frames(frames, options)
+
+
+def regions_in_frames(frames, options: dict) -> list[dict]:
+    """コマ(BGRのnumpy配列)の列から、対象の部位の範囲を検出して、重ね合わせる。"""
     labels = {label for p in options["parts"] for label in PARTS[p]}
     threshold = threshold_for(options["sensitivity"])
-    frames = _video_frames(path, options["interval"]) if media == "video" else [_image_bgr(path)]
     boxes: list[tuple] = []
     for frame in frames:
         boxes.extend(_pad(b, options["padding"]) for b in _boxes_in(frame, labels, threshold))
     return _to_regions(merge_boxes(boxes))
+
+
+# ---------------------------------------------------------------- プレビュー
+
+PREVIEW_MAX_SIDE = 720
+SAMPLE_REGION = {"x": 0.35, "y": 0.4, "w": 0.3, "h": 0.2}  # 検出できなかったときに、強さの見え方を確かめるための、真ん中あたりの矩形
+
+
+def _preview_frame(path: Path, media: str):
+    """プレビューに使う1枚(PillowのRGB)。画像はそのもの、動画は、一覧に出るサムネイルと同じ、先頭あたりの1コマ。"""
+    from PIL import Image
+
+    if media != "video":
+        try:
+            with Image.open(path) as img:
+                if getattr(img, "is_animated", False):
+                    img.seek(0)
+                return img.convert("RGB")
+        except Exception as exc:  # noqa: BLE001
+            raise DetectError("画像を読めません") from exc
+    import cv2
+
+    cap = cv2.VideoCapture(str(path))
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        if fps > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, round(0.1 * fps))
+        ok, frame = cap.read()
+        if not ok:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = cap.read()
+        if not ok:
+            raise DetectError("動画を読めません")
+        return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    finally:
+        cap.release()
+
+
+def preview(path: Path, media: str, options: dict, style: str, strength: int, regions: list[dict] | None = None) -> dict:
+    """プレビュー用に、1枚(動画はサムネイル)を縮小して、検出した範囲に加工をかけた画像(JPEGのdata URL)を返す。
+
+    `regions`を渡すと、検出をせず、その範囲を使う(感度などを変えずに、種類・強さだけ変えたとき用)。
+    何も検出できなければ、真ん中あたりの矩形(`SAMPLE_REGION`)に、かけた見た目を返す(`detected`がFalse)。
+    """
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    img = _preview_frame(path, media)
+    scale = PREVIEW_MAX_SIDE / max(img.size)
+    if scale < 1:
+        img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    detected = bool(regions)
+    if not detected:
+        regions = regions_in_frames([np.asarray(img)[:, :, ::-1].copy()], options)
+        detected = bool(regions)
+    shown = regions if detected else [SAMPLE_REGION]
+    params = mask.clean_params(shown, style, strength)
+    out = mask.render(img.copy(), params)
+    buf = io.BytesIO()
+    out.save(buf, format="JPEG", quality=85)
+    return {
+        "detected": detected,
+        "regions": regions if detected else [],
+        "image": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(),
+        "width": img.width,
+        "height": img.height,
+    }

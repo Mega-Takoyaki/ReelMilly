@@ -11,7 +11,7 @@ from tests.test_library import env  # noqa: F401
 
 def test_clean_options_validates():
     o = autodetect.clean_options(None)
-    assert o["parts"] == ["genitals", "anus"] and o["sensitivity"] == 7
+    assert o["parts"] == ["genitals", "anus", "breasts", "buttocks"] and o["sensitivity"] == 7
     assert autodetect.clean_options({"parts": ["breasts"], "padding": 0})["parts"] == ["breasts"]
     for bad in ({"parts": []}, {"parts": ["x"]}, {"sensitivity": 11}, {"padding": 101}, {"interval": 0}, {"sensitivity": "a"}):
         with pytest.raises(mask.MaskError):
@@ -82,3 +82,41 @@ def test_api_batch_reports_missing_model_and_queues(env):
         data = res.get_json()
     assert data["queued"] == 1 and data["failed"][0]["id"] == "nope"
     bad = client.post("/api/automask/apply-batch", json={"asset_ids": ["a1"], "style": "mosaic", "options": {"parts": []}}) if autodetect.available() else None
+
+
+def _jpeg_asset(conn, size=(200, 100)):
+    asset = db.get_asset(conn, "a1")
+    img = Image.new("RGB", size)
+    for x in range(size[0]):
+        for y in range(size[1]):
+            img.putpixel((x, y), ((x * 7) % 256, (y * 13) % 256, ((x + y) * 5) % 256))
+    img.save(asset["file_path"], format="JPEG")
+    return asset
+
+
+def test_preview_masks_detected_region_and_falls_back_to_center_sample(env):
+    config, conn, client, tmp_path = env
+    asset = _jpeg_asset(conn)
+    opts = autodetect.clean_options(None)
+    with _fake_boxes([(0.1, 0.1, 0.3, 0.3)]):
+        out = autodetect.preview(asset["file_path"] and __import__("pathlib").Path(asset["file_path"]), "image", opts, "mosaic", 5)
+    assert out["detected"] is True and len(out["regions"]) == 1 and out["image"].startswith("data:image/jpeg;base64,")
+    with _fake_boxes([]):
+        out = autodetect.preview(__import__("pathlib").Path(asset["file_path"]), "image", opts, "blur", 5)
+    assert out["detected"] is False and out["regions"] == []  # 検出なし: 真ん中の矩形に、かけた見た目だけを返す
+    with _fake_boxes([(0.1, 0.1, 0.3, 0.3)]):  # 範囲を渡すと、検出しない
+        out = autodetect.preview(__import__("pathlib").Path(asset["file_path"]), "image", opts, "mosaic", 5, regions=[{"x": 0.5, "y": 0.5, "w": 0.2, "h": 0.2}])
+    assert out["regions"] == [{"x": 0.5, "y": 0.5, "w": 0.2, "h": 0.2}]
+
+
+def test_preview_api(env):
+    config, conn, client, tmp_path = env
+    _jpeg_asset(conn)
+    body = {"asset_id": "a1", "style": "mosaic", "strength": 6, "options": {"parts": ["genitals"]}}
+    with patch.object(autodetect, "available", lambda: False):
+        assert client.post("/api/automask/preview", json=body).status_code == 503
+    with patch.object(autodetect, "available", lambda: True), _fake_boxes([(0.2, 0.2, 0.5, 0.5)]):
+        data = client.post("/api/automask/preview", json=body).get_json()
+        assert data["detected"] and data["image"].startswith("data:image/jpeg")
+        assert client.post("/api/automask/preview", json={**body, "options": {"parts": []}}).status_code == 400
+        assert client.post("/api/automask/preview", json={**body, "asset_id": "nope"}).status_code == 404

@@ -8,12 +8,62 @@
   let source = "original";
   let loaded = null;
 
+  let lastOpts = null;      // 最後にプレビューした、検出に関わる設定(部位・感度・広げ幅)
+  let lastRegions = null;   // そのときに検出できた範囲(種類・強さだけ変えたときは、検出し直さない)
+  let previewTimer = null;
+  let previewSeq = 0;
+
+  function detectOptions() {
+    return { parts: selectedParts(), sensitivity: Number($("am-sensitivity").value), padding: Number($("am-padding").value), interval: Number($("am-interval").value) };
+  }
+  function styleValue() { return (dialog.querySelector('input[name="am-style"]:checked') || {}).value; }
+
+  // プレビュー: 1件目の作品(動画はサムネイル)で、検出した範囲に、いまの種類・強さをかける。検出できなければ、真ん中あたりの矩形に
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(runPreview, 250);
+  }
+  async function runPreview() {
+    if (!ids.length || !loaded || !loaded.available || selectedParts().length === 0) {
+      $("am-preview-wrap").hidden = true;
+      return;
+    }
+    const seq = ++previewSeq;
+    const opts = detectOptions();
+    const key = JSON.stringify([opts.parts, opts.sensitivity, opts.padding, ids[0], source]);
+    const reuse = lastOpts === key && lastRegions && lastRegions.length ? lastRegions : null;
+    $("am-preview-wrap").hidden = false;
+    $("am-preview-stage").classList.add("loading");
+    try {
+      const res = await fetch("/api/automask/preview", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_id: ids[0], source, options: opts, style: styleValue(), strength: Number($("am-strength").value), regions: reuse }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (seq !== previewSeq) return;
+      if (!res.ok) throw new Error(data.error || `プレビューできませんでした (${res.status})`);
+      $("am-preview").src = data.image;
+      lastOpts = key;
+      lastRegions = data.detected ? data.regions : null;
+      const which = ids.length > 1 ? "選んだ1件目の作品" : "この作品";
+      $("am-preview-note").textContent = data.detected
+        ? `プレビュー: ${which}で、${data.regions.length}か所を検出しました。`
+        : `プレビュー: ${which}では、検出できませんでした。強さの見え方を確かめるため、真ん中あたりの四角にかけています（実際には、検出できなければ、加工版は作りません）。`;
+    } catch (err) {
+      if (seq !== previewSeq) return;
+      $("am-preview-note").textContent = err.message;
+    } finally {
+      if (seq === previewSeq) $("am-preview-stage").classList.remove("loading");
+    }
+  }
+
   function bindValue(inputId, outId) {
-    $(inputId).addEventListener("input", () => { $(outId).textContent = $(inputId).value; });
+    $(inputId).addEventListener("input", () => { $(outId).textContent = $(inputId).value; schedulePreview(); });
   }
   bindValue("am-sensitivity", "am-sensitivity-value");
   bindValue("am-padding", "am-padding-value");
   bindValue("am-strength", "am-strength-value");
+  dialog.querySelectorAll('input[name="am-style"]').forEach((r) => r.addEventListener("change", schedulePreview));
 
   function selectedParts() {
     return Array.from($("am-parts").querySelectorAll("input:checked")).map((i) => i.value);
@@ -31,7 +81,7 @@
     loaded = await (await fetch("/api/automask/options")).json();
     $("am-parts").replaceChildren(...loaded.parts.map((p) => {
       const input = Object.assign(document.createElement("input"), { type: "checkbox", value: p.id, checked: p.default });
-      input.addEventListener("change", refresh);
+      input.addEventListener("change", () => { refresh(); schedulePreview(); });
       const label = document.createElement("label");
       label.className = "dup-choice";
       label.append(input, ` ${p.label}`);
@@ -50,7 +100,9 @@
       return;
     }
     refresh();
+    lastOpts = lastRegions = null;
     if (!dialog.open) dialog.showModal();
+    runPreview();
   };
 
   $("am-close").addEventListener("click", () => dialog.close());
@@ -64,8 +116,8 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset_ids: ids, source,
-          options: { parts: selectedParts(), sensitivity: Number($("am-sensitivity").value), padding: Number($("am-padding").value), interval: Number($("am-interval").value) },
-          style: (dialog.querySelector('input[name="am-style"]:checked') || {}).value,
+          options: detectOptions(),
+          style: styleValue(),
           strength: Number($("am-strength").value),
         }),
       });
