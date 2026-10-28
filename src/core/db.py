@@ -300,7 +300,21 @@ def list_assets(
 
     auto = _as_list(nsfw_auto)
     if auto:
-        in_clause("assets.nsfw_auto_rating", auto, "na")
+        review = "review" in auto  # 「要確認」: スコアが迷う帯にあるもの(人の目で確かめたほうがよい)
+        auto = [v for v in auto if v != "review"]
+        if review:
+            from core.nsfw import REVIEW_BAND
+
+            params["rv_lo"], params["rv_hi"] = REVIEW_BAND
+            review_sql = "(assets.nsfw_auto_confidence >= :rv_lo AND assets.nsfw_auto_confidence < :rv_hi)"
+            if auto:
+                before = len(conditions)
+                in_clause("assets.nsfw_auto_rating", auto, "na")
+                conditions[before] = f"({conditions[before]} OR {review_sql})"
+            else:
+                conditions.append(review_sql)
+        else:
+            in_clause("assets.nsfw_auto_rating", auto, "na")
 
     # 投稿予定: 投稿先(channels)が1つでもあれば"planned"、1つも無ければ"none"(=投稿予定なし)
     plans = set(_as_list(plan))
@@ -556,7 +570,7 @@ def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide", 
     result = {
         "status": grouped("status"),
         "content_rating": grouped("content_rating"),
-        "nsfw_auto": grouped("nsfw_auto_rating"),
+        "nsfw_auto": grouped("nsfw_auto_rating") + _review_facet(conn, live),
         "confirmed": [(str(r["v"]), r["n"]) for r in conn.execute(
             f"SELECT content_rating_confirmed AS v, COUNT(*) AS n {live} GROUP BY 1 ORDER BY 1")],
     }
@@ -597,6 +611,15 @@ def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide", 
 
 # --- tags -----------------------------------------------------------------
 
+def _review_facet(conn: sqlite3.Connection, live: str) -> list[tuple]:
+    from core.nsfw import REVIEW_BAND
+
+    n = conn.execute(
+        f"SELECT COUNT(*) {live} AND nsfw_auto_confidence >= ? AND nsfw_auto_confidence < ?", REVIEW_BAND
+    ).fetchone()[0]
+    return [("review", n)] if n else []
+
+
 def get_or_create_tag(conn: sqlite3.Connection, name: str) -> int:
     row = conn.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()
     if row:
@@ -613,6 +636,16 @@ def add_tag_to_asset(conn: sqlite3.Connection, asset_id: str, tag_name: str) -> 
         (asset_id, tag_id),
     )
     conn.commit()
+
+
+def set_auto_rating_tag(conn: sqlite3.Connection, asset_id: str, rating: str) -> None:
+    """自動判定のタグ(sfw/suggestive/explicit。旧形式のnsfwも)を、今回の判定の1つに付け替える(判定し直したとき、前のものが残らないように)。"""
+    from core.nsfw import AUTO_TAG_NAMES
+
+    for name in AUTO_TAG_NAMES:
+        if name != rating:
+            remove_tag_from_asset(conn, asset_id, name)
+    add_tag_to_asset(conn, asset_id, rating)
 
 
 def remove_tag_from_asset(conn: sqlite3.Connection, asset_id: str, tag_name: str) -> None:

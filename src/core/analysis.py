@@ -69,7 +69,7 @@ def apply_auto_tags(conn: sqlite3.Connection, asset_id: str, result: AnalysisRes
         for normalized in normalize(tag, custom).tags:
             db.add_tag_to_asset(conn, asset_id, normalized)
     if result.nsfw_auto_rating:
-        db.add_tag_to_asset(conn, asset_id, result.nsfw_auto_rating)
+        db.set_auto_rating_tag(conn, asset_id, result.nsfw_auto_rating)
 
 
 def run_nsfw(nsfw_classifier, media_path: Path):

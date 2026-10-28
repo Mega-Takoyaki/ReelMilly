@@ -316,7 +316,7 @@ class AnalysisWorker:
                     nsfw_auto_confidence=result.confidence,
                     updated_at=_now().isoformat(),
                 )
-                db.add_tag_to_asset(conn, asset["id"], result.rating)
+                db.set_auto_rating_tag(conn, asset["id"], result.rating)
             else:
                 result = analysis.run_describe(conn, self._get_generator(conn), media_path)
                 db.update_asset(

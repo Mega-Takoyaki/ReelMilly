@@ -90,23 +90,39 @@ def _get_detector():
 DETECT_MAX_SIDE = 720  # 大きい画像は、原寸に加えて、この大きさに縮めたものでも検出する(モデルは内部で粗く縮めるため、縮めて渡したほうが拾えることがある)
 
 
-def _boxes_in(frame_bgr, labels: set[str], threshold: float) -> list[tuple[float, float, float, float]]:
-    """1枚の画像(BGRのnumpy配列)から、対象の部位の矩形(x0, y0, x1, y1。割合)を集める(原寸と縮小の両方で検出して、合わせる)。"""
+def _raw_detections(frame_bgr) -> list[tuple[str, float, tuple[float, float, float, float]]]:
+    """1枚の画像(BGRのnumpy配列)の検出結果(ラベル, 確信度, 矩形(x0, y0, x1, y1。割合))。原寸と縮小の両方で検出して、合わせる。"""
     import cv2
 
     variants = [frame_bgr]
     if max(frame_bgr.shape[:2]) > DETECT_MAX_SIDE:
         scale = DETECT_MAX_SIDE / max(frame_bgr.shape[:2])
         variants.append(cv2.resize(frame_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA))
-    boxes = []
+    out = []
     for v in variants:
         height, width = v.shape[:2]
         for d in _get_detector().detect(v):
-            if d["class"] not in labels or d["score"] < threshold:
-                continue
             x, y, w, h = d["box"]
-            boxes.append((max(0.0, x / width), max(0.0, y / height), min(1.0, (x + w) / width), min(1.0, (y + h) / height)))
-    return boxes
+            out.append((d["class"], d["score"], (max(0.0, x / width), max(0.0, y / height), min(1.0, (x + w) / width), min(1.0, (y + h) / height))))
+    return out
+
+
+def _boxes_in(frame_bgr, labels: set[str], threshold: float) -> list[tuple[float, float, float, float]]:
+    """1枚の画像(BGRのnumpy配列)から、対象の部位の矩形(x0, y0, x1, y1。割合)を集める(原寸と縮小の両方で検出して、合わせる)。"""
+    return [box for label, score, box in _raw_detections(frame_bgr) if label in labels and score >= threshold]
+
+
+GENITAL_PARTS = ("genitals", "anus")
+CHEST_PARTS = ("breasts", "buttocks")
+
+
+def exposure_flags(frame_bgr, sensitivity: int = DEFAULT_SENSITIVITY) -> tuple[bool, bool]:
+    """1枚の画像に、露出した(性器・肛門)(胸・臀部)が写っているか。NSFW判定の、3段階の案に使う。"""
+    threshold = threshold_for(sensitivity)
+    labels = {label for label_group in PARTS.values() for label in label_group}
+    genital = {label for p in GENITAL_PARTS for label in PARTS[p]}
+    found = {label for label, score, _ in _raw_detections(frame_bgr) if label in labels and score >= threshold}
+    return bool(found & genital), bool(found - genital)
 
 
 def _pad(box, padding: int):

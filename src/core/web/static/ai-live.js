@@ -1,9 +1,9 @@
-// AI処理(sfw/nsfw判定・説明文生成)の非同期実行を扱う。一覧・詳細画面共通。
+// AI処理(区分の自動判定・説明文生成)の非同期実行を扱う。一覧・詳細画面共通。
 // - 処理の開始(キューへ追加)
 // - 定期ポーリングで進捗を取得し、完了したものから順に画面表示を更新する
 // - 完了・失敗をトースト通知する
 (function () {
-  const LABEL = { nsfw: "sfw/nsfw判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入", edit: "動画編集", version_nsfw: "加工版のAI判定" };
+  const LABEL = { nsfw: "区分の自動判定", describe: "説明文生成・タグ付与", watermark: "透かし挿入", edit: "動画編集", version_nsfw: "加工版のAI判定" };
   const BUSY_SHORT = { nsfw: "判定", describe: "説明生成", watermark: "透かし", edit: "動画編集" };
   const POLL_MS = 3000;
 
@@ -128,7 +128,7 @@
 
   function renderOverlay(card, a) {
     const busy = activeLabels(a);
-    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, busy, a.posts, a.no_plan, a.wm, a.broken]);
+    const sig = JSON.stringify([a.status, a.content_rating, a.content_rating_confirmed, a.nsfw_auto_rating, a.nsfw_auto_confidence, a.nsfw_review, busy, a.posts, a.no_plan, a.wm, a.broken]);
     if (card.dataset.sig === sig) return; // 変化が無ければ触らない(ツールチップのちらつき防止)
     card.dataset.sig = sig;
 
@@ -138,13 +138,14 @@
       letter = a.content_rating === "explicit" ? "N" : "S";
       tip = "承認済み: " + a.content_rating + (a.nsfw_auto_rating ? `（AI判定: ${a.nsfw_auto_rating}）` : "");
     } else if (a.nsfw_auto_rating) {
-      state = a.nsfw_auto_rating === "nsfw" ? "auto-nsfw" : "auto-sfw";
-      letter = a.nsfw_auto_rating === "nsfw" ? "N" : "S";
-      tip = `AI自動判定: ${a.nsfw_auto_rating.toUpperCase()}（確信度 ${Number(a.nsfw_auto_confidence || 0).toFixed(2)}）・人の承認はまだです`;
+      state = { sfw: "auto-sfw", suggestive: "auto-sug", explicit: "auto-nsfw", nsfw: "auto-nsfw" }[a.nsfw_auto_rating] || "auto-sfw";
+      letter = { sfw: "S", suggestive: "△", explicit: "N", nsfw: "N" }[a.nsfw_auto_rating] || "S";
+      tip = `AI自動判定: ${a.nsfw_auto_rating.toUpperCase()}（スコア ${Number(a.nsfw_auto_confidence || 0).toFixed(2)}）` + (a.nsfw_review ? "・要確認（スコアが迷う帯です。目で確かめてください）" : "") + "・人の承認はまだです";
+      if (a.nsfw_review) state += " rating-review";
     } else {
       state = "none";
       letter = "?";
-      tip = "未処理（sfw/nsfw判定がまだありません）";
+      tip = "未処理（区分の自動判定がまだありません）";
     }
     const nsfwBusy = isActive((a.tasks || {}).nsfw);
     const rating = card.querySelector(".chip-rating");

@@ -68,6 +68,8 @@ pip install -e ".[nsfw]"
 
 （GPU版を使いたい場合、または既に`torch`をインストール済みの場合は`pip install -e ".[nsfw]"`のみで構いません）
 
+判定結果は、sfw / suggestive / explicit の3段階の案です。Marqoモデル（NSFW/SFWの二値）のスコアと、露出した部位の検出（`pip install -e ".[detect]"`のNudeNet。入っていなければスコアだけ）を合わせて決めます（`core/nsfw.py`）。画像は全体を縮めて判定し、動画は高いほうの数コマの平均で判定します。スコアが迷う帯（0.2〜0.8）は「要確認」として、一覧の絞り込みで見られます。
+
 初回`ingest`実行時、Marqoモデルの重み（`marqo/nsfw-image-detection-384`）がHugging Face Hubから自動ダウンロードされます。
 
 画像内容説明・Fanvue投稿文の自動生成（[ADR-0015](docs/adr/0015-ai-content-description-and-caption-generation.md)）を使う場合は、Claude APIのSDKを追加でインストールします。

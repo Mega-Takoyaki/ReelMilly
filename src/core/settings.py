@@ -320,7 +320,7 @@ def set_model_cache(conn: sqlite3.Connection, provider: str, models: list[str]) 
 # --- AI処理の定期実行・タグカテゴリ -------------------------------------------
 
 AI_SCHEDULE_KINDS = ("nsfw", "describe")
-AI_KIND_LABELS = {"nsfw": "sfw/nsfw判定", "describe": "説明文生成・タグ付与"}
+AI_KIND_LABELS = {"nsfw": "区分の自動判定", "describe": "説明文生成・タグ付与"}
 DEFAULT_SCHEDULE = {"enabled": False, "time": "03:00", "scope": "all", "days": 7}
 
 

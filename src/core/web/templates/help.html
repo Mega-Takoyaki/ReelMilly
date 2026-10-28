@@ -34,14 +34,14 @@
   <p>Reelmilly は2つのプログラムを<strong>別々のターミナル</strong>で動かします。</p>
   <ul>
     <li><strong>画面（Web UI）</strong>: <code>reelmilly web</code> を起動し、ブラウザで <code>http://127.0.0.1:8420/</code> を開きます。</li>
-    <li><strong>ワーカー（AI処理・定期実行）</strong>: <code>reelmilly watch</code> を起動したままにします。sfw/nsfw判定や説明文生成といった時間のかかる処理は、このワーカーが裏で行います。</li>
+    <li><strong>ワーカー（AI処理・定期実行）</strong>: <code>reelmilly watch</code> を起動したままにします。区分の自動判定や説明文生成といった時間のかかる処理は、このワーカーが裏で行います。</li>
   </ul>
   <p class="help-note">ワーカーが止まっていると、AI処理は「待機中」のまま進みません。一覧画面の上部に「ワーカー停止中」と表示されたら <code>reelmilly watch</code> を起動してください。どちらも <kbd>Ctrl</kbd>+<kbd>C</kbd> で停止できます。</p>
 
   <h2 id="flow">2. 基本の流れ</h2>
   <ol>
     <li>画像・動画を<strong>取り込む</strong>（ステータス: <code>analyzing</code>）</li>
-    <li><strong>AI処理</strong>でsfw/nsfw判定と説明文・タグ生成を行う（両方そろうと <code>pending_approval</code>）</li>
+    <li><strong>AI処理</strong>で区分の自動判定と説明文・タグ生成を行う（両方そろうと <code>pending_approval</code>）</li>
     <li>人が内容を確認して<strong>区分（sfw / suggestive / explicit）を承認</strong>する（<code>ready</code>）</li>
     <li>承認済み（<code>ready</code>）のものがFanvueへ<strong>投稿</strong>される。投稿の結果は、準備状態とは別に、投稿先ごとに「投稿済み」「失敗」として記録される</li>
   </ol>
@@ -80,9 +80,11 @@
   <p><strong>右上（左から）: 種別・sfw/nsfw</strong></p>
   <div class="legend-row"><span class="chip chip-type chip-image">JPG</span> 静止画（緑がかった青）。文字はファイルの拡張子です。</div>
   <div class="legend-row"><span class="chip chip-type chip-video">MP4</span> 動画（紫）。</div>
-  <div class="legend-row"><span class="chip chip-rating rating-none">?</span> 未処理（灰色の点線）。sfw/nsfw判定がまだありません。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-none">?</span> 未処理（灰色の点線）。区分の自動判定がまだありません。</div>
   <div class="legend-row"><span class="chip chip-rating rating-auto-sfw">S</span> AIの自動判定が <strong>SFW</strong>（淡い緑の枠）。人の承認はまだです。</div>
-  <div class="legend-row"><span class="chip chip-rating rating-auto-nsfw">N</span> AIの自動判定が <strong>NSFW</strong>（淡い赤の枠）。人の承認はまだです。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-auto-sug">△</span> AIの自動判定が <strong>suggestive</strong>（淡い黄の枠。露出はないが、きわどい）。人の承認はまだです。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-auto-nsfw">N</span> AIの自動判定が <strong>explicit</strong>（淡い赤の枠。旧形式の「nsfw」も、この表示）。人の承認はまだです。</div>
+  <div class="legend-row"><span class="chip chip-rating rating-auto-sug rating-review">△</span> 枠が<strong>点線</strong>のものは<strong>要確認</strong>です。モデルのスコアが迷う帯（0.2〜0.8）にあるので、目で確かめてください。一覧の絞り込み「AI判定」の「要確認」で、まとめて見られます。</div>
   <div class="legend-row"><span class="chip chip-rating rating-ok-sfw">S</span> <strong>承認済み</strong>の sfw（濃い緑の塗りつぶし）。</div>
   <div class="legend-row"><span class="chip chip-rating rating-ok-sug">S</span> <strong>承認済み</strong>の suggestive（濃い橙の塗りつぶし）。</div>
   <div class="legend-row"><span class="chip chip-rating rating-ok-nsfw">N</span> <strong>承認済み</strong>の explicit（濃い赤の塗りつぶし）。</div>
@@ -109,13 +111,13 @@
   <p>AI処理は2種類あり、<strong>それぞれ別々に</strong>開始できます。</p>
   <table>
     <tr><th>処理</th><th>内容</th><th>必要なもの</th></tr>
-    <tr><td>sfw/nsfw判定</td><td>画像・動画がsfwかnsfwかを、確信度付きで自動判定します（結果はタグ <code>sfw</code>/<code>nsfw</code> にもなります）</td><td><code>pip install -e ".[nsfw]"</code></td></tr>
+    <tr><td>区分の自動判定</td><td>画像・動画を、<strong>sfw / suggestive / explicit</strong> の3段階の案にします（結果はタグにもなります。判定し直すと、前のタグは付け替わります）。モデルのスコア（NSFWらしさ。画像は全体を縮めて判定、動画は高いほうの数コマの平均）と、露出した部位の検出（NudeNet。<code>pip install -e ".[detect]"</code> で入れた場合）を合わせて決めます。<strong>性器・肛門が写っていれば explicit、胸・臀部が写っていればスコアしだいで explicit か suggestive、露出がなくスコアが高ければ suggestive</strong>、低ければ sfw です。スコアが迷う帯のものは「要確認」になります。あくまで参考値で、最終判断は人が承認します</td><td><code>pip install -e ".[nsfw]"</code></td></tr>
     <tr><td>説明文生成・タグ付与</td><td>内容の説明文を作り、タグ候補を付けます。投稿文の元になります</td><td>設定の「生成AI」（Claude / OpenAI / 自前ホスト型VLM）</td></tr>
   </table>
 
   <h3>開始のしかた</h3>
   <ul>
-    <li><strong>一覧から（複数まとめて）</strong>: 画像を選択 → 下部メニューの「sfw/nsfw判定」または「説明文・タグ生成」。</li>
+    <li><strong>一覧から（複数まとめて）</strong>: 画像を選択 → 下部メニューの「区分の自動判定」または「説明文・タグ生成」。</li>
     <li><strong>詳細画面から（1件）</strong>: 「AI処理」カードのボタン。再実行すると結果を上書きします。</li>
     <li><strong>定期実行</strong>: 設定の「AI自動処理・タグ」で、処理の種類・時刻・対象（すべての未処理 / 直近N日以内の未処理）を指定します。<strong>スケジュールは何件でも追加</strong>できます（例: 毎日03:00に全未処理、12:00に直近1日分だけ）。</li>
     <li><strong>まとめて手動</strong>: ターミナルで <code>reelmilly analyze</code>（未処理を全部キューに積んで処理します）。</li>
@@ -177,7 +179,7 @@
 
   <h2 id="detail">7b. 作品の詳細画面</h2>
   <ul>
-    <li><strong>操作メニュー</strong>（右上の「操作 ▾」）: 画像への操作をまとめています。AI処理（sfw/nsfw判定・説明文とタグの生成）、透かし（入れる・見る・外す）、ダウンロード、破綻画像のマーク、ごみ箱への移動です。</li>
+    <li><strong>操作メニュー</strong>（右上の「操作 ▾」）: 画像への操作をまとめています。AI処理（区分の自動判定・説明文とタグの生成）、透かし（入れる・見る・外す）、ダウンロード、破綻画像のマーク、ごみ箱への移動です。</li>
     <li><strong>投稿</strong>: 投稿先（Fanvue・X）ごとに、<strong>投稿予定</strong>（チェックを入れた投稿先だけが、SNS投稿の対象になります。チェックを入れ外しした瞬間に保存されます。すべてオフなら「投稿予定なし」）と、<strong>投稿状態</strong>（未投稿・投稿済み・失敗）を、1つの行で管理します。</li>
     <li><strong>手動で投稿したとき</strong>: その行の「投稿済みとして記録…」で、投稿日時とURL（任意）を記録できます。記録した投稿先は「投稿済み」（手動で記録）になり、<strong>自動投稿の対象から外れる</strong>ので、二重投稿を防げます。間違えたときは「記録を取り消す」で未投稿に戻せます。失敗した投稿は「再投稿の対象に戻す」で、次回の自動投稿の対象に戻せます。</li>
     <li>各項目の説明は、項目名の横の <strong>ⓘ</strong> にマウスを乗せる（クリックで固定）と表示されます。</li>
@@ -289,7 +291,7 @@
     <li><strong>Telegram</strong>: 値の保存のみ（連携機能は未実装です）。</li>
     <li><strong>生成AI</strong>: APIキー、プロバイダー、モデル、システムプロンプト、投稿文の生成モード（auto / draft）。モデルは「接続して利用可能なモデルを取得」で、実際に使えるものの一覧から選びます。explicit の画像には<strong>自前ホスト型VLM</strong>を使ってください（Claude / OpenAI は拒否する可能性が高いため）。</li>
     <li><strong>ストレージ</strong>: 画像・動画のファイルを置く場所を、任意のドライブ・フォルダ（USBメモリ・外付けディスクなどのリムーバブルメディアも可）へ変えられます。「フォルダを選ぶ…」やドライブのボタンから選び、「コピーして移す」（推奨）か、「すでにファイルがある場所を使う」（ドライブ文字が変わったときなど）で切り替えます。メディアが外れていても、アプリは<strong>画像なしで起動</strong>し、画面上部に警告が出ます（取り込み・AI処理・投稿は止まり、待機中の処理は残ります）。つなぎ直すと再開します。データベースは常にこのPC内にあります。</li>
-    <li><strong>AI自動処理・タグ</strong>: sfw/nsfw判定と説明文生成の定期実行（時刻・対象範囲）、タグのカテゴリ。</li>
+    <li><strong>AI自動処理・タグ</strong>: 区分の自動判定と説明文生成の定期実行（時刻・対象範囲）、タグのカテゴリ。</li>
     <li><strong>投稿文の英訳</strong>: 投稿文欄の下の<strong>「英訳」ボタン</strong>で、いまの投稿文を英語に訳します。既定は<strong>追記</strong>で、「英文 → 改行 → 水平線（---）→ 改行 → 原文」の順に並べます。設定の「生成AI」の「投稿文の英訳」で、<strong>追記／置き換え</strong>と、追記するときに<strong>英文を上に置くか、原文を上に置くか</strong>を変えられます。訳には「投稿文の生成に使うAI」を使い、承認済みのsfwでない作品は、クラウドのAIへは送らず、自前ホスト型VLMで訳します。押す前の文は、「直前の文に戻す」で戻せます。</li>
     <li><strong>投稿スケジュール</strong>: 自動投稿のオン/オフ（<strong>既定はオフ</strong>）と、投稿の予定。予定は、<strong>曜日（複数）・時刻・ランダム幅（上下N分）・件数</strong>の組で、いくつでも登録できます。例: 「月・水・金・土の 21:00、上下30分」と「火・水・土・日の 8:00、上下90分」。実際の時刻は、日ごとに、時刻±ランダム幅の中で決まります（その日のうちは変わりません）。各予定の「次の予定」が表示されます。投稿文が未設定の作品は、投稿文を生成して、形式に合うときだけ投稿します（作れないときは、その作品の投稿を見送って通知します）。</li>
     <li><strong>生成AI</strong>の「投稿文の生成に使うAI」: 投稿文だけを作るAIを、画像内容説明とは別に選べます。クラウドのモデル(Claude/OpenAI)は、<strong>承認済みのsfwの作品だけ</strong>に使い、それ以外は自前VLMで作ります。「X投稿文生成のシステムプロンプト」で、Xの文のプロンプトも設定できます。</li>
@@ -341,12 +343,12 @@
     <dd>Fanvueのアクセストークンは1時間で切れ、「更新用トークン」で自動更新します。連携の許可に <code>offline_access</code> が無いと、更新用トークンが発行されず、1時間後に投稿できなくなります。設定の「Fanvue」タブで「連携を解除する」→「Fanvueと連携する」と連携し直してください。Fanvueの開発者画面のOAuthアプリの「スコープの定義」に <code>offline_access</code> が無いときは、追加してください。失敗した作品は、詳細画面の「再投稿の対象に戻す」で、もう一度投稿できます。</dd>
     <dt>AI処理がずっと「待機中」のまま</dt>
     <dd>ワーカーが動いていません。別のターミナルで <code>reelmilly watch</code> を起動してください。</dd>
-    <dt>sfw/nsfw判定が「失敗」する</dt>
+    <dt>区分の自動判定が「失敗」する</dt>
     <dd>NSFW判定用のモデルが入っていない可能性があります。<code>pip install -e ".[nsfw]"</code> を実行してください。失敗の理由はトーストと詳細画面に出ます。</dd>
     <dt>説明文生成が「失敗」する</dt>
     <dd>設定の「生成AI」でプロバイダーとAPIキー（またはモデル）を確認してください。</dd>
     <dt>承認待ち（pending_approval）にならない</dt>
-    <dd>sfw/nsfw判定と説明文生成の<strong>両方</strong>が完了すると承認待ちになります。詳細画面で、どちらが未実行か確認してください。</dd>
+    <dd>区分の自動判定と説明文生成の<strong>両方</strong>が完了すると承認待ちになります。詳細画面で、どちらが未実行か確認してください。</dd>
     <dt>設定が反映されているか確認したい</dt>
     <dd>ターミナルで <code>reelmilly doctor</code> を実行すると、ディレクトリ・DB・Fanvue接続の状態を確認できます。</dd>
   </dl>

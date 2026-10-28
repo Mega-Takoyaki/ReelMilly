@@ -59,11 +59,11 @@
           <div class="menu-panel" role="menu">
             <div class="menu-title">AI処理</div>
             {% if r.role == 'original' %}
-            <button type="button" class="menu-item" role="menuitem" data-ai-run="nsfw">sfw/nsfw判定を実行</button>
+            <button type="button" class="menu-item" role="menuitem" data-ai-run="nsfw">区分の自動判定を実行</button>
             <button type="button" class="menu-item" role="menuitem" data-ai-run="describe">説明文・タグ生成を実行</button>
             <button type="button" class="menu-item" role="menuitem" data-ai-run="both">両方を実行</button>
             {% else %}
-            <button type="button" class="menu-item" role="menuitem" data-lib-ai="{{ r.key }}" {% if r.ai_busy %}disabled{% endif %}>sfw/nsfw判定を実行</button>
+            <button type="button" class="menu-item" role="menuitem" data-lib-ai="{{ r.key }}" {% if r.ai_busy %}disabled{% endif %}>区分の自動判定を実行</button>
             <div class="menu-title">区分（このファイルの）</div>
             {% for value, label in (('', '原本に合わせる（引き継ぐ）'), ('sfw', 'sfw'), ('suggestive', 'suggestive'), ('explicit', 'explicit')) %}
             <button type="button" class="menu-item {% if (r.rating if r.source == 'own' else '') == value %}is-current{% endif %}" role="menuitem" data-lib-rating="{{ r.key }}" data-value="{{ value }}">{{ '✓ ' if (r.rating if r.source == 'own' else '') == value else '' }}{{ label }}</button>

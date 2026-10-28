@@ -85,10 +85,10 @@
         {% endif %}
         <dt>ファイルサイズ</dt><dd>{{ properties.file_size_human or '不明' }}</dd>
         <dt>取り込み日時</dt><dd>{{ asset.created_at | localtime }}</dd>
-        <dt>NSFW自動判定{{ info("AIによる参考値です。最終判断は必ず人が行ってください。") }}</dt>
+        <dt>NSFW自動判定{{ info("AIによる参考値です。最終判断は必ず人が行ってください。モデルのスコア(NSFWらしさ)と、露出した部位の検出を組み合わせて、sfw / suggestive / explicit の案を出します。性器・肛門が写っていればexplicit、胸・臀部ならスコアしだいでexplicit/suggestive、露出がなくスコアが高ければsuggestiveです。スコアが0.2〜0.8の迷う帯は「要確認」です。") }}</dt>
         <dd>
           {% if asset.nsfw_auto_rating %}
-          {{ asset.nsfw_auto_rating }}（確信度: {{ '%.2f'|format(asset.nsfw_auto_confidence) }}）
+          {{ asset.nsfw_auto_rating }}（スコア: {{ '%.2f'|format(asset.nsfw_auto_confidence) }}）{% if nsfw_review(asset) %} <strong>要確認</strong>（スコアが迷う帯です。目で確かめてください）{% endif %}
           {% else %}未実行{% endif %}
         </dd>
         <dt>確定区分</dt>

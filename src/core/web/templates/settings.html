@@ -298,7 +298,7 @@
 
   <section class="card settings-tab" id="sec-auto">
     <div class="ai-limits" id="ai-limits">
-      <h2 style="margin-top: 0;">AI処理の負荷{{ info("AI処理（説明文・タグ・sfw/nsfw判定）は、このPCのCPUで動くため、待ちが多いと、長時間、PCに負荷がかかります。ここで、一時停止したり、使うCPUを減らしたりできます。設定は、次の1件から、すぐ反映されます（ワーカーの再起動は要りません）。一時停止中は、待機中のものはそのまま残り、再開すると続きから処理します。") }}</h2>
+      <h2 style="margin-top: 0;">AI処理の負荷{{ info("AI処理（説明文・タグ・区分の自動判定）は、このPCのCPUで動くため、待ちが多いと、長時間、PCに負荷がかかります。ここで、一時停止したり、使うCPUを減らしたりできます。設定は、次の1件から、すぐ反映されます（ワーカーの再起動は要りません）。一時停止中は、待機中のものはそのまま残り、再開すると続きから処理します。") }}</h2>
       <p class="hint" id="ail-state">読み込み中…</p>
       <div class="ail-row">
         <button type="button" class="btn-primary" id="ail-toggle" disabled>AI処理を一時停止する</button>
@@ -309,7 +309,7 @@
       </div>
     </div>
     <hr style="border: 0; border-top: 1px solid var(--border); margin: 1rem 0;">
-    <h2 style="margin-top: 0;">AI処理の定期実行{{ info("sfw/nsfw判定と説明文生成を、毎日決まった時刻に自動で始める設定です。画像を取り込むたびに手動で実行する手間を省けます。個別の実行は、一覧の選択メニューや詳細画面からいつでもできます。") }}</h2>
+    <h2 style="margin-top: 0;">AI処理の定期実行{{ info("区分の自動判定と説明文生成を、毎日決まった時刻に自動で始める設定です。画像を取り込むたびに手動で実行する手間を省けます。個別の実行は、一覧の選択メニューや詳細画面からいつでもできます。") }}</h2>
     <p class="hint">
       指定した時刻になると、条件に合う<strong>未処理</strong>のアセット（判定結果・説明がまだ無いもの）を自動でキューに追加します（1日1回）。
       実際の処理は別プロセスのワーカー（<code>reelmilly watch</code>）が行うため、定期実行を使う場合は常駐させておいてください。
@@ -318,7 +318,7 @@
     {% macro sched_row(sch) %}
     <div class="schedule-row">
       <input type="hidden" name="sched_id" value="{{ sch.id }}">
-      <label>処理{{ info("どの処理を定期実行するかです。sfw/nsfw判定: 画像・動画がsfw(一般向け)かnsfw(成人向け)かを自動判定します。説明文生成・タグ付与: 内容説明を作り、タグ候補を付けます。") }}
+      <label>処理{{ info("どの処理を定期実行するかです。区分の自動判定: 画像・動画がsfw(一般向け)かnsfw(成人向け)かを自動判定します。説明文生成・タグ付与: 内容説明を作り、タグ候補を付けます。") }}
         <select name="sched_kind">
           {% for kind, label in schedule_labels.items() %}
           <option value="{{ kind }}" {% if sch.kind == kind %}selected{% endif %}>{{ label }}</option>

@@ -32,20 +32,22 @@
 {%- endmacro %}
 
 {% macro rating_chip(asset) -%}
+{%- set review = false -%}
 {%- if asset.content_rating_confirmed and asset.content_rating -%}
   {%- set state = {'sfw': 'ok-sfw', 'suggestive': 'ok-sug', 'explicit': 'ok-nsfw'}.get(asset.content_rating, 'ok-sfw') -%}
   {%- set letter = 'N' if asset.content_rating == 'explicit' else 'S' -%}
   {%- set tip = '承認済み: ' ~ asset.content_rating ~ (('（AI判定: ' ~ asset.nsfw_auto_rating ~ '）') if asset.nsfw_auto_rating else '') -%}
 {%- elif asset.nsfw_auto_rating -%}
-  {%- set state = 'auto-nsfw' if asset.nsfw_auto_rating == 'nsfw' else 'auto-sfw' -%}
-  {%- set letter = 'N' if asset.nsfw_auto_rating == 'nsfw' else 'S' -%}
-  {%- set tip = 'AI自動判定: ' ~ asset.nsfw_auto_rating | upper ~ '（確信度 ' ~ ('%.2f' | format(asset.nsfw_auto_confidence or 0)) ~ '）・人の承認はまだです' -%}
+  {%- set state = {'sfw': 'auto-sfw', 'suggestive': 'auto-sug', 'explicit': 'auto-nsfw', 'nsfw': 'auto-nsfw'}.get(asset.nsfw_auto_rating, 'auto-sfw') -%}
+  {%- set letter = {'sfw': 'S', 'suggestive': '△', 'explicit': 'N', 'nsfw': 'N'}.get(asset.nsfw_auto_rating, 'S') -%}
+  {%- set review = nsfw_review(asset) -%}
+  {%- set tip = 'AI自動判定: ' ~ asset.nsfw_auto_rating | upper ~ '（スコア ' ~ ('%.2f' | format(asset.nsfw_auto_confidence or 0)) ~ '）' ~ ('・要確認（スコアが迷う帯です。目で確かめてください）' if review else '') ~ '・人の承認はまだです' -%}
 {%- else -%}
   {%- set state = 'none' -%}
   {%- set letter = '?' -%}
-  {%- set tip = '未処理（sfw/nsfw判定がまだありません）' -%}
+  {%- set tip = '未処理（区分の自動判定がまだありません）' -%}
 {%- endif -%}
-<span class="chip chip-rating rating-{{ state }}" data-tip="{{ tip }}">{{ letter }}</span>
+<span class="chip chip-rating rating-{{ state }}{{ ' rating-review' if review else '' }}" data-tip="{{ tip }}">{{ letter }}</span>
 {%- endmacro %}
 
 {# 投稿先ごとのフラグ。投稿済み=投稿先の色の塗り / 失敗=点線の枠。行が無い(未投稿)投稿先は出さない #}

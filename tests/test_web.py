@@ -843,7 +843,7 @@ def test_index_cards_use_compact_overlay_icons(app_and_conn):
     assert "asset-meta" not in body  # 下部のバッジ領域は廃止し、サムネイル上のアイコンへ
     assert 'chip chip-type chip-image' in body and ">JPG<" in body  # 拡張子つきの種別アイコン
     assert "rating-auto-nsfw" in body  # AI判定nsfw(未承認)
-    assert 'data-tip="AI自動判定: NSFW（確信度 0.83）' in body
+    assert 'data-tip="AI自動判定: NSFW（スコア 0.83）' in body
     assert 'status-dot status-ready' in body and 'data-tip="READY（承認済み・投稿準備完了）"' in body
 
 

@@ -16,6 +16,7 @@ from pathlib import Path
 from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
 
 from core import db, env_settings, generation
+from core import nsfw as nsfw_module
 from core import autodetect, duplicates, edits, ffmpeg, fonts, mask, notifications, overlay, stamps, storage, watermark
 from core import captions as captions_module
 from core import versions as versions_module
@@ -93,7 +94,7 @@ def _suggested_rating(asset) -> str | None:
     """承認フォームの初期選択値。確定済みならその値、未確定ならAI判定から保守的に推定する。"""
     if asset["content_rating"]:
         return asset["content_rating"]
-    return {"sfw": "sfw", "nsfw": "explicit"}.get(asset["nsfw_auto_rating"])
+    return {"sfw": "sfw", "suggestive": "suggestive", "explicit": "explicit", "nsfw": "explicit"}.get(asset["nsfw_auto_rating"])  # "nsfw"は旧形式
 
 
 def create_app(config: Config) -> Flask:
@@ -233,7 +234,10 @@ def create_app(config: Config) -> Flask:
             "ready": "ready（承認済み）",
         }
         rating_labels = {db.NONE_VALUE: "（未設定・未承認）"}
-        auto_labels = {db.NONE_VALUE: "（未判定）", "sfw": "sfw", "nsfw": "nsfw"}
+        auto_labels = {
+            db.NONE_VALUE: "（未判定）", "sfw": "sfw", "suggestive": "suggestive", "explicit": "explicit", "nsfw": "nsfw（旧形式）",
+            "review": "要確認（スコアが迷う帯）",
+        }
         filter_options = {
             "status": options(facets["status"], status_labels, status_sel),
             "content_rating": options(facets["content_rating"], rating_labels, rating_sel),
@@ -300,6 +304,8 @@ def create_app(config: Config) -> Flask:
             post_channels=POST_CHANNELS,
             post_status_labels=POST_STATUS_LABELS,
         )
+
+    app.jinja_env.globals["nsfw_review"] = lambda asset: nsfw_module.needs_review(asset["nsfw_auto_confidence"])
 
     @app.context_processor
     def inject_common():
@@ -590,6 +596,7 @@ def create_app(config: Config) -> Flask:
                 "content_rating_confirmed": bool(asset["content_rating_confirmed"]),
                 "nsfw_auto_rating": asset["nsfw_auto_rating"],
                 "nsfw_auto_confidence": asset["nsfw_auto_confidence"],
+                "nsfw_review": nsfw_module.needs_review(asset["nsfw_auto_confidence"]),
                 "has_description": asset["content_description"] is not None,
                 "tags": tags,
                 "tasks": states.get(asset_id, {}),

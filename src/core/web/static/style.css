@@ -367,6 +367,8 @@ main {
 .chip-rating.rating-none { color: #cbd5e1; border-color: #94a3b8; border-style: dashed; }
 .chip-rating.rating-auto-sfw { color: #86efac; border-color: #86efac; }
 .chip-rating.rating-auto-nsfw { color: #fca5a5; border-color: #fca5a5; }
+.chip-rating.rating-auto-sug { color: #fcd34d; border-color: #fcd34d; }
+.chip-rating.rating-review { border-style: dotted; }  /* 要確認(スコアが迷う帯): 枠を点線に */
 .chip-rating.rating-ok-sfw { background: #16a34a; border-color: #16a34a; color: #fff; }
 .chip-rating.rating-ok-sug { background: #d97706; border-color: #d97706; color: #fff; }
 .chip-rating.rating-ok-nsfw { background: #dc2626; border-color: #dc2626; color: #fff; }
