@@ -72,10 +72,17 @@ def apply_auto_tags(conn: sqlite3.Connection, asset_id: str, result: AnalysisRes
         db.set_auto_rating_tag(conn, asset_id, result.nsfw_auto_rating)
 
 
-def run_nsfw(nsfw_classifier, media_path: Path):
-    """sfw/nsfw判定を実行する。失敗時は例外を送出する。戻り値は`NsfwResult`(rating, confidence)。"""
+def run_nsfw(nsfw_classifier, media_path: Path, conn: sqlite3.Connection | None = None):
+    """区分(sfw/suggestive/explicit)の自動判定を実行する。失敗時は例外を送出する。戻り値は`NsfwResult`(rating, confidence)。
+
+    `conn`があれば、設定画面で調整したしきい値などを、この判定から使う(ワーカーを再起動せずに、反映される)。
+    """
     if nsfw_classifier is None:
         raise RuntimeError('NSFW判定モデルが利用できません（pip install -e ".[nsfw]" が必要です）')
+    if conn is not None and hasattr(nsfw_classifier, "params"):
+        from core import nsfw as nsfw_module
+
+        nsfw_classifier.params = nsfw_module.load_params(conn, getattr(getattr(nsfw_classifier, "_config", None), "threshold", 0.5))
     return nsfw_classifier.classify(media_path)
 
 
@@ -133,7 +140,7 @@ def analyze_asset(
     errors = []
 
     try:
-        nsfw_result = run_nsfw(nsfw_classifier, media_path)
+        nsfw_result = run_nsfw(nsfw_classifier, media_path, conn)
         nsfw_auto_rating = nsfw_result.rating
         nsfw_auto_confidence = nsfw_result.confidence
     except Exception as exc:  # noqa: BLE001

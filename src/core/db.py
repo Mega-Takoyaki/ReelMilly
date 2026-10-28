@@ -303,9 +303,9 @@ def list_assets(
         review = "review" in auto  # 「要確認」: スコアが迷う帯にあるもの(人の目で確かめたほうがよい)
         auto = [v for v in auto if v != "review"]
         if review:
-            from core.nsfw import REVIEW_BAND
+            from core.nsfw import load_params
 
-            params["rv_lo"], params["rv_hi"] = REVIEW_BAND
+            params["rv_lo"], params["rv_hi"] = load_params(conn).review_band
             review_sql = "(assets.nsfw_auto_confidence >= :rv_lo AND assets.nsfw_auto_confidence < :rv_hi)"
             if auto:
                 before = len(conditions)
@@ -612,10 +612,10 @@ def facets(conn: sqlite3.Connection, channels: list[str], broken: str = "hide", 
 # --- tags -----------------------------------------------------------------
 
 def _review_facet(conn: sqlite3.Connection, live: str) -> list[tuple]:
-    from core.nsfw import REVIEW_BAND
+    from core.nsfw import load_params
 
     n = conn.execute(
-        f"SELECT COUNT(*) {live} AND nsfw_auto_confidence >= ? AND nsfw_auto_confidence < ?", REVIEW_BAND
+        f"SELECT COUNT(*) {live} AND nsfw_auto_confidence >= ? AND nsfw_auto_confidence < ?", load_params(conn).review_band
     ).fetchone()[0]
     return [("review", n)] if n else []
 
@@ -798,7 +798,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str, params: dict | None = None) -> bool:
+def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str, params: dict | None = None, commit: bool = True) -> bool:
     """処理(AI・透かし)をキューに積む。同じアセット・種別が待機中/実行中ならFalse(二重登録しない)。
 
     `params`はタスクごとの設定(透かしの文字・位置など)。JSONで保存する。
@@ -821,7 +821,8 @@ def enqueue_ai_task(conn: sqlite3.Connection, asset_id: str, kind: str, params: 
         "INSERT INTO ai_tasks (asset_id, kind, status, params, created_at) VALUES (?, ?, 'queued', ?, ?)",
         (asset_id, kind, json.dumps(params, ensure_ascii=False) if params else None, _now_iso()),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return True
 
 

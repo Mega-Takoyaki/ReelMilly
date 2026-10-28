@@ -305,7 +305,20 @@ def create_app(config: Config) -> Flask:
             post_status_labels=POST_STATUS_LABELS,
         )
 
-    app.jinja_env.globals["nsfw_review"] = lambda asset: nsfw_module.needs_review(asset["nsfw_auto_confidence"])
+    review_band_cache = {"band": nsfw_module.REVIEW_BAND, "at": 0.0}
+
+    def review_band() -> tuple[float, float]:
+        """「要確認」の幅(設定画面で調整)。画面の描画のたびに、DBを読まないよう、数秒だけ覚えておく。"""
+        import time
+
+        if time.monotonic() - review_band_cache["at"] > 5:
+            conn = get_conn()
+            review_band_cache["band"] = nsfw_module.load_params(conn, config.nsfw.threshold).review_band
+            conn.close()
+            review_band_cache["at"] = time.monotonic()
+        return review_band_cache["band"]
+
+    app.jinja_env.globals["nsfw_review"] = lambda asset: nsfw_module.needs_review(asset["nsfw_auto_confidence"], review_band())
 
     @app.context_processor
     def inject_common():
@@ -576,6 +589,24 @@ def create_app(config: Config) -> Flask:
         conn.close()
         return jsonify({"queued": queued, "skipped": len(known) * len(kinds) - queued, "status": status})
 
+    @app.route("/api/nsfw/rejudge", methods=["POST"])
+    def api_nsfw_rejudge():
+        """区分の自動判定の判定し直しを、ジョブキューに積む。`dry_run`なら、対象の数だけ返す(確認用)。
+        判定には、保存済みのしきい値を使う(設定を変えたら、先に保存する)。"""
+        payload = request.get_json(silent=True) or {}
+        conn = get_conn()
+        try:
+            if payload.get("dry_run"):
+                ids = worker_module.rejudge_asset_ids(conn, str(payload.get("kind")), str(payload.get("scope")))
+                return jsonify({"matched": len(ids)})
+            out = worker_module.enqueue_rejudge(conn, str(payload.get("kind")), str(payload.get("scope")))
+            out["status"] = worker_module.get_status(conn, config.timezone)
+            return jsonify(out)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        finally:
+            conn.close()
+
     @app.route("/api/ai-live")
     def ai_live():
         """一覧/詳細画面が定期的に取得する、AI処理の全体状況と表示中アセットの要約。"""
@@ -596,7 +627,7 @@ def create_app(config: Config) -> Flask:
                 "content_rating_confirmed": bool(asset["content_rating_confirmed"]),
                 "nsfw_auto_rating": asset["nsfw_auto_rating"],
                 "nsfw_auto_confidence": asset["nsfw_auto_confidence"],
-                "nsfw_review": nsfw_module.needs_review(asset["nsfw_auto_confidence"]),
+                "nsfw_review": nsfw_module.needs_review(asset["nsfw_auto_confidence"], review_band()),
                 "has_description": asset["content_description"] is not None,
                 "tags": tags,
                 "tasks": states.get(asset_id, {}),
@@ -1581,6 +1612,16 @@ def create_app(config: Config) -> Flask:
                     )
                 except mask.MaskError:
                     pass  # 入力が不正なら、既存の既定値を変えない
+            if "nsfw_threshold" in request.form:  # 区分の自動判定のしきい値(画面に欄があるときだけ)
+                try:
+                    nsfw_module.save_params(conn, {
+                        "threshold": request.form.get("nsfw_threshold"), "explicit_score": request.form.get("nsfw_explicit_score"),
+                        "review_low": request.form.get("nsfw_review_low"), "review_high": request.form.get("nsfw_review_high"),
+                        "video_top_k": request.form.get("nsfw_video_top_k"), "exposure_sensitivity": request.form.get("nsfw_exposure_sensitivity"),
+                    }, config.nsfw.threshold)
+                    review_band_cache["at"] = 0.0
+                except nsfw_module.NsfwParamsError:
+                    pass  # 入力が不正なら、既存の値を変えない
             if "translate_mode" in request.form:
                 settings_module.set_translate_settings(conn, request.form.get("translate_mode"), request.form.get("translate_order"))
             env_updates = {key: (request.form.get(key) or "").strip() for key in env_settings.CONNECTION_ENV_KEYS}
@@ -1623,11 +1664,15 @@ def create_app(config: Config) -> Flask:
         x_needs_reconnect = x_store.needs_reconnect()
         _conn = get_conn()
         am_defaults = settings_module.get_automask_defaults(_conn)
+        nsfw_params = nsfw_module.load_params(_conn, config.nsfw.threshold)
         _conn.close()
 
         return render_template(
             "settings.html",
             am_defaults=am_defaults,
+            nsfw_params=nsfw_params,
+            rejudge_kinds=worker_module.REJUDGE_KINDS,
+            rejudge_scopes=worker_module.REJUDGE_SCOPES,
             am_parts=[(p, autodetect.PART_LABELS[p]) for p in autodetect.PARTS],
             am_ranges={"sensitivity": autodetect.SENSITIVITY_RANGE, "padding": autodetect.PADDING_RANGE, "interval": autodetect.INTERVAL_RANGE, "strength": mask.STRENGTH_RANGE},
             translate_modes=settings_module.TRANSLATE_MODES,

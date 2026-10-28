@@ -53,6 +53,7 @@
     <button type="button" role="tab" data-tab="sec-ai">生成AI</button>
     <button type="button" role="tab" data-tab="sec-post">投稿スケジュール</button>
     <button type="button" role="tab" data-tab="sec-auto">AI自動処理・タグ</button>
+    <button type="button" role="tab" data-tab="sec-nsfwrate">区分の判定</button>
     <button type="button" role="tab" data-tab="sec-tags">タグ整理</button>
     <button type="button" role="tab" data-tab="sec-log">通知・ログ</button>
     <button type="button" role="tab" data-tab="sec-dups">重複</button>
@@ -373,6 +374,48 @@
     <button type="button" id="category-add" class="btn-ghost-inline">＋ カテゴリを追加</button>
   </section>
 
+  <section class="card settings-tab" id="sec-nsfwrate">
+    <h2 style="margin-top: 0;">区分の自動判定（sfw / suggestive / explicit）{{ info("画像・動画を、モデルのスコア(NSFWらしさ。0〜1)と、露出した部位の検出(NudeNet)から、sfw / suggestive / explicit の案にします。性器・肛門が写っていれば explicit、胸・臀部が写っていればスコアしだいで explicit か suggestive、露出がなければスコアしだいで suggestive か sfw です。ここで、その境目を調整できます。あくまで参考値で、最終判断は人が承認します。保存した値は、次の判定から使われます(ワーカーの再起動は要りません)。") }}</h2>
+    <div class="settings-form">
+      <label>suggestiveのしきい値（露出が見つからないとき）{{ info("露出した部位が見つからなかった作品で、スコアがこの値以上なら suggestive、未満なら sfw にします。小さくするほど、suggestive が増えます。") }}
+        <span class="range-row"><input type="range" name="nsfw_threshold" min="0.05" max="0.95" step="0.05" value="{{ nsfw_params.threshold }}" data-output="nsfw-threshold-set"><output id="nsfw-threshold-set">{{ nsfw_params.threshold }}</output></span>
+      </label>
+      <label>explicitのしきい値（胸・臀部が見つかったとき）{{ info("胸・臀部が写っていた作品で、スコアがこの値以上なら explicit、未満なら suggestive にします。性器・肛門が見つかったときは、スコアに関係なく explicit です。") }}
+        <span class="range-row"><input type="range" name="nsfw_explicit_score" min="0.05" max="0.99" step="0.05" value="{{ nsfw_params.explicit_score }}" data-output="nsfw-explicit-set"><output id="nsfw-explicit-set">{{ nsfw_params.explicit_score }}</output></span>
+      </label>
+      <label>「要確認」の下限{{ info("スコアが、下限以上、上限未満の作品を「要確認」にします(一覧のアイコンの点線と、絞り込みの「要確認」)。迷う作品を、人の目で確かめるための印です。") }}
+        <span class="range-row"><input type="range" name="nsfw_review_low" min="0" max="0.95" step="0.05" value="{{ nsfw_params.review_low }}" data-output="nsfw-rvlow-set"><output id="nsfw-rvlow-set">{{ nsfw_params.review_low }}</output></span>
+      </label>
+      <label>「要確認」の上限
+        <span class="range-row"><input type="range" name="nsfw_review_high" min="0.05" max="1" step="0.05" value="{{ nsfw_params.review_high }}" data-output="nsfw-rvhigh-set"><output id="nsfw-rvhigh-set">{{ nsfw_params.review_high }}</output></span>
+      </label>
+      <label>動画で平均するコマの数{{ info("動画のスコアは、調べたコマのうち、スコアが高いほうからこの数のコマの平均にします。1にすると、最大のスコアと同じになります(1コマの誤検出に、引きずられやすくなります)。") }}
+        <input type="number" name="nsfw_video_top_k" min="1" max="20" step="1" value="{{ nsfw_params.video_top_k }}" style="width: 6em;">
+      </label>
+      <label>露出の検出の感度{{ info("露出した部位の検出の感度です(1〜10)。大きいほど、見逃しにくくなりますが、誤検出が増えます。NudeNetが入っていない場合は、露出の検出は使われません。") }}
+        <span class="range-row"><input type="range" name="nsfw_exposure_sensitivity" min="1" max="10" step="1" value="{{ nsfw_params.exposure_sensitivity }}" data-output="nsfw-expsens-set"><output id="nsfw-expsens-set">{{ nsfw_params.exposure_sensitivity }}</output></span>
+      </label>
+    </div>
+
+    <h3>判定し直し{{ info("保存したしきい値で、区分の自動判定をやり直します。ジョブキュー(AI処理)に積まれ、ワーカーが、AI処理の負荷設定の範囲で、順に処理します(画像は1枚約0.4秒、動画は1本数秒〜数十秒)。人が承認した区分(確定区分)は、変わりません。しきい値を変えたら、先に、画面下の「保存」を押してから、実行してください。") }}</h3>
+    <div class="settings-form">
+      <label>対象の種類
+        <select id="rejudge-kind">
+          {% for key, label in rejudge_kinds.items() %}<option value="{{ key }}" {% if key == 'image' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>対象の範囲{{ info("「未判定・旧形式(nsfw)のもの」は、まだ3段階の判定になっていない作品です。しきい値を変えたあとに、判定し直すなら「すべて」を選びます。") }}
+        <select id="rejudge-scope">
+          {% for key, label in rejudge_scopes.items() %}<option value="{{ key }}" {% if key == 'legacy' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <div>
+        <button type="button" class="btn-ghost" id="rejudge-run">判定し直しをキューに入れる…</button>
+        <span class="hint" id="rejudge-result"></span>
+      </div>
+    </div>
+  </section>
+
   <section class="card settings-tab" id="sec-tags">
     <h2 style="margin-top: 0;">タグ整理{{ info("AIが付けたタグの、表記ゆれ・複合タグ・色つき・文のようなタグを、規則で整えます。新しく付くタグは、保存時に自動で整います。ここでは、すでにあるタグを、整理案(プレビュー)で確認して、適用します。タグの内容を、外部に送ることはありません(クラウドのAIは使いません)。") }}</h2>
 
@@ -557,6 +600,7 @@
 <script src="{{ url_for('static', filename='watermark.js') }}"></script>
 <script src="{{ url_for('static', filename='storage.js') }}"></script>
 <script src="{{ url_for('static', filename='ai-limits.js') }}"></script>
+<script src="{{ url_for('static', filename='nsfw-rejudge.js') }}"></script>
 <script>
 (function () {
   const choices = {{ model_choices | tojson }};

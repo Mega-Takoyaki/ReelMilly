@@ -140,6 +140,48 @@ def enqueue_for_assets(conn: sqlite3.Connection, asset_ids: list[str], kinds) ->
     return queued
 
 
+REJUDGE_KINDS = {"image": "画像だけ", "video": "動画だけ", "all": "画像と動画"}
+REJUDGE_SCOPES = {
+    "legacy": "未判定・旧形式(nsfw)のものだけ",
+    "review": "「要確認」のものだけ",
+    "all": "すべて",
+}
+
+
+def rejudge_asset_ids(conn: sqlite3.Connection, kind: str, scope: str) -> list[str]:
+    """区分の自動判定を、し直す対象の作品ID(ごみ箱の作品は除く。古い取り込み順)。"""
+    from core import nsfw as nsfw_module
+
+    if kind not in REJUDGE_KINDS or scope not in REJUDGE_SCOPES:
+        raise ValueError("対象の指定が正しくありません")
+    where = ["deleted_at IS NULL"]
+    params: list = []
+    if kind != "all":
+        where.append("kind = ?")
+        params.append(kind)
+    if scope == "legacy":
+        where.append("(nsfw_auto_rating IS NULL OR nsfw_auto_rating = 'nsfw')")
+    elif scope == "review":
+        where.append("nsfw_auto_confidence >= ? AND nsfw_auto_confidence < ?")
+        params.extend(nsfw_module.load_params(conn).review_band)
+    rows = conn.execute(f"SELECT id FROM assets WHERE {' AND '.join(where)} ORDER BY created_at, id", params).fetchall()
+    return [r["id"] for r in rows]
+
+
+def enqueue_rejudge(conn: sqlite3.Connection, kind: str, scope: str) -> dict:
+    """区分の自動判定の判定し直しを、ジョブキューに積む(判定は、ワーカーが、AI処理の負荷設定の範囲で、順に行う)。
+
+    `{"matched": 対象の数, "queued": 積んだ数, "skipped": 待機中・実行中で積まなかった数}`
+    """
+    ids = rejudge_asset_ids(conn, kind, scope)
+    queued = 0
+    for asset_id in ids:
+        if db.enqueue_ai_task(conn, asset_id, "nsfw", commit=False):
+            queued += 1
+    conn.commit()
+    return {"matched": len(ids), "queued": queued, "skipped": len(ids) - queued}
+
+
 def enqueue_scheduled(conn: sqlite3.Connection, timezone_name: str, now: datetime | None = None) -> int:
     """定期実行の設定に従い、時刻が来ていれば未処理のアセットをキューへ積む(1日1回まで)。"""
     local_now = (now or _now()).astimezone(ZoneInfo(timezone_name))
@@ -304,11 +346,11 @@ class AnalysisWorker:
                 # 加工版(切り出し・透かし入り)のsfw/nsfw判定。結果は、その加工版に記録する(原本とは独立)
                 version = json.loads(task.get("params") or "{}").get("version")
                 path, _media_type = versions.resolve(conn, asset, version)
-                result = analysis.run_nsfw(self._get_classifier(), path)
+                result = analysis.run_nsfw(self._get_classifier(), path, conn)
                 versions.set_auto(conn, asset, version, result.rating, result.confidence)
                 return None
             if task["kind"] == "nsfw":
-                result = analysis.run_nsfw(self._get_classifier(), media_path)
+                result = analysis.run_nsfw(self._get_classifier(), media_path, conn)
                 db.update_asset(
                     conn,
                     asset["id"],

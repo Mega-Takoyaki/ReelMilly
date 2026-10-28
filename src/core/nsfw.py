@@ -19,8 +19,9 @@ NSFW側に倒れやすい。そのため、モデルのスコア(`confidence`)�
 from __future__ import annotations
 
 import importlib.util
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from core.config import NsfwConfig
@@ -35,6 +36,78 @@ VIDEO_TOP_K = 3  # 動画のスコアは、高いほうからこの数のコマ�
 MAX_VIDEO_FRAMES = 60  # 動画で調べるコマの上限(長い動画は、間隔を広げて、この数に収める)
 
 
+class NsfwParamsError(ValueError):
+    """しきい値などの設定が正しくないとき。利用者に伝える理由つき。"""
+
+
+@dataclass(frozen=True)
+class RatingParams:
+    """3段階の案を決めるときの、しきい値など。設定画面で調整できる(`load_params`)。"""
+
+    threshold: float = 0.5  # 露出が見つからないとき、スコアがこれ以上なら suggestive(未満なら sfw)
+    explicit_score: float = EXPLICIT_SCORE  # 胸・臀部が見つかったとき、スコアがこれ以上なら explicit
+    review_low: float = REVIEW_BAND[0]  # スコアが、この値以上、review_high未満なら「要確認」
+    review_high: float = REVIEW_BAND[1]
+    video_top_k: int = VIDEO_TOP_K  # 動画のスコアは、高いほうからこの数のコマの平均
+    exposure_sensitivity: int = 7  # 露出の検出の感度(1〜10)
+
+    @property
+    def review_band(self) -> tuple[float, float]:
+        return (self.review_low, self.review_high)
+
+
+PARAM_SETTING_KEY = "nsfw_params"
+
+
+def clean_params(raw: dict | None, default_threshold: float = 0.5) -> RatingParams:
+    """入力を検証して、`RatingParams`にそろえる。足りない項目は既定値。正しくなければ`NsfwParamsError`。"""
+    raw = raw or {}
+    defaults = RatingParams(threshold=default_threshold)
+    try:
+        values = {
+            "threshold": float(raw.get("threshold", defaults.threshold)),
+            "explicit_score": float(raw.get("explicit_score", defaults.explicit_score)),
+            "review_low": float(raw.get("review_low", defaults.review_low)),
+            "review_high": float(raw.get("review_high", defaults.review_high)),
+            "video_top_k": int(raw.get("video_top_k", defaults.video_top_k)),
+            "exposure_sensitivity": int(raw.get("exposure_sensitivity", defaults.exposure_sensitivity)),
+        }
+    except (TypeError, ValueError) as exc:
+        raise NsfwParamsError("しきい値は、数で入れてください") from exc
+    for name, label in (("threshold", "suggestiveのしきい値"), ("explicit_score", "explicitのしきい値")):
+        if not 0.05 <= values[name] <= 0.99:
+            raise NsfwParamsError(f"{label}は、0.05〜0.99の数にしてください")
+    if not 0.0 <= values["review_low"] < values["review_high"] <= 1.0:
+        raise NsfwParamsError("「要確認」の幅は、下限を上限より小さく(0〜1の範囲で)してください")
+    if not 1 <= values["video_top_k"] <= 20:
+        raise NsfwParamsError("動画で平均するコマの数は、1〜20にしてください")
+    if not 1 <= values["exposure_sensitivity"] <= 10:
+        raise NsfwParamsError("露出の検出の感度は、1〜10の数にしてください")
+    return RatingParams(**values)
+
+
+def load_params(conn, default_threshold: float = 0.5) -> RatingParams:
+    """設定で調整した値(無ければ既定)。壊れた保存値は、既定に戻す。"""
+    from core import db
+
+    raw = db.get_setting(conn, PARAM_SETTING_KEY)
+    if raw:
+        try:
+            return clean_params(json.loads(raw), default_threshold)
+        except (ValueError, TypeError):
+            pass
+    return RatingParams(threshold=default_threshold)
+
+
+def save_params(conn, raw: dict, default_threshold: float = 0.5) -> RatingParams:
+    """検証に通る値だけ保存する(通らなければ`NsfwParamsError`)。"""
+    from core import db
+
+    params = clean_params(raw, default_threshold)
+    db.set_setting(conn, PARAM_SETTING_KEY, json.dumps(asdict(params)))
+    return params
+
+
 @dataclass
 class NsfwResult:
     rating: str  # "sfw" | "suggestive" | "explicit"（参考値。確定値はcontent_rating、ADR-0008参照）
@@ -47,18 +120,18 @@ def rating_from_score(score: float, threshold: float) -> str:
     return "nsfw" if score >= threshold else "sfw"
 
 
-def decide_rating(score: float, exposure: str | None, threshold: float) -> str:
+def decide_rating(score: float, exposure: str | None, threshold: float, explicit_score: float = EXPLICIT_SCORE) -> str:
     """スコアと露出の検出結果から、3段階の案を決める。"""
     if exposure == "genital":
         return "explicit"
     if exposure == "chest":
-        return "explicit" if score >= EXPLICIT_SCORE else "suggestive"
+        return "explicit" if score >= explicit_score else "suggestive"
     return "suggestive" if score >= threshold else "sfw"
 
 
-def needs_review(confidence: float | None) -> bool:
-    """スコアが迷う帯にあるか(人の目で確かめたほうがよいか)。未判定はFalse。"""
-    return confidence is not None and REVIEW_BAND[0] <= confidence < REVIEW_BAND[1]
+def needs_review(confidence: float | None, band: tuple[float, float] = REVIEW_BAND) -> bool:
+    """スコアが迷う帯(`band`: 以上・未満)にあるか(人の目で確かめたほうがよいか)。未判定はFalse。"""
+    return confidence is not None and band[0] <= confidence < band[1]
 
 
 def top_k_mean(scores: list[float], k: int = VIDEO_TOP_K) -> float:
@@ -98,6 +171,7 @@ class NsfwClassifier:
 
     def __init__(self, config: NsfwConfig):
         self._config = config
+        self.params = RatingParams(threshold=config.threshold)  # 判定のたびに、設定の値へ更新される(`analysis.run_nsfw`)
         self._model = None
         self._transform = None
         self._class_names = None
@@ -138,13 +212,15 @@ class NsfwClassifier:
         try:
             import numpy as np
 
-            return score, autodetect.exposure_flags(np.asarray(img.convert("RGB"))[:, :, ::-1].copy())
+            return score, autodetect.exposure_flags(np.asarray(img.convert("RGB"))[:, :, ::-1].copy(), self.params.exposure_sensitivity)
         except Exception:  # noqa: BLE001 - 検出器の不調で、判定全体を止めない(スコアだけで判定する)
             return score, None
 
     def _result(self, score: float, flags: list[tuple[bool, bool]]) -> NsfwResult:
         exposure = combine_exposure(flags) if flags else None
-        return NsfwResult(rating=decide_rating(score, exposure, self._config.threshold), confidence=score, exposure=exposure)
+        return NsfwResult(
+            rating=decide_rating(score, exposure, self.params.threshold, self.params.explicit_score), confidence=score, exposure=exposure
+        )
 
     def classify_image_path(self, image_path: Path) -> NsfwResult:
         from PIL import Image
@@ -182,7 +258,7 @@ class NsfwClassifier:
         finally:
             cap.release()
 
-        return self._result(top_k_mean(scores), flags)
+        return self._result(top_k_mean(scores, self.params.video_top_k), flags)
 
     def classify(self, media_path: Path) -> NsfwResult:
         if media_path.suffix.lower() in VIDEO_EXTENSIONS:
