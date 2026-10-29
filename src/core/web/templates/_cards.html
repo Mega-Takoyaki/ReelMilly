@@ -6,11 +6,8 @@
       <input type="checkbox" class="asset-checkbox" value="{{ asset.id }}">
     </label>
     <div class="asset-media" data-kind="{{ asset.kind }}" data-src="{{ url_for('asset_media', asset_id=asset.id) }}" data-alt="{{ asset.id }}">
-      {% if asset.kind == 'video' %}
-      <video src="{{ url_for('asset_media', asset_id=asset.id) }}" muted preload="metadata"></video>
-      {% else %}
-      <img src="{{ url_for('asset_media', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy">
-      {% endif %}
+      <img src="{{ url_for('asset_thumb', asset_id=asset.id) }}" alt="{{ asset.id }}" loading="lazy" decoding="async">
+      {% if asset.kind == 'video' %}<span class="asset-play" aria-hidden="true">▶</span>{% endif %}
       <span class="asset-badges">{{ type_chip(asset) }}{{ rating_chip(asset) }}{{ wm_chip(asset) }}{{ broken_chip(asset) }}{{ hidden_chip(asset) }}</span>
       {{ status_dot(asset) }}
       <span class="asset-posts">{{ noplan_chip(channels_map.get(asset.id)) }}{{ post_marks(posts.get(asset.id, {}), post_channels) }}</span>

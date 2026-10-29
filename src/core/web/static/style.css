@@ -283,6 +283,24 @@ main {
   background: #000;
 }
 
+.asset-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2.2rem;
+  height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 0.15rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
 .asset-detail-link {
   position: absolute;
   right: 0.4rem;

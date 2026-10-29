@@ -167,6 +167,19 @@ def _notify_duplicates(config: Config) -> None:
         conn.close()
 
 
+def cmd_thumbnails(config: Config) -> int:
+    """一覧用のサムネイルで、まだ無いものを、いま作る。"""
+    from core import thumbnails
+
+    conn = get_connection(config.paths.db_path)
+    try:
+        out = thumbnails.backfill(conn, config.paths.state_dir)
+    finally:
+        conn.close()
+    print(f"サムネイル: 作成 {out['made']}件、作れなかった {out['failed']}件(対象 {out['total']}件)")
+    return 0
+
+
 def cmd_duplicates(config: Config) -> int:
     """重複(同じ画像・動画)の検出を、いま実行する。"""
     from core import duplicates
@@ -554,13 +567,14 @@ def cmd_web(config: Config) -> int:
         cmd_migrate_filenames(config)  # 旧バージョンで取り込んだ作品のファイル名も、起動時にそろえる
 
         def backfill() -> None:  # 旧バージョンで取り込んだ作品の幅・高さ(「フル」表示用)を、背景で補う
-            from core import duplicates
+            from core import duplicates, thumbnails
             from core.dimensions import backfill_dimensions
 
             bg = get_connection(config.paths.db_path)
             try:
                 backfill_dimensions(bg)
                 duplicates.backfill_hashes(bg)  # 旧バージョンで取り込んだ作品の、中身のハッシュ(重複の検出用)
+                thumbnails.backfill(bg, config.paths.state_dir)  # 一覧用のサムネイル(新しい作品から)
                 duplicates.backfill_pixel_hashes(bg)  # 画素の指紋(保存し直した同じ画像の検出用)
                 duplicates.notify_new_duplicates(bg)
             finally:
@@ -593,6 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
         "analyze", help="analyzing状態のアセットにNSFW自動仕分け・内容説明取得を再試行する"
     )
     subparsers.add_parser("duplicates", help="重複(同じ画像・動画)の検出を、いま実行する")
+    subparsers.add_parser("thumbnails", help="一覧用のサムネイルで、まだ無いものを作る")
     subparsers.add_parser("web", help="本体UI(ローカルWebアプリ)を起動する")
     run_parser = subparsers.add_parser("run", help="投稿ジョブを実行する")
     run_parser.add_argument("job", choices=["drop"], help="実行するジョブ名")
@@ -631,6 +646,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_migrate_filenames(config)
     if args.command == "duplicates":
         return cmd_duplicates(config)
+    if args.command == "thumbnails":
+        return cmd_thumbnails(config)
     if args.command == "ingest":
         return cmd_ingest(config)
     if args.command == "analyze":

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from core import db
+from core import db, thumbnails
 from core.analysis import AnalysisResult, analyze_asset, apply_auto_tags
 from core.config import Config
 from core.dimensions import read_dimensions
@@ -117,6 +117,7 @@ def ingest_inbox(
         else:
             analysis = analyze_asset(conn, nsfw_classifier, generator, dest_path)
 
+        thumbnails.ensure(config.paths.state_dir, asset_id, kind, dest_path)  # 一覧用のサムネイル
         size = read_dimensions(dest_path, kind)  # 幅・高さ(一覧の「フル」表示用)
         now = datetime.now(timezone.utc).isoformat()
         asset = {

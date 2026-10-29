@@ -666,6 +666,25 @@ def create_app(config: Config) -> Flask:
             abort(404)
         return send_file(asset["file_path"])
 
+    @app.route("/assets/<asset_id>/thumb")
+    def asset_thumb(asset_id):
+        """一覧用の小さな静止画(無ければ、その場で作る)。作品ごとに変わらないので、長くキャッシュさせる。"""
+        from core import thumbnails
+
+        conn = get_conn()
+        asset = db.get_asset(conn, asset_id)
+        conn.close()
+        if asset is None:
+            abort(404)
+        thumb = thumbnails.ensure(config.paths.state_dir, asset_id, asset["kind"], Path(asset["file_path"]))
+        if thumb is None:
+            return app.response_class(
+                (Path(app.static_folder) / "missing.svg").read_bytes(),
+                mimetype="image/svg+xml",
+                headers={"Cache-Control": "no-store", "X-Reelmilly-Missing": "1"},
+            )
+        return send_file(thumb, mimetype="image/jpeg", max_age=7 * 24 * 3600)
+
     @app.route("/assets/<asset_id>/download")
     def asset_download(asset_id):
         """元のファイル名で保存できるようにダウンロードする。variant=wmで透かし入り。"""
